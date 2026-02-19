@@ -532,12 +532,14 @@ export default function Home() {
 
         <FieldHeatmap year={year} checkins={checkins} onSelectDay={(d) => setSelectedDay(d)} />
 
-        <DayModal
-          open={selectedDay !== null}
-          day={selectedDay ?? ""}
-          checkins={dayCheckins}
-          onClose={() => setSelectedDay(null)}
-        />
+	<DayModal
+  	 open={selectedDay !== null}
+  	 day={selectedDay ?? ""}
+  	 checkins={dayCheckins}
+  	 onClose={() => setSelectedDay(null)}
+	 onAdd={async () => {}}
+	/>
+
       </main>
     );
   }
