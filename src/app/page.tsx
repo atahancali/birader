@@ -23,6 +23,7 @@ type BeerItem = {
 const BEER_CATALOG: BeerItem[] = [
   { brand: "Efes Pilsen", format: "Fici", ml: 300 },
   { brand: "Efes Pilsen", format: "Fici", ml: 500 },
+  { brand: "Belfast", format: "Fici", ml: 500 },
   { brand: "Bomonti Filtresiz", format: "Fici", ml: 300 },
   { brand: "Bomonti Filtresiz", format: "Fici", ml: 500 },
   { brand: "Bomonti Red Ale", format: "Fici", ml: 500 },
@@ -47,6 +48,7 @@ const BEER_CATALOG: BeerItem[] = [
 
   { brand: "Efes Pilsen", format: "Şişe/Kutu", ml: 330 },
   { brand: "Efes Pilsen", format: "Şişe/Kutu", ml: 500 },
+  { brand: "Belfast", format: "Şişe/Kutu", ml: 500 },
   { brand: "Efes Malt", format: "Şişe/Kutu", ml: 500 },
   { brand: "Efes %100 Malt", format: "Şişe/Kutu", ml: 500 },
   { brand: "Efes Özel Seri", format: "Şişe/Kutu", ml: 500 },
@@ -93,6 +95,7 @@ const BEER_CATALOG: BeerItem[] = [
   { brand: "Weihenstephaner Hefe Weissbier", format: "Şişe/Kutu", ml: 500 },
   { brand: "Grimbergen Blonde", format: "Şişe/Kutu", ml: 330 },
   { brand: "Chimay Blue", format: "Şişe/Kutu", ml: 330 },
+  { brand: "Bistro Lager", format: "Şişe/Kutu", ml: 330 },
 ];
 
 function beerLabel(b: BeerItem) {
