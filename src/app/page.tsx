@@ -6,6 +6,9 @@ import DayModal from "@/components/DayModal";
 import MonthZoom from "@/components/MonthZoom";
 import FieldHeatmap from "@/components/FieldHeatmap";
 import FootballHeatmap from "@/components/FootballHeatmap";
+import SocialPanel from "@/components/SocialPanel";
+import { usernameToCandidateEmails } from "@/lib/identity";
+import { trackEvent } from "@/lib/analytics";
 
 type Checkin = {
   id: string;
@@ -133,30 +136,6 @@ function isoTodayLocal() {
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
-}
-
-const AUTH_DOMAINS = ["birader.app", "birader.com", "birader.local"] as const;
-
-function normalizeUsername(u: string) {
-  // Auth provider'ın "invalid email" hatasına düşmemek için local-part'i sıkı normalize et.
-  const cleaned = u
-    .trim()
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/["'`]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9._-]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^[._-]+|[._-]+$/g, "");
-
-  return cleaned;
-}
-
-function usernameToCandidateEmails(u: string) {
-  const normalized = normalizeUsername(u);
-  if (!normalized) return [];
-  return AUTH_DOMAINS.map((d) => `${normalized}@${d}`);
 }
 
 function StarIcon({ fillRatio, id }: { fillRatio: 0 | 0.5 | 1; id: string }) {
@@ -422,7 +401,19 @@ export default function Home() {
           email: signupEmail,
           password: p,
         });
-        if (e2) alert(e2.message);
+        if (e2) {
+          const msg = (e2.message || "").toLowerCase();
+          if (msg.includes("email not confirmed")) {
+            alert("Hesap oluşturuldu. Giriş için e-postanı doğrula.");
+          } else {
+            alert(e2.message);
+          }
+        } else {
+          trackEvent({
+            eventName: "auth_success",
+            props: { mode: "signup", username: u },
+          });
+        }
       } else {
         // Yeni domainlerden başlayıp legacy adrese kadar dener.
         const attempts = emailCandidates;
@@ -438,7 +429,14 @@ export default function Home() {
           lastError = error.message;
         }
 
-        if (!loggedIn && lastError) alert(lastError);
+        if (!loggedIn && lastError) {
+          alert(lastError);
+        } else if (loggedIn) {
+          trackEvent({
+            eventName: "auth_success",
+            props: { mode: "login", username: u },
+          });
+        }
       }
     } finally {
       setAuthBusy(false);
@@ -572,11 +570,16 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [format, beerLabelsForFormat.length]);
 
-  async function deleteCheckin(id: string) {
+async function deleteCheckin(id: string) {
   // Session varsa Supabase dene
   if (session?.user?.id) {
     const { error } = await supabase.from("checkins").delete().eq("id", id);
     if (!error) {
+      trackEvent({
+        eventName: "checkin_deleted",
+        userId: session.user.id,
+        props: { id },
+      });
       await loadCheckins();
       return;
     }
@@ -585,6 +588,11 @@ export default function Home() {
 
   // Local fallback
   setCheckins((prev) => prev.filter((x) => x.id !== id));
+  trackEvent({
+    eventName: "checkin_deleted_local",
+    userId: session?.user?.id ?? null,
+    props: { id },
+  });
 }
 
 async function updateCheckin(payload: { id: string; beer_name: string; rating: number }) {
@@ -599,6 +607,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       .eq("id", payload.id);
 
     if (!error) {
+      trackEvent({
+        eventName: "checkin_updated",
+        userId: session.user.id,
+        props: { id: payload.id, rating: clamp(payload.rating, 0, 5) },
+      });
       await loadCheckins();
       return;
     }
@@ -613,6 +626,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         : x
     )
   );
+  trackEvent({
+    eventName: "checkin_updated_local",
+    userId: session?.user?.id ?? null,
+    props: { id: payload.id, rating: clamp(payload.rating, 0, 5) },
+  });
 }
   async function addCheckin() {
     const name = (beerName || "").trim();
@@ -631,6 +649,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       });
 
       if (!error) {
+        trackEvent({
+          eventName: "checkin_added",
+          userId: session.user.id,
+          props: { rating: clamp(rating, 0, 5), beer_name: name },
+        });
         setDateISO(today);
         setRating(3.5);
         setDateOpen(false);
@@ -654,6 +677,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     setDateISO(today);
     setRating(3.5);
     setDateOpen(false);
+    trackEvent({
+      eventName: "checkin_added_local",
+      userId: session?.user?.id ?? null,
+      props: { rating: clamp(rating, 0, 5), beer_name: name },
+    });
   }
 
   if (!session) {
@@ -849,6 +877,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         </button>
       </section>
 
+      <SocialPanel userId={session.user.id} sessionEmail={session.user.email} />
+
       <FootballHeatmap year={year} checkins={checkins} onSelectDay={(d) => setSelectedDay(d)} />
 
       <MonthZoom
@@ -882,6 +912,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         return;
       }
 
+      trackEvent({
+        eventName: "checkin_added",
+        userId: session.user.id,
+        props: { rating: clamp(rating, 0, 5), beer_name },
+      });
       await loadCheckins();
       return;
     }
