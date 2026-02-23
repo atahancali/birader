@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Checkin = {
   id: string;
@@ -9,7 +9,7 @@ type Checkin = {
   created_at: string;
 };
 
-const RATINGS = [0.5,1,1.5,2,2.5,3,3.5,4,4.5,5];
+const RATINGS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
 
 export default function DayModal({
   open,
@@ -17,27 +17,45 @@ export default function DayModal({
   checkins,
   onClose,
   onAdd,
+  onDelete,
+  onUpdate,
 }: {
   open: boolean;
   day: string;
   checkins: Checkin[];
   onClose: () => void;
   onAdd: (payload: { day: string; beer_name: string; rating: number }) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  onUpdate: (payload: { id: string; beer_name: string; rating: number }) => Promise<void>;
 }) {
+  // add form
   const [beerName, setBeerName] = useState("");
   const [rating, setRating] = useState(3.5);
   const [saving, setSaving] = useState(false);
 
-  if (!open) return null;
+  // edit state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editBeer, setEditBeer] = useState("");
+  const [editRating, setEditRating] = useState(3.5);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  const avg =
-    checkins.length === 0
-      ? 0
-      : checkins.reduce((s, c) => s + Number(c.rating ?? 0), 0) / checkins.length;
+  // modal kapanınca edit state sıfırla
+  useEffect(() => {
+    if (!open) {
+      setEditingId(null);
+      setBusyId(null);
+    }
+  }, [open]);
+
+  const avg = useMemo(() => {
+    if (checkins.length === 0) return 0;
+    return checkins.reduce((s, c) => s + Number(c.rating ?? 0), 0) / checkins.length;
+  }, [checkins]);
 
   async function handleAdd() {
     const name = beerName.trim();
     if (!name) return;
+
     setSaving(true);
     try {
       await onAdd({ day, beer_name: name, rating });
@@ -47,6 +65,46 @@ export default function DayModal({
       setSaving(false);
     }
   }
+
+  function startEdit(c: Checkin) {
+    setEditingId(c.id);
+    setEditBeer(c.beer_name ?? "");
+    setEditRating(Number(c.rating ?? 0) || 3.5);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditBeer("");
+    setEditRating(3.5);
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm("Bu kaydı silmek istiyor musun?")) return;
+
+    setBusyId(id);
+    try {
+      await onDelete(id);
+      // eğer silinen kayıt edit modundaysa kapat
+      if (editingId === id) cancelEdit();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleUpdate(id: string) {
+    const name = editBeer.trim();
+    if (!name) return;
+
+    setBusyId(id);
+    try {
+      await onUpdate({ id, beer_name: name, rating: editRating });
+      cancelEdit();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50">
@@ -60,7 +118,9 @@ export default function DayModal({
               {checkins.length} bira • Ortalama: {checkins.length ? avg.toFixed(2) : "-"} ⭐
             </div>
           </div>
-          <button onClick={onClose} className="text-xl opacity-80">✕</button>
+          <button onClick={onClose} className="text-xl opacity-80">
+            ✕
+          </button>
         </div>
 
         {/* ADD FORM */}
@@ -78,6 +138,7 @@ export default function DayModal({
             {RATINGS.map((r) => (
               <button
                 key={r}
+                type="button"
                 onClick={() => setRating(r)}
                 className={`px-3 py-2 rounded-2xl border text-sm ${
                   rating === r ? "bg-white text-black" : "border-white/10 bg-black/20"
@@ -99,23 +160,101 @@ export default function DayModal({
 
         {/* LIST */}
         <div className="mt-4 space-y-2">
-          {checkins.map((c) => (
-            <div key={c.id} className="rounded-2xl border border-white/10 bg-white/5 p-3">
-              <div className="flex items-center justify-between">
-                <div className="font-semibold">{c.beer_name}</div>
-                <div className="text-sm">{c.rating}⭐</div>
+          {checkins.map((c) => {
+            const isEditing = editingId === c.id;
+            const isBusy = busyId === c.id;
+
+            return (
+              <div key={c.id} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                {!isEditing ? (
+                  <>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-semibold truncate">{c.beer_name}</div>
+                        <div className="text-xs opacity-60 mt-1">
+                          {new Date(c.created_at).toLocaleTimeString("tr-TR", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <div className="text-sm whitespace-nowrap">{c.rating}⭐</div>
+
+                        <button
+                          type="button"
+                          onClick={() => startEdit(c)}
+                          className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs"
+                        >
+                          Düzenle
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(c.id)}
+                          disabled={isBusy}
+                          className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs disabled:opacity-60"
+                        >
+                          {isBusy ? "..." : "Sil"}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-xs opacity-70 mb-2">Düzenle</div>
+
+                    <input
+                      value={editBeer}
+                      onChange={(e) => setEditBeer(e.target.value)}
+                      className="w-full rounded-2xl bg-black/20 border border-white/10 px-3 py-3 outline-none"
+                      placeholder="Bira adı"
+                    />
+
+                    <div className="mt-2 flex gap-2 flex-wrap">
+                      {RATINGS.map((r) => (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => setEditRating(r)}
+                          className={`px-3 py-2 rounded-2xl border text-sm ${
+                            editRating === r ? "bg-white text-black" : "border-white/10 bg-black/20"
+                          }`}
+                        >
+                          {r}⭐
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={cancelEdit}
+                        className="rounded-2xl border border-white/10 bg-black/20 py-3 text-sm"
+                      >
+                        Vazgeç
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdate(c.id)}
+                        disabled={isBusy}
+                        className="rounded-2xl bg-white text-black py-3 text-sm font-semibold disabled:opacity-60"
+                      >
+                        {isBusy ? "Kaydediliyor..." : "Kaydet"}
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
-              <div className="text-xs opacity-60 mt-1">
-                {new Date(c.created_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
-              </div>
-            </div>
-          ))}
+            );
+          })}
+
           {checkins.length === 0 && (
-            <div className="text-sm opacity-70">Bugün boş. İçmediysen helal.</div>
+            <div className="text-sm opacity-70">Bu gün için kayıt yok.</div>
           )}
         </div>
       </div>
     </div>
   );
 }
-
