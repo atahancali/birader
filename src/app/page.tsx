@@ -618,17 +618,17 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         <FieldHeatmap year={year} checkins={checkins} onSelectDay={(d) => setSelectedDay(d)} />
 
         <DayModal
-  open={selectedDay !== null}
-  day={selectedDay ?? ""}
-  checkins={dayCheckins}
-  onClose={() => setSelectedDay(null)}
-  onAdd={async ({ day, beer_name, rating }) => {
-    const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
-    setCheckins((prev) => [
-      { id: uuid(), beer_name, rating: clamp(rating, 0, 5), created_at },
-      ...prev,
-    ]);
-  }}
+          open={selectedDay !== null}
+          day={selectedDay ?? ""}
+          checkins={dayCheckins}
+          onClose={() => setSelectedDay(null)}
+          onAdd={async ({ day, beer_name, rating }) => {
+            const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
+            setCheckins((prev) => [
+              { id: uuid(), beer_name, rating: clamp(rating, 0, 5), created_at },
+              ...prev,
+          ]);
+        }}
   onDelete={deleteCheckin}
   onUpdate={updateCheckin}
 />
@@ -771,12 +771,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       />
 
       <DayModal
-  open={selectedDay !== null}
-  day={selectedDay ?? ""}
-  checkins={dayCheckins}
-  onClose={() => setSelectedDay(null)}
-  onAdd={async ({ day, beer_name, rating }) => {
-    const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
+      open={selectedDay !== null}
+      day={selectedDay ?? ""}
+      checkins={dayCheckins}
+      onClose={() => setSelectedDay(null)}
+      onAdd={async ({ day, beer_name, rating }) => {
+        const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
 
     if (session?.user?.id) {
       const { error } = await supabase.from("checkins").insert({
@@ -787,7 +787,6 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       });
 
       if (error) {
-        console.error(error);
         alert(error.message);
         return;
       }
