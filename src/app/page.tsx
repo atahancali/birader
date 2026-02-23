@@ -502,6 +502,13 @@ export default function Home() {
     return { idx, bucket: ratingDistribution.buckets[idx] };
   }, [activeRatingBucket, highlightedBucketInfo, ratingDistribution.buckets]);
 
+  function ratingToStarsLabel(ratingValue: number) {
+    if (ratingValue <= 0) return "0★";
+    const full = Math.floor(ratingValue);
+    const half = ratingValue % 1 >= 0.5;
+    return `${"★".repeat(full)}${half ? "½" : ""}`;
+  }
+
   const beerLabelsForFormat = useMemo(() => {
     return BEER_CATALOG.filter((b) => b.format === format)
       .map(beerLabel)
@@ -884,7 +891,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   style={{ height: `${h}px` }}
                 />
 
-                <div className="mt-1 text-[10px] opacity-65">{b.rating.toFixed(1)}</div>
+                <div className="mt-1 text-[10px] opacity-65">{ratingToStarsLabel(b.rating)}</div>
               </button>
             );
           })}
