@@ -826,3 +826,4 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     </main>
   );
 }
+
