@@ -1,4 +1,7 @@
-export const metadata = {
+import type { Metadata } from "next";
+import "./globals.css";
+
+export const metadata: Metadata = {
   metadataBase: new URL("https://birader.app"),
   title: "Birader",
   description: "Bugün ne içtin? Bira log'la, puanla, ısı haritanda gör.",
@@ -21,4 +24,17 @@ export const metadata = {
     icon: "/icon-192.png",
     apple: "/apple-touch-icon.png",
   },
-<link rel="manifest" href="/manifest.webmanifest" />
+  manifest: "/manifest.webmanifest",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="tr">
+      <body>{children}</body>
+    </html>
+  );
+}
