@@ -488,6 +488,17 @@ export default function Home() {
     return { total, max, buckets };
   }, [checkins, ratingSteps]);
 
+  const highlightedBucketInfo = useMemo(() => {
+    const idx = ratingDistribution.buckets.findIndex((b) => b.count === ratingDistribution.max);
+    if (idx < 0) return null;
+    return { idx, bucket: ratingDistribution.buckets[idx] };
+  }, [ratingDistribution]);
+
+  function ratingStars(ratingValue: number) {
+    const full = Math.max(0, Math.min(5, Math.round(ratingValue)));
+    return `${"★".repeat(full)}${"☆".repeat(5 - full)}`;
+  }
+
   const beerLabelsForFormat = useMemo(() => {
     return BEER_CATALOG.filter((b) => b.format === format)
       .map(beerLabel)
@@ -825,34 +836,47 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
   onUpdate={updateCheckin}
 />
 
-      <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="text-sm opacity-80">Puan dağılımı (0.5 adım)</div>
-          <div className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs">
-            Toplam log: {ratingDistribution.total}
-          </div>
+      <section className="mt-6 rounded-3xl border border-white/10 bg-[#121923] p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="text-sm font-semibold tracking-[0.18em] text-slate-200/90">RATINGS</div>
+          <div className="text-xs text-slate-300/70">{ratingDistribution.total}</div>
         </div>
 
-        <div className="grid h-44 grid-cols-11 items-end gap-2">
-          {ratingDistribution.buckets.map((b) => {
-            const h = b.count === 0 ? 8 : Math.max(16, Math.round((b.count / ratingDistribution.max) * 120));
+        <div className="relative h-40 rounded-xl border border-slate-500/20 bg-slate-900/35 px-3 pb-6 pt-5">
+          <div className="pointer-events-none absolute inset-x-3 top-12 border-t border-slate-400/30" />
 
-            return (
-              <div key={b.rating} className="flex min-w-0 flex-col items-center justify-end">
-                <div className="mb-1 text-[10px] opacity-75">
-                  {b.count} ({b.percent.toFixed(0)}%)
+          {highlightedBucketInfo ? (
+            <div
+              className="absolute top-2 -translate-x-1/2 rounded-md bg-slate-600 px-2 py-1 text-[11px] text-slate-100 shadow-lg"
+              style={{ left: `${((highlightedBucketInfo.idx + 0.5) / ratingDistribution.buckets.length) * 100}%` }}
+            >
+              {highlightedBucketInfo.bucket.count} {ratingStars(highlightedBucketInfo.bucket.rating)} ratings ({highlightedBucketInfo.bucket.percent.toFixed(0)}%)
+            </div>
+          ) : null}
+
+          <div className="absolute bottom-2 left-2 text-emerald-400/95 text-xs">★</div>
+          <div className="absolute bottom-2 right-2 text-emerald-400/95 text-xs tracking-[0.2em]">★★★★★</div>
+
+          <div className="mt-5 grid h-[108px] grid-cols-11 items-end gap-1.5">
+            {ratingDistribution.buckets.map((b) => {
+              const h = b.count === 0 ? 4 : Math.max(8, Math.round((b.count / ratingDistribution.max) * 82));
+              const isHighlighted = highlightedBucketInfo?.bucket.rating === b.rating;
+
+              return (
+                <div key={b.rating} className="group relative flex items-end justify-center">
+                  <div
+                    className={`w-full rounded-sm transition-all duration-200 ${
+                      isHighlighted
+                        ? "bg-slate-300/85 shadow-[0_0_16px_rgba(148,163,184,0.45)]"
+                        : "bg-slate-600/55"
+                    } hover:bg-amber-300/80 hover:shadow-[0_0_18px_rgba(245,158,11,0.55)]`}
+                    style={{ height: `${h}px` }}
+                    title={`${b.rating.toFixed(1)}⭐ • ${b.count} log (${b.percent.toFixed(1)}%)`}
+                  />
                 </div>
-
-                <div
-                  className="w-full rounded-t-md border border-amber-100/15 bg-gradient-to-t from-amber-700/45 via-amber-500/55 to-yellow-200/75 transition-all duration-200 hover:border-yellow-200/50 hover:from-amber-500/70 hover:via-amber-400/75 hover:to-yellow-100/95 hover:shadow-[0_0_22px_rgba(245,158,11,0.65),0_0_42px_rgba(251,191,36,0.35)]"
-                  style={{ height: `${h}px` }}
-                  title={`${b.rating.toFixed(1)}⭐ • ${b.count} log (${b.percent.toFixed(1)}%)`}
-                />
-
-                <div className="mt-1 text-[10px] opacity-65">{b.rating.toFixed(1)}</div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </section>
       
