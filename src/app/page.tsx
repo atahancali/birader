@@ -467,6 +467,27 @@ export default function Home() {
     } as Record<BeerItem["format"], string[]>;
   }, [checkins]);
 
+  const ratingSteps = useMemo(() => Array.from({ length: 11 }, (_, i) => i * 0.5), []);
+
+  const ratingDistribution = useMemo(() => {
+    const buckets = ratingSteps.map((r) => ({ rating: r, count: 0, percent: 0 }));
+    const total = checkins.length;
+
+    for (const c of checkins) {
+      const raw = Number(c.rating ?? 0);
+      const normalized = Math.round(clamp(raw, 0, 5) * 2) / 2;
+      const idx = Math.round(normalized * 2);
+      if (buckets[idx]) buckets[idx].count += 1;
+    }
+
+    const max = Math.max(1, ...buckets.map((b) => b.count));
+    for (const b of buckets) {
+      b.percent = total ? (b.count / total) * 100 : 0;
+    }
+
+    return { total, max, buckets };
+  }, [checkins, ratingSteps]);
+
   const beerLabelsForFormat = useMemo(() => {
     return BEER_CATALOG.filter((b) => b.format === format)
       .map(beerLabel)
@@ -803,6 +824,37 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
   onDelete={deleteCheckin}
   onUpdate={updateCheckin}
 />
+
+      <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="text-sm opacity-80">Puan dağılımı (0.5 adım)</div>
+          <div className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs">
+            Toplam log: {ratingDistribution.total}
+          </div>
+        </div>
+
+        <div className="grid h-44 grid-cols-11 items-end gap-2">
+          {ratingDistribution.buckets.map((b) => {
+            const h = b.count === 0 ? 8 : Math.max(16, Math.round((b.count / ratingDistribution.max) * 120));
+
+            return (
+              <div key={b.rating} className="flex min-w-0 flex-col items-center justify-end">
+                <div className="mb-1 text-[10px] opacity-75">
+                  {b.count} ({b.percent.toFixed(0)}%)
+                </div>
+
+                <div
+                  className="w-full rounded-t-md border border-amber-100/15 bg-gradient-to-t from-amber-700/45 via-amber-500/55 to-yellow-200/75 transition-all duration-200 hover:border-yellow-200/50 hover:from-amber-500/70 hover:via-amber-400/75 hover:to-yellow-100/95 hover:shadow-[0_0_22px_rgba(245,158,11,0.65),0_0_42px_rgba(251,191,36,0.35)]"
+                  style={{ height: `${h}px` }}
+                  title={`${b.rating.toFixed(1)}⭐ • ${b.count} log (${b.percent.toFixed(1)}%)`}
+                />
+
+                <div className="mt-1 text-[10px] opacity-65">{b.rating.toFixed(1)}</div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
       
       <section className="mt-6">
         <div className="text-sm opacity-80 mb-2">Son check-in’ler</div>
@@ -826,4 +878,3 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     </main>
   );
 }
-
