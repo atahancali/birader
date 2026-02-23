@@ -506,7 +506,9 @@ export default function Home() {
     if (ratingValue <= 0) return "0★";
     const full = Math.floor(ratingValue);
     const half = ratingValue % 1 >= 0.5;
-    return `${"★".repeat(full)}${half ? "½" : ""}`;
+    if (half && full === 0) return "½★";
+    if (half) return `${full}½★`;
+    return `${full}★`;
   }
 
   const beerLabelsForFormat = useMemo(() => {
@@ -854,16 +856,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           </div>
         </div>
 
-        <div className="relative grid h-44 grid-cols-11 items-end gap-2">
-          {activeBucketInfo ? (
-            <div
-              className="pointer-events-none absolute top-0 -translate-x-1/2 rounded-md border border-white/10 bg-black/70 px-2 py-1 text-[11px] shadow-lg"
-              style={{ left: `${((activeBucketInfo.idx + 0.5) / ratingDistribution.buckets.length) * 100}%` }}
-            >
-              {activeBucketInfo.bucket.rating.toFixed(1)}⭐ • {activeBucketInfo.bucket.count} ({activeBucketInfo.bucket.percent.toFixed(0)}%)
-            </div>
-          ) : null}
-
+        <div
+          className="relative grid h-44 grid-cols-11 items-end gap-2"
+          onMouseLeave={() => setActiveRatingBucket(null)}
+        >
           {ratingDistribution.buckets.map((b) => {
             const h = b.count === 0 ? 8 : Math.max(16, Math.round((b.count / ratingDistribution.max) * 120));
             const isActive = activeBucketInfo?.bucket.rating === b.rating;
@@ -878,7 +874,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 className="flex min-w-0 flex-col items-center justify-end"
                 title={`${b.rating.toFixed(1)}⭐ • ${b.count} log (${b.percent.toFixed(1)}%)`}
               >
-                <div className="mb-1 text-[10px] opacity-75">
+                <div className={`mb-1 text-[10px] transition-opacity ${isActive ? "opacity-80" : "opacity-0"}`}>
                   {b.count} ({b.percent.toFixed(0)}%)
                 </div>
 
@@ -886,12 +882,14 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   className={`w-full rounded-t-md border transition-all duration-200 ${
                     isActive
                       ? "border-yellow-200/55 from-amber-500/75 via-amber-400/80 to-yellow-100/95 shadow-[0_0_20px_rgba(245,158,11,0.6)]"
-                      : "border-amber-100/15 from-amber-700/45 via-amber-500/55 to-yellow-200/75"
+                      : "border-amber-100/10 from-amber-700/35 via-amber-500/40 to-yellow-200/55 opacity-40"
                   } bg-gradient-to-t hover:border-yellow-200/50 hover:from-amber-500/70 hover:via-amber-400/75 hover:to-yellow-100/95 hover:shadow-[0_0_22px_rgba(245,158,11,0.65),0_0_42px_rgba(251,191,36,0.35)]`}
                   style={{ height: `${h}px` }}
                 />
 
-                <div className="mt-1 text-[10px] opacity-65">{ratingToStarsLabel(b.rating)}</div>
+                <div className={`mt-1 text-[10px] transition-opacity ${isActive ? "opacity-80" : "opacity-45"}`}>
+                  {ratingToStarsLabel(b.rating)}
+                </div>
               </button>
             );
           })}
