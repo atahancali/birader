@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import DayModal from "@/components/DayModal";
 import MonthZoom from "@/components/MonthZoom";
@@ -98,6 +98,27 @@ const BEER_CATALOG: BeerItem[] = [
   { brand: "Bistro Lager", format: "Şişe/Kutu", ml: 330 },
 ];
 
+const LS_KEY = "birader:checkins:v1";
+
+function loadLocalCheckins(): Checkin[] {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    return raw ? (JSON.parse(raw) as Checkin[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalCheckins(next: Checkin[]) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(next));
+  } catch {}
+}
+
+function uuid() {
+  return crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
+}
+
 function beerLabel(b: BeerItem) {
   return `${b.brand} — ${b.format} — ${b.ml}ml`;
 }
@@ -116,7 +137,8 @@ function clamp(n: number, a: number, b: number) {
 
 function usernameToEmail(u: string) {
   const clean = u.trim().toLowerCase();
-  return `${clean}@birader.local`;
+  // Supabase email validation'a takılmamak için gerçek TLD kullan
+  return `${clean}@birader.app`;
 }
 
 function StarIcon({ fillRatio, id }: { fillRatio: 0 | 0.5 | 1; id: string }) {
@@ -199,9 +221,7 @@ function StarRatingHalf({
             >
               <div
                 className={
-                  fillRatio > 0
-                    ? "drop-shadow-[0_0_10px_rgba(255,255,255,0.25)]"
-                    : ""
+                  fillRatio > 0 ? "drop-shadow-[0_0_10px_rgba(255,255,255,0.25)]" : ""
                 }
               >
                 <StarIcon fillRatio={fillRatio} id={gid} />
@@ -238,9 +258,7 @@ function ComboboxBeer({
 
   const q = query.trim().toLowerCase();
   const shownPinned = q ? pinned.filter((x) => x.toLowerCase().includes(q)) : pinned;
-  const shownOptions = q
-    ? options.filter((x) => x.toLowerCase().includes(q))
-    : options;
+  const shownOptions = q ? options.filter((x) => x.toLowerCase().includes(q)) : options;
 
   const pinnedSet = new Set(shownPinned);
   const merged = [...shownPinned, ...shownOptions.filter((x) => !pinnedSet.has(x))].slice(0, 30);
@@ -329,6 +347,17 @@ export default function Home() {
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
 
   const [checkins, setCheckins] = useState<Checkin[]>([]);
+
+  // Local'dan ilk yükleme
+  useEffect(() => {
+    const local = loadLocalCheckins();
+    if (local.length) setCheckins(local);
+  }, []);
+
+  // Local'a otomatik kaydet
+  useEffect(() => {
+    saveLocalCheckins(checkins);
+  }, [checkins]);
 
   const dayCheckins = selectedDay
     ? checkins.filter((c) => {
@@ -458,27 +487,41 @@ export default function Home() {
     if (!name) return;
 
     const created_at =
-      dateISO === today
-        ? new Date().toISOString()
-        : new Date(`${dateISO}T12:00:00.000Z`).toISOString();
+      dateISO === today ? new Date().toISOString() : new Date(`${dateISO}T12:00:00.000Z`).toISOString();
 
-    const { error } = await supabase.from("checkins").insert({
-      user_id: session.user.id,
-      beer_name: name,
-      rating: clamp(rating, 0, 5),
-      created_at,
-    });
+    // 1) session varsa supabase dene
+    if (session?.user?.id) {
+      const { error } = await supabase.from("checkins").insert({
+        user_id: session.user.id,
+        beer_name: name,
+        rating: clamp(rating, 0, 5),
+        created_at,
+      });
 
-    if (error) {
-      alert(error.message);
-      return;
+      if (!error) {
+        setDateISO(today);
+        setRating(3.5);
+        setDateOpen(false);
+        await loadCheckins();
+        return;
+      }
+
+      // supabase patladıysa local fallback
+      console.error("Supabase insert failed -> local fallback:", error.message);
     }
+
+    // 2) local fallback
+    setCheckins((prev) => {
+      const next: Checkin[] = [
+        { id: uuid(), beer_name: name, rating: clamp(rating, 0, 5), created_at },
+        ...prev,
+      ];
+      return next;
+    });
 
     setDateISO(today);
     setRating(3.5);
     setDateOpen(false);
-
-    await loadCheckins();
   }
 
   if (!session) {
@@ -489,9 +532,7 @@ export default function Home() {
 
         <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
           <div className="flex items-center justify-between">
-            <div className="text-sm opacity-80">
-              {authMode === "login" ? "Giriş" : "Kayıt ol"}
-            </div>
+            <div className="text-sm opacity-80">{authMode === "login" ? "Giriş" : "Kayıt ol"}</div>
             <button
               className="text-xs underline opacity-70"
               onClick={() => setAuthMode((m) => (m === "login" ? "signup" : "login"))}
@@ -528,21 +569,25 @@ export default function Home() {
           </button>
 
           <p className="mt-3 text-xs opacity-60">
-            Email yok: kullanıcı adı arkada{" "}
-            <span className="opacity-80">username@birader.local</span> olarak kullanılır.
+            Not: Kayıt için e-posta sormuyoruz. Kullanıcı adın e-posta formatına çevrilir.
           </p>
         </div>
 
         <FieldHeatmap year={year} checkins={checkins} onSelectDay={(d) => setSelectedDay(d)} />
 
-	<DayModal
-  	 open={selectedDay !== null}
-  	 day={selectedDay ?? ""}
-  	 checkins={dayCheckins}
-  	 onClose={() => setSelectedDay(null)}
-	 onAdd={async () => {}}
-	/>
-
+        <DayModal
+          open={selectedDay !== null}
+          day={selectedDay ?? ""}
+          checkins={dayCheckins}
+          onClose={() => setSelectedDay(null)}
+          onAdd={async ({ day, beer_name, rating }) => {
+            const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
+            setCheckins((prev) => [
+              { id: uuid(), beer_name, rating: clamp(rating, 0, 5), created_at },
+              ...prev,
+            ]);
+          }}
+        />
       </main>
     );
   }
@@ -552,7 +597,9 @@ export default function Home() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Birader</h1>
-          <p className="text-sm opacity-80">{year} (v0)</p>
+          <p className="text-sm opacity-80">
+            {year} (v0)
+          </p>
         </div>
         <button onClick={logout} className="text-sm underline opacity-80">
           çıkış
@@ -653,7 +700,9 @@ export default function Home() {
         <div className="mb-3">
           <label className="block text-xs opacity-70 mb-2">Puan</label>
           <StarRatingHalf value={rating} onChange={setRating} />
-          <div className="mt-1 text-xs opacity-60">Hover → yarım/yıldız seç • Tıkla → set • Aynı puana tıkla → sıfırla</div>
+          <div className="mt-1 text-xs opacity-60">
+            Hover → yarım/yıldız seç • Tıkla → set • Aynı puana tıkla → sıfırla
+          </div>
         </div>
 
         <button
@@ -684,17 +733,31 @@ export default function Home() {
         onClose={() => setSelectedDay(null)}
         onAdd={async ({ day, beer_name, rating }) => {
           const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
-          const { error } = await supabase.from("checkins").insert({
-            user_id: session.user.id,
-            beer_name,
-            rating,
-            created_at,
-          });
-          if (error) {
-            alert(error.message);
+
+          // session var ama yine de güvenli kalsın
+          if (session?.user?.id) {
+            const { error } = await supabase.from("checkins").insert({
+              user_id: session.user.id,
+              beer_name,
+              rating: clamp(rating, 0, 5),
+              created_at,
+            });
+
+            if (error) {
+              console.error(error);
+              alert(error.message);
+              return;
+            }
+
+            await loadCheckins();
             return;
           }
-          await loadCheckins();
+
+          // çok nadir fallback
+          setCheckins((prev) => [
+            { id: uuid(), beer_name, rating: clamp(rating, 0, 5), created_at },
+            ...prev,
+          ]);
         }}
       />
 
@@ -707,11 +770,13 @@ export default function Home() {
                 <div className="font-semibold">{c.beer_name}</div>
                 <div className="text-sm">{c.rating}⭐</div>
               </div>
-              <div className="text-xs opacity-70 mt-1">{new Date(c.created_at).toLocaleString("tr-TR")}</div>
+              <div className="text-xs opacity-70 mt-1">
+                {new Date(c.created_at).toLocaleString("tr-TR")}
+              </div>
             </div>
           ))}
           {checkins.length === 0 && (
-            <div className="text-sm opacity-70">Henüz check-in yok. İlkini patlat.</div>
+            <div className="text-sm opacity-70">Henüz check-in yok. İlkini gir.</div>
           )}
         </div>
       </section>
