@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "migrate:auth-domain": "node scripts/migrate-auth-domain.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",

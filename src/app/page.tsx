@@ -135,10 +135,28 @@ function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
-function usernameToEmail(u: string) {
-  const clean = u.trim().toLowerCase();
-  // Supabase email validation'a takılmamak için gerçek TLD kullan
-  return `${clean}@birader.app`;
+const AUTH_DOMAINS = ["birader.app", "birader.com", "birader.local"] as const;
+
+function normalizeUsername(u: string) {
+  // Auth provider'ın "invalid email" hatasına düşmemek için local-part'i sıkı normalize et.
+  const cleaned = u
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/["'`]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9._-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[._-]+|[._-]+$/g, "");
+
+  return cleaned;
+}
+
+function usernameToCandidateEmails(u: string) {
+  const normalized = normalizeUsername(u);
+  if (!normalized) return [];
+  return AUTH_DOMAINS.map((d) => `${normalized}@${d}`);
 }
 
 function StarIcon({ fillRatio, id }: { fillRatio: 0 | 0.5 | 1; id: string }) {
@@ -378,21 +396,53 @@ export default function Home() {
     const p = password;
     if (!u || !p) return;
 
-    const email = usernameToEmail(u);
+    const emailCandidates = usernameToCandidateEmails(u);
+    if (!emailCandidates.length) {
+      alert("Geçerli bir kullanıcı adı gir.");
+      return;
+    }
 
     setAuthBusy(true);
     try {
       if (authMode === "signup") {
-        const { error } = await supabase.auth.signUp({ email, password: p });
-        if (error) {
-          alert(error.message);
+        let signedUpEmail: string | null = null;
+        let signupErr: string | null = null;
+
+        for (const email of emailCandidates) {
+          const { error } = await supabase.auth.signUp({ email, password: p });
+          if (!error) {
+            signedUpEmail = email;
+            break;
+          }
+          signupErr = error.message;
+        }
+
+        if (!signedUpEmail) {
+          alert(signupErr || "Kayıt başarısız.");
           return;
         }
-        const { error: e2 } = await supabase.auth.signInWithPassword({ email, password: p });
+
+        const { error: e2 } = await supabase.auth.signInWithPassword({
+          email: signedUpEmail,
+          password: p,
+        });
         if (e2) alert(e2.message);
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password: p });
-        if (error) alert(error.message);
+        // Yeni domainlerden başlayıp legacy adrese kadar dener.
+        const attempts = emailCandidates;
+        let lastError: string | null = null;
+        let loggedIn = false;
+
+        for (const email of attempts) {
+          const { error } = await supabase.auth.signInWithPassword({ email, password: p });
+          if (!error) {
+            loggedIn = true;
+            break;
+          }
+          lastError = error.message;
+        }
+
+        if (!loggedIn && lastError) alert(lastError);
       }
     } finally {
       setAuthBusy(false);
@@ -656,6 +706,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
           <p className="mt-3 text-xs opacity-60">
             Not: Kayıt için e-posta sormuyoruz. Kullanıcı adın e-posta formatına çevrilir.
+            Eski <code>@birader.local</code> hesaplar girişte otomatik desteklenir.
           </p>
         </div>
 
