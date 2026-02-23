@@ -405,25 +405,21 @@ export default function Home() {
     setAuthBusy(true);
     try {
       if (authMode === "signup") {
-        let signedUpEmail: string | null = null;
-        let signupErr: string | null = null;
-
-        for (const email of emailCandidates) {
-          const { error } = await supabase.auth.signUp({ email, password: p });
-          if (!error) {
-            signedUpEmail = email;
-            break;
+        // Rate limit'e girmemek için signup'ta tek domain dene.
+        const signupEmail = emailCandidates[0];
+        const { error } = await supabase.auth.signUp({ email: signupEmail, password: p });
+        if (error) {
+          const msg = (error.message || "").toLowerCase();
+          if (msg.includes("rate limit")) {
+            alert("Çok sık kayıt denemesi yapıldı. 1-2 dakika bekleyip tekrar dene.");
+          } else {
+            alert(error.message || "Kayıt başarısız.");
           }
-          signupErr = error.message;
-        }
-
-        if (!signedUpEmail) {
-          alert(signupErr || "Kayıt başarısız.");
           return;
         }
 
         const { error: e2 } = await supabase.auth.signInWithPassword({
-          email: signedUpEmail,
+          email: signupEmail,
           password: p,
         });
         if (e2) alert(e2.message);
