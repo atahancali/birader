@@ -482,6 +482,48 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [format, beerLabelsForFormat.length]);
 
+  async function deleteCheckin(id: string) {
+  // Session varsa Supabase dene
+  if (session?.user?.id) {
+    const { error } = await supabase.from("checkins").delete().eq("id", id);
+    if (!error) {
+      await loadCheckins();
+      return;
+    }
+    console.error("Supabase delete failed -> local fallback:", error.message);
+  }
+
+  // Local fallback
+  setCheckins((prev) => prev.filter((x) => x.id !== id));
+}
+
+async function updateCheckin(payload: { id: string; beer_name: string; rating: number }) {
+  const name = payload.beer_name.trim();
+  if (!name) return;
+
+  // Session varsa Supabase dene
+  if (session?.user?.id) {
+    const { error } = await supabase
+      .from("checkins")
+      .update({ beer_name: name, rating: clamp(payload.rating, 0, 5) })
+      .eq("id", payload.id);
+
+    if (!error) {
+      await loadCheckins();
+      return;
+    }
+    console.error("Supabase update failed -> local fallback:", error.message);
+  }
+
+  // Local fallback
+  setCheckins((prev) =>
+    prev.map((x) =>
+      x.id === payload.id
+        ? { ...x, beer_name: name, rating: clamp(payload.rating, 0, 5) }
+        : x
+    )
+  );
+}
   async function addCheckin() {
     const name = (beerName || "").trim();
     if (!name) return;
@@ -576,18 +618,20 @@ export default function Home() {
         <FieldHeatmap year={year} checkins={checkins} onSelectDay={(d) => setSelectedDay(d)} />
 
         <DayModal
-          open={selectedDay !== null}
-          day={selectedDay ?? ""}
-          checkins={dayCheckins}
-          onClose={() => setSelectedDay(null)}
-          onAdd={async ({ day, beer_name, rating }) => {
-            const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
-            setCheckins((prev) => [
-              { id: uuid(), beer_name, rating: clamp(rating, 0, 5), created_at },
-              ...prev,
-            ]);
-          }}
-        />
+  open={selectedDay !== null}
+  day={selectedDay ?? ""}
+  checkins={dayCheckins}
+  onClose={() => setSelectedDay(null)}
+  onAdd={async ({ day, beer_name, rating }) => {
+    const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
+    setCheckins((prev) => [
+      { id: uuid(), beer_name, rating: clamp(rating, 0, 5), created_at },
+      ...prev,
+    ]);
+  }}
+  onDelete={deleteCheckin}
+  onUpdate={updateCheckin}
+/>
       </main>
     );
   }
@@ -727,40 +771,40 @@ export default function Home() {
       />
 
       <DayModal
-        open={selectedDay !== null}
-        day={selectedDay ?? ""}
-        checkins={dayCheckins}
-        onClose={() => setSelectedDay(null)}
-        onAdd={async ({ day, beer_name, rating }) => {
-          const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
+  open={selectedDay !== null}
+  day={selectedDay ?? ""}
+  checkins={dayCheckins}
+  onClose={() => setSelectedDay(null)}
+  onAdd={async ({ day, beer_name, rating }) => {
+    const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
 
-          // session var ama yine de güvenli kalsın
-          if (session?.user?.id) {
-            const { error } = await supabase.from("checkins").insert({
-              user_id: session.user.id,
-              beer_name,
-              rating: clamp(rating, 0, 5),
-              created_at,
-            });
+    if (session?.user?.id) {
+      const { error } = await supabase.from("checkins").insert({
+        user_id: session.user.id,
+        beer_name,
+        rating: clamp(rating, 0, 5),
+        created_at,
+      });
 
-            if (error) {
-              console.error(error);
-              alert(error.message);
-              return;
-            }
+      if (error) {
+        console.error(error);
+        alert(error.message);
+        return;
+      }
 
-            await loadCheckins();
-            return;
-          }
+      await loadCheckins();
+      return;
+    }
 
-          // çok nadir fallback
-          setCheckins((prev) => [
-            { id: uuid(), beer_name, rating: clamp(rating, 0, 5), created_at },
-            ...prev,
-          ]);
-        }}
-      />
-
+    setCheckins((prev) => [
+      { id: uuid(), beer_name, rating: clamp(rating, 0, 5), created_at },
+      ...prev,
+    ]);
+  }}
+  onDelete={deleteCheckin}
+  onUpdate={updateCheckin}
+/>
+      
       <section className="mt-6">
         <div className="text-sm opacity-80 mb-2">Son check-in’ler</div>
         <div className="space-y-2">
