@@ -43,6 +43,7 @@ type HeaderProfile = {
 
 type HomeSection = "log" | "social" | "heatmap" | "stats";
 type LocationSuggestion = { city: string; district: string; score: number };
+const MAX_BULK_BACKDATE_COUNT = 10;
 
 type BeerItem = {
   brand: string;
@@ -1541,15 +1542,16 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     onClick={() => {
                       const n = (beerName || "").trim();
                       if (!n) return;
-                      const qty = Math.max(1, Math.min(50, Number(batchCountInput || "1")));
+                      const qty = Math.max(1, Math.min(MAX_BULK_BACKDATE_COUNT, Number(batchCountInput || "1")));
                       setBatchBeerNames((prev) => [...prev, ...Array.from({ length: qty }, () => n)]);
                       setBatchConfirmed(false);
                     }}
                     className="rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs"
                   >
-                    {`Listeye ekle (${Math.max(1, Math.min(50, Number(batchCountInput || "1")))})`}
+                    {`Listeye ekle (${Math.max(1, Math.min(MAX_BULK_BACKDATE_COUNT, Number(batchCountInput || "1")))})`}
                   </button>
                 </div>
+                <div className="text-[11px] opacity-60">Maksimum {MAX_BULK_BACKDATE_COUNT} adet</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {batchBeerNames.map((b, i) => (
                     <button
