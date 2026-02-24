@@ -1974,7 +1974,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             { key: "log", label: "Log" },
             { key: "social", label: "Sosyal" },
             { key: "heatmap", label: "Harita" },
-            { key: "stats", label: "İstat" },
+            { key: "stats", label: "İstatistik" },
           ].map((item) => (
             <button
               key={item.key}
