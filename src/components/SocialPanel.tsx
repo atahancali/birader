@@ -46,6 +46,15 @@ type FeedItem = FeedCheckinRow & {
 };
 
 type FeedWindow = "all" | "24h" | "7d";
+type LeaderWindow = "7d" | "30d" | "90d" | "365d";
+type LeaderScope = "all" | "followed";
+
+type LeaderboardRow = {
+  user_id: string;
+  username: string;
+  logs: number;
+  avgRating: number;
+};
 
 const KEYBOARD_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
 
@@ -159,12 +168,17 @@ export default function SocialPanel({
   const [feedWindow, setFeedWindow] = useState<FeedWindow>("7d");
   const [feedMinRating, setFeedMinRating] = useState<number>(0);
   const [feedQuery, setFeedQuery] = useState("");
+  const [leaderWindow, setLeaderWindow] = useState<LeaderWindow>("7d");
+  const [leaderScope, setLeaderScope] = useState<LeaderScope>("all");
+  const [leaderRows, setLeaderRows] = useState<LeaderboardRow[]>([]);
+  const [leaderBusy, setLeaderBusy] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchProfile[]>([]);
   const [searchBusy, setSearchBusy] = useState(false);
   const followingIdsRef = useRef<Set<string>>(new Set());
   const followingNameRef = useRef<Map<string, string>>(new Map());
+  const leaderboardReloadRef = useRef<(() => Promise<void>) | null>(null);
 
   const fallbackBase = useMemo(() => {
     const fromEmail = usernameFromEmail(sessionEmail);
@@ -316,6 +330,97 @@ export default function SocialPanel({
     trackEvent({ eventName: "feed_loaded", userId, props: { count: rows.length } });
   }
 
+  async function loadLeaderboard() {
+    const now = new Date();
+    const start = new Date(now);
+    if (leaderWindow === "7d") start.setDate(now.getDate() - 7);
+    if (leaderWindow === "30d") start.setDate(now.getDate() - 30);
+    if (leaderWindow === "90d") start.setDate(now.getDate() - 90);
+    if (leaderWindow === "365d") start.setDate(now.getDate() - 365);
+
+    const followedIds = Array.from(followingIdsRef.current);
+    if (leaderScope === "followed" && !followedIds.length) {
+      setLeaderRows([]);
+      return;
+    }
+
+    setLeaderBusy(true);
+    let query = supabase
+      .from("checkins")
+      .select("user_id, rating, created_at")
+      .gte("created_at", start.toISOString())
+      .order("created_at", { ascending: false })
+      .limit(10000);
+
+    if (leaderScope === "followed") {
+      query = query.in("user_id", followedIds);
+    }
+
+    const { data: checkinRows, error: checkinErr } = await query;
+    setLeaderBusy(false);
+
+    if (checkinErr) {
+      markDbError(checkinErr.message);
+      return;
+    }
+
+    const rows = (checkinRows as Array<{ user_id: string; rating: number }> | null) ?? [];
+    if (!rows.length) {
+      setLeaderRows([]);
+      return;
+    }
+
+    const agg = new Map<string, { logs: number; ratingSum: number }>();
+    for (const row of rows) {
+      const entry = agg.get(row.user_id) ?? { logs: 0, ratingSum: 0 };
+      entry.logs += 1;
+      entry.ratingSum += Number(row.rating ?? 0);
+      agg.set(row.user_id, entry);
+    }
+
+    const ids = Array.from(agg.keys());
+    const { data: profileRows, error: profileErr } = await supabase
+      .from("profiles")
+      .select("user_id, username, is_public")
+      .in("user_id", ids);
+
+    if (profileErr) {
+      markDbError(profileErr.message);
+      return;
+    }
+
+    const visible = new Map<string, string>();
+    for (const p of (profileRows as Array<{ user_id: string; username: string; is_public: boolean }> | null) ?? []) {
+      if (leaderScope === "all" && !p.is_public) continue;
+      visible.set(p.user_id, p.username);
+    }
+
+    const result: LeaderboardRow[] = [];
+    for (const [uid, stats] of agg.entries()) {
+      const username = visible.get(uid);
+      if (!username) continue;
+      result.push({
+        user_id: uid,
+        username,
+        logs: stats.logs,
+        avgRating: Math.round((stats.ratingSum / Math.max(1, stats.logs)) * 100) / 100,
+      });
+    }
+
+    result.sort((a, b) => {
+      if (a.logs !== b.logs) return b.logs - a.logs;
+      if (a.avgRating !== b.avgRating) return b.avgRating - a.avgRating;
+      return a.username.localeCompare(b.username, "tr");
+    });
+
+    setLeaderRows(result.slice(0, 25));
+    trackEvent({
+      eventName: "leaderboard_loaded",
+      userId,
+      props: { scope: leaderScope, window: leaderWindow, count: result.length },
+    });
+  }
+
   async function loadFollowing() {
     const { data: rows, error } = await supabase
       .from("follows")
@@ -412,6 +517,16 @@ export default function SocialPanel({
   }, [followingIds, followingProfiles]);
 
   useEffect(() => {
+    leaderboardReloadRef.current = loadLeaderboard;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
+
+  useEffect(() => {
+    void loadLeaderboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leaderScope, leaderWindow, followingIds]);
+
+  useEffect(() => {
     const channel = supabase
       .channel(`social-feed-${userId}`)
       .on(
@@ -427,6 +542,7 @@ export default function SocialPanel({
               .slice(0, 40);
             return next;
           });
+          void leaderboardReloadRef.current?.();
         }
       )
       .on(
@@ -441,6 +557,7 @@ export default function SocialPanel({
               .map((x) => (x.id === row.id ? { ...row, username } : x))
               .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
           );
+          void leaderboardReloadRef.current?.();
         }
       )
       .on(
@@ -450,6 +567,7 @@ export default function SocialPanel({
           const oldRow = payload.old as { id?: string; user_id?: string };
           if (!oldRow?.id || !oldRow.user_id || !followingIdsRef.current.has(oldRow.user_id)) return;
           setFeedItems((prev) => prev.filter((x) => x.id !== oldRow.id));
+          void leaderboardReloadRef.current?.();
         }
       )
       .on(
@@ -678,6 +796,70 @@ export default function SocialPanel({
       ) : null}
 
       <div className="mt-4 grid gap-3">
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs opacity-70">Leaderboard</div>
+            <button
+              type="button"
+              onClick={() => void loadLeaderboard()}
+              className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+            >
+              Yenile
+            </button>
+          </div>
+
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <div className="flex gap-1 rounded-lg border border-white/10 bg-black/25 p-1">
+              {[
+                { key: "7d", label: "Hft" },
+                { key: "30d", label: "Ay" },
+                { key: "90d", label: "3Ay" },
+                { key: "365d", label: "Yıl" },
+              ].map((x) => (
+                <button
+                  key={x.key}
+                  type="button"
+                  onClick={() => setLeaderWindow(x.key as LeaderWindow)}
+                  className={`flex-1 rounded-md px-2 py-1 text-[11px] ${
+                    leaderWindow === x.key ? "bg-white/15" : "bg-black/20"
+                  }`}
+                >
+                  {x.label}
+                </button>
+              ))}
+            </div>
+            <select
+              value={leaderScope}
+              onChange={(e) => setLeaderScope(e.target.value as LeaderScope)}
+              className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
+            >
+              <option value="all">All users</option>
+              <option value="followed">Followed</option>
+            </select>
+          </div>
+
+          <div className="mt-2 space-y-2">
+            {leaderRows.map((row, idx) => (
+              <div key={row.user_id} className="flex items-center justify-between rounded-xl border border-white/10 bg-black/25 px-3 py-2">
+                <div className="min-w-0">
+                  <div className="truncate text-sm">
+                    <span className="mr-2 opacity-70">#{idx + 1}</span>
+                    <Link href={`/u/${row.username}`} className="underline">
+                      @{row.username}
+                    </Link>
+                  </div>
+                  <div className="text-xs opacity-70">{row.logs} log</div>
+                </div>
+                <div className="text-sm">{row.avgRating.toFixed(2)}⭐</div>
+              </div>
+            ))}
+            {leaderBusy ? <div className="text-xs opacity-60">Leaderboard yukleniyor...</div> : null}
+            {!leaderBusy && !leaderRows.length ? (
+              <div className="text-xs opacity-60">Bu filtrede leaderboard verisi yok.</div>
+            ) : null}
+          </div>
+        </div>
+
         <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
           <div className="flex items-center justify-between gap-3">
             <div className="text-xs opacity-70">Takip akisi</div>
