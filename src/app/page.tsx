@@ -1085,6 +1085,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     const name = (beerName || "").trim();
     const targets = isBackDate && batchBeerNames.length > 0 ? batchBeerNames : name ? [name] : [];
     if (!targets.length) return;
+    if (dateISO > today) {
+      alert("Bugunden sonraki tarihe log atilamaz.");
+      return;
+    }
     if (isBackDate && targets.length > 1 && !batchConfirmed) {
       alert("Toplu kayit icin once onay kutusunu isaretle.");
       return;
@@ -1269,6 +1273,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           }}
           onClose={() => setSelectedDay(null)}
           onAdd={async ({ day, beer_name, rating }) => {
+            if (day > today) {
+              alert("Bugunden sonraki tarihe log atilamaz.");
+              return;
+            }
             const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
             setCheckins((prev) => [
               {
@@ -1438,6 +1446,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                         type="date"
                         value={dateISO}
                         onChange={(e) => setDateISO(e.target.value)}
+                        max={today}
                         className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none"
                       />
                       <button
@@ -1604,14 +1613,9 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   {!batchBeerNames.length ? <div className="text-xs opacity-60">Henüz listede bira yok.</div> : null}
                 </div>
                 {batchBeerNames.length > 1 ? (
-                  <label className="mt-3 flex items-center gap-2 text-xs opacity-85">
-                    <input
-                      type="checkbox"
-                      checked={batchConfirmed}
-                      onChange={(e) => setBatchConfirmed(e.target.checked)}
-                    />
-                    Eminim, {batchBeerNames.length} adet kaydi toplu olarak ekle
-                  </label>
+                  <div className="mt-3 text-xs opacity-70">
+                    Toplu kayit onayi son adimda alinacak.
+                  </div>
                 ) : null}
                 <div className="mt-2 text-xs opacity-65">
                   Not: Toplu kayitlar puansiz birakilip sonradan guncellenebilir.
@@ -1660,6 +1664,19 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 </div>
               ) : null}
             </div>
+
+            {isBackDate && batchBeerNames.length > 1 ? (
+              <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
+                <label className="flex items-center gap-2 text-xs opacity-90">
+                  <input
+                    type="checkbox"
+                    checked={batchConfirmed}
+                    onChange={(e) => setBatchConfirmed(e.target.checked)}
+                  />
+                  Eminim, {batchBeerNames.length} adet kaydi toplu olarak ekle
+                </label>
+              </div>
+            ) : null}
 
             <button
               onClick={addCheckin}
@@ -1778,6 +1795,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       }}
       onClose={() => setSelectedDay(null)}
       onAdd={async ({ day, beer_name, rating }) => {
+        if (day > today) {
+          alert("Bugunden sonraki tarihe log atilamaz.");
+          return;
+        }
         const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
         const normalizedRating = sanitizeRating(rating);
 
