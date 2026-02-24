@@ -156,6 +156,10 @@ function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
+function looksLikeEmail(input: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.trim().toLowerCase());
+}
+
 function StarIcon({ fillRatio, id }: { fillRatio: 0 | 0.5 | 1; id: string }) {
   const pct = fillRatio === 1 ? 100 : fillRatio === 0.5 ? 50 : 0;
   return (
@@ -384,25 +388,30 @@ export default function Home() {
 
   // auth
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
-  const [username, setUsername] = useState("");
+  const [authIdentifier, setAuthIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
 
   async function authWithUsernamePassword() {
-    const u = username.trim();
+    const identifier = authIdentifier.trim().toLowerCase();
     const p = password;
-    if (!u || !p) return;
+    if (!identifier || !p) return;
 
-    const emailCandidates = usernameToCandidateEmails(u);
+    const isEmail = looksLikeEmail(identifier);
+    const emailCandidates = isEmail ? [identifier] : usernameToCandidateEmails(identifier);
     if (!emailCandidates.length) {
-      alert("Geçerli bir kullanıcı adı gir.");
+      alert("Geçerli bir kullanıcı adı veya e-posta gir.");
       return;
     }
 
     setAuthBusy(true);
     try {
       if (authMode === "signup") {
-        // Rate limit'e girmemek için signup'ta tek domain dene.
+        if (!isEmail) {
+          alert("Kayıt için e-posta girmen gerekiyor.");
+          return;
+        }
+
         const signupEmail = emailCandidates[0];
         const { error } = await supabase.auth.signUp({ email: signupEmail, password: p });
         if (error) {
@@ -429,11 +438,11 @@ export default function Home() {
         } else {
           trackEvent({
             eventName: "auth_success",
-            props: { mode: "signup", username: u },
+            props: { mode: "signup", email: signupEmail },
           });
         }
       } else {
-        // Yeni domainlerden başlayıp legacy adrese kadar dener.
+        // Login için email girildiyse direkt, kullanıcı adı girildiyse legacy dahil dener.
         const attempts = emailCandidates;
         let lastError: string | null = null;
         let loggedIn = false;
@@ -452,7 +461,7 @@ export default function Home() {
         } else if (loggedIn) {
           trackEvent({
             eventName: "auth_success",
-            props: { mode: "login", username: u },
+            props: { mode: "login", identifier },
           });
         }
       }
@@ -876,9 +885,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
           <div className="mt-3 space-y-2">
             <input
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="kullanıcı adı (ör. ati)"
+              value={authIdentifier}
+              onChange={(e) => setAuthIdentifier(e.target.value)}
+              placeholder={
+                authMode === "login" ? "kullanıcı adı veya e-posta" : "e-posta (ör. ati@birader.app)"
+              }
               className="w-full rounded-2xl bg-black/20 border border-white/10 px-3 py-3 outline-none"
               autoCapitalize="none"
               autoCorrect="off"
@@ -901,7 +912,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           </button>
 
           <p className="mt-3 text-xs opacity-60">
-            Not: Kayıt için e-posta sormuyoruz. Kullanıcı adın e-posta formatına çevrilir.
+            Not: Kayıt e-posta ile yapılır. Girişte e-posta veya kullanıcı adı kullanabilirsin.
             Eski <code>@birader.local</code> hesaplar girişte otomatik desteklenir.
           </p>
         </div>
