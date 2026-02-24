@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Birader",
+    "slug": "birader-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.birader.mobile"
+    },
+    "android": {
+      "package": "app.birader.mobile"
+    }
+  }
+}

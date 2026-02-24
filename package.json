@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "migrate:auth-domain": "node scripts/migrate-auth-domain.mjs"
+    "migrate:auth-domain": "node scripts/migrate-auth-domain.mjs",
+    "mobile:start": "npm --prefix apps/mobile run start",
+    "mobile:ios": "npm --prefix apps/mobile run ios",
+    "mobile:android": "npm --prefix apps/mobile run android"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",
