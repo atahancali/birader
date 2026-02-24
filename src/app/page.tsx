@@ -8,7 +8,7 @@ import MonthZoom from "@/components/MonthZoom";
 import FieldHeatmap from "@/components/FieldHeatmap";
 import FootballHeatmap from "@/components/FootballHeatmap";
 import SocialPanel from "@/components/SocialPanel";
-import { usernameToCandidateEmails } from "@/lib/identity";
+import { usernameFromEmail, usernameToCandidateEmails } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
 
@@ -22,6 +22,11 @@ type Checkin = {
 type FavoriteBeer = {
   beer_name: string;
   rank: number;
+};
+
+type HeaderProfile = {
+  username: string;
+  avatar_path?: string | null;
 };
 
 type HomeSection = "log" | "social" | "heatmap" | "stats";
@@ -474,6 +479,7 @@ export default function Home() {
   const [replaceFavoriteRank, setReplaceFavoriteRank] = useState<number | null>(null);
   const [activeSection, setActiveSection] = useState<HomeSection>("log");
   const [recentExpandStep, setRecentExpandStep] = useState(0);
+  const [headerProfile, setHeaderProfile] = useState<HeaderProfile | null>(null);
 
   const year = useMemo(() => new Date().getFullYear(), []);
 
@@ -526,6 +532,24 @@ export default function Home() {
     if (session?.user?.id) {
       loadCheckins();
       loadFavorites();
+      supabase
+        .from("profiles")
+        .select("username, avatar_path")
+        .eq("user_id", session.user.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            setHeaderProfile({
+              username: (data as any).username,
+              avatar_path: (data as any).avatar_path,
+            });
+          } else {
+            setHeaderProfile({
+              username: usernameFromEmail(session.user.email) || `user-${session.user.id.slice(0, 6)}`,
+              avatar_path: "",
+            });
+          }
+        });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id]);
@@ -690,6 +714,12 @@ export default function Home() {
   }
 
   const favoriteCandidate = useMemo(() => favoriteBeerName(beerName), [beerName]);
+  const headerAvatarUrl = useMemo(() => {
+    const p = (headerProfile?.avatar_path || "").trim();
+    if (!p) return "";
+    const { data } = supabase.storage.from("avatars").getPublicUrl(p);
+    return data.publicUrl;
+  }, [headerProfile?.avatar_path]);
   const recentVisibleCount = useMemo(() => {
     if (recentExpandStep <= 0) return 5;
     if (recentExpandStep === 1) return 10;
@@ -899,7 +929,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
   return (
     <main className="min-h-screen p-4 pb-24 max-w-md mx-auto">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <Image src="/favicon.svg" alt="Birader" width={28} height={28} className="rounded-md" />
           <div>
@@ -909,9 +939,30 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             </p>
           </div>
         </div>
-        <button onClick={logout} className="text-sm underline opacity-80">
-          çıkış
-        </button>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-2 py-1.5">
+            <div className="h-8 w-8 overflow-hidden rounded-full border border-white/20 bg-black/40">
+              {headerAvatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={headerAvatarUrl} alt="profil avatar" className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-[10px] opacity-70">
+                  :)
+                </div>
+              )}
+            </div>
+            <div className="max-w-[120px] truncate text-xs text-amber-100">
+              @{headerProfile?.username || usernameFromEmail(session?.user?.email) || "kullanici"}
+            </div>
+          </div>
+
+          <button
+            onClick={logout}
+            className="rounded-md border border-red-300/70 bg-red-500/15 px-3 py-1 text-xs font-bold tracking-[0.12em] text-red-200 shadow-[0_0_12px_rgba(248,113,113,0.35)]"
+          >
+            EXIT ⟶
+          </button>
+        </div>
       </div>
 
       {activeSection === "log" ? (
