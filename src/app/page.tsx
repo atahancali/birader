@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import DayModal from "@/components/DayModal";
@@ -22,6 +23,8 @@ type FavoriteBeer = {
   beer_name: string;
   rank: number;
 };
+
+type HomeSection = "log" | "social" | "heatmap" | "stats" | "recent";
 
 type BeerItem = {
   brand: string;
@@ -469,6 +472,7 @@ export default function Home() {
   const [favoriteOnSave, setFavoriteOnSave] = useState(false);
   const [favorites, setFavorites] = useState<FavoriteBeer[]>([]);
   const [replaceFavoriteRank, setReplaceFavoriteRank] = useState<number | null>(null);
+  const [activeSection, setActiveSection] = useState<HomeSection>("log");
 
   const year = useMemo(() => new Date().getFullYear(), []);
 
@@ -873,21 +877,25 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
   }
 
   return (
-    <main className="min-h-screen p-4 max-w-md mx-auto">
+    <main className="min-h-screen p-4 pb-24 max-w-md mx-auto">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Birader</h1>
-          <p className="text-sm opacity-80">
+        <div className="flex items-center gap-3">
+          <Image src="/favicon.svg" alt="Birader" width={28} height={28} className="rounded-md" />
+          <div>
+            <h1 className="text-2xl font-bold text-amber-300">Birader</h1>
+            <p className="text-sm text-amber-100/80">
             {year} (v0)
-          </p>
+            </p>
+          </div>
         </div>
         <button onClick={logout} className="text-sm underline opacity-80">
           çıkış
         </button>
       </div>
 
+      {activeSection === "log" ? (
       <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
-        <div className="text-sm opacity-80 mb-2">Bira logla</div>
+        <div className="text-sm text-amber-200 mb-2">Bira logla</div>
 
         <div className="mb-3">
           <label className="block text-xs opacity-70 mb-2">Format</label>
@@ -1033,24 +1041,30 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           Kaydet
         </button>
       </section>
+      ) : null}
 
+      {activeSection === "social" ? (
       <SocialPanel
         userId={session.user.id}
         sessionEmail={session.user.email}
         allBeerOptions={allBeerLabels}
       />
+      ) : null}
 
-      <FootballHeatmap year={year} checkins={checkins} onSelectDay={(d) => setSelectedDay(d)} />
-
-      <MonthZoom
-        open={selectedMonth !== null}
-        year={year}
-        monthIndex={selectedMonth ?? 0}
-        checkins={checkins}
-        selectedDay={selectedDay}
-        onClose={() => setSelectedMonth(null)}
-        onSelectDay={(d) => setSelectedDay(d)}
-      />
+      {activeSection === "heatmap" ? (
+        <>
+          <FootballHeatmap year={year} checkins={checkins} onSelectDay={(d) => setSelectedDay(d)} />
+          <MonthZoom
+            open={selectedMonth !== null}
+            year={year}
+            monthIndex={selectedMonth ?? 0}
+            checkins={checkins}
+            selectedDay={selectedDay}
+            onClose={() => setSelectedMonth(null)}
+            onSelectDay={(d) => setSelectedDay(d)}
+          />
+        </>
+      ) : null}
 
       <DayModal
       open={selectedDay !== null}
@@ -1090,10 +1104,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
   onDelete={deleteCheckin}
   onUpdate={updateCheckin}
 />
-
+      {activeSection === "stats" ? (
       <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="text-sm opacity-80">Puan dağılımı (0.5 adım)</div>
+          <div className="text-sm text-amber-200">Puan dağılımı (0.5 adım)</div>
           <div className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs">
             Toplam log: {ratingDistribution.total}
           </div>
@@ -1138,9 +1152,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           })}
         </div>
       </section>
-      
+      ) : null}
+
+      {activeSection === "recent" ? (
       <section className="mt-6">
-        <div className="text-sm opacity-80 mb-2">Son check-in’ler</div>
+        <div className="text-sm text-amber-200 mb-2">Son check-in’ler</div>
         <div className="space-y-2">
           {checkins.map((c) => (
             <div key={c.id} className="rounded-3xl border border-white/10 bg-white/5 p-4">
@@ -1158,6 +1174,32 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           )}
         </div>
       </section>
+      ) : null}
+
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/85 backdrop-blur-md">
+        <div className="mx-auto grid max-w-md grid-cols-5 gap-1 p-2">
+          {[
+            { key: "log", label: "Logla" },
+            { key: "social", label: "Sosyal" },
+            { key: "heatmap", label: "Harita" },
+            { key: "stats", label: "İstat" },
+            { key: "recent", label: "Sonlar" },
+          ].map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setActiveSection(item.key as HomeSection)}
+              className={`rounded-xl border px-2 py-2 text-xs ${
+                activeSection === item.key
+                  ? "border-amber-200/50 bg-amber-300/15 text-amber-200"
+                  : "border-white/10 bg-black/30 text-white/75"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </nav>
     </main>
   );
 }
