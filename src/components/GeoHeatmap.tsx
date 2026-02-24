@@ -61,6 +61,9 @@ export default function GeoHeatmap({ year, checkins }: { year: number; checkins:
     for (const c of checkins) {
       const y = new Date(c.created_at).getUTCFullYear();
       if (y !== year) continue;
+      const lat = Number(c.latitude);
+      const lng = Number(c.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
       const loc = (c.location_text || "").trim();
       if (!loc) continue;
       map.set(loc, (map.get(loc) || 0) + 1);
