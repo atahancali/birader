@@ -600,6 +600,8 @@ export default function Home() {
   const [dateISO, setDateISO] = useState(today);
   const [dateOpen, setDateOpen] = useState(false);
   const [batchBeerNames, setBatchBeerNames] = useState<string[]>([]);
+  const [batchCountInput, setBatchCountInput] = useState("1");
+  const [batchConfirmed, setBatchConfirmed] = useState(false);
   const [favoriteOnSave, setFavoriteOnSave] = useState(false);
   const [favorites, setFavorites] = useState<FavoriteBeer[]>([]);
   const [replaceFavoriteRank, setReplaceFavoriteRank] = useState<number | null>(null);
@@ -796,6 +798,14 @@ export default function Home() {
 
   useEffect(() => {
     if (!isBackDate && batchBeerNames.length) setBatchBeerNames([]);
+  }, [batchBeerNames.length, isBackDate]);
+
+  useEffect(() => {
+    if (!isBackDate) {
+      setBatchConfirmed(false);
+      return;
+    }
+    if (batchBeerNames.length <= 1) setBatchConfirmed(false);
   }, [batchBeerNames.length, isBackDate]);
 
   useEffect(() => {
@@ -1052,6 +1062,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     const name = (beerName || "").trim();
     const targets = isBackDate && batchBeerNames.length > 0 ? batchBeerNames : name ? [name] : [];
     if (!targets.length) return;
+    if (isBackDate && targets.length > 1 && !batchConfirmed) {
+      alert("Toplu kayit icin once onay kutusunu isaretle.");
+      return;
+    }
     const normalizedRating = sanitizeRating(rating);
     const normalizedPrice = sanitizePrice(priceText);
     const normalizedLocation = locationText.trim();
@@ -1100,6 +1114,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         setLogNote("");
         setDateOpen(false);
         setBatchBeerNames([]);
+        setBatchCountInput("1");
+        setBatchConfirmed(false);
         await loadCheckins();
         return;
       }
@@ -1139,6 +1155,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     setLogNote("");
     setDateOpen(false);
     setBatchBeerNames([]);
+    setBatchCountInput("1");
+    setBatchConfirmed(false);
     trackEvent({
       eventName: "checkin_added_local",
       userId: session?.user?.id ?? null,
@@ -1509,30 +1527,57 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-xs opacity-80">Eski tarih için çoklu log</div>
+                </div>
+                <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
+                  <input
+                    value={batchCountInput}
+                    onChange={(e) => setBatchCountInput(e.target.value.replace(/[^0-9]/g, ""))}
+                    inputMode="numeric"
+                    placeholder="Adet"
+                    className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+                  />
                   <button
                     type="button"
                     onClick={() => {
                       const n = (beerName || "").trim();
                       if (!n) return;
-                      setBatchBeerNames((prev) => (prev.includes(n) ? prev : [...prev, n]));
+                      const qty = Math.max(1, Math.min(50, Number(batchCountInput || "1")));
+                      setBatchBeerNames((prev) => [...prev, ...Array.from({ length: qty }, () => n)]);
+                      setBatchConfirmed(false);
                     }}
                     className="rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs"
                   >
-                    Listeye ekle
+                    {`Listeye ekle (${Math.max(1, Math.min(50, Number(batchCountInput || "1")))})`}
                   </button>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {batchBeerNames.map((b) => (
+                  {batchBeerNames.map((b, i) => (
                     <button
-                      key={b}
+                      key={`${b}-${i}`}
                       type="button"
-                      onClick={() => setBatchBeerNames((prev) => prev.filter((x) => x !== b))}
+                      onClick={() => {
+                        setBatchBeerNames((prev) => prev.filter((_, idx) => idx !== i));
+                        setBatchConfirmed(false);
+                      }}
                       className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs"
                     >
                       {b} ×
                     </button>
                   ))}
                   {!batchBeerNames.length ? <div className="text-xs opacity-60">Henüz listede bira yok.</div> : null}
+                </div>
+                {batchBeerNames.length > 1 ? (
+                  <label className="mt-3 flex items-center gap-2 text-xs opacity-85">
+                    <input
+                      type="checkbox"
+                      checked={batchConfirmed}
+                      onChange={(e) => setBatchConfirmed(e.target.checked)}
+                    />
+                    Eminim, {batchBeerNames.length} adet kaydi toplu olarak ekle
+                  </label>
+                ) : null}
+                <div className="mt-2 text-xs opacity-65">
+                  Not: Toplu kayitlar puansiz birakilip sonradan guncellenebilir.
                 </div>
               </div>
             ) : null}
@@ -1581,7 +1626,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
             <button
               onClick={addCheckin}
-              disabled={!(isBackDate ? batchBeerNames.length > 0 || !!beerName : !!beerName)}
+              disabled={
+                !(isBackDate ? batchBeerNames.length > 0 || !!beerName : !!beerName) ||
+                (isBackDate && batchBeerNames.length > 1 && !batchConfirmed)
+              }
               className="w-full rounded-2xl bg-white text-black py-3 font-semibold active:scale-[0.99] disabled:opacity-50"
             >
               {isBackDate && batchBeerNames.length > 0 ? `${batchBeerNames.length} birayı kaydet` : "Kaydet"}
