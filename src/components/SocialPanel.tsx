@@ -246,8 +246,16 @@ export default function SocialPanel({
   }, [feedItems, feedMinRating, feedQuery, feedWindow]);
 
   function markDbError(message: string) {
-    if (message.toLowerCase().includes("does not exist")) {
-      setDbError("Sosyal tablolar eksik. scripts/sql/social_analytics_schema.sql dosyasini Supabase SQL Editor'de calistir.");
+    const lower = message.toLowerCase();
+    if (
+      lower.includes("does not exist") ||
+      lower.includes("relation") ||
+      lower.includes("column") ||
+      lower.includes("policy")
+    ) {
+      setDbError(
+        "Supabase sosyal semasi guncel degil. SQL Editor'de scripts/sql/main.sql dosyasini calistirip sayfayi yenile."
+      );
       return;
     }
     setDbError(message);
@@ -388,11 +396,7 @@ export default function SocialPanel({
     if (leaderWindow === "90d") start.setDate(now.getDate() - 90);
     if (leaderWindow === "365d") start.setDate(now.getDate() - 365);
 
-    const followedIds = Array.from(followingIdsRef.current);
-    if (leaderScope === "followed" && !followedIds.length) {
-      setLeaderRows([]);
-      return;
-    }
+    const followedIds = Array.from(new Set([...followingIdsRef.current, userId]));
 
     setLeaderBusy(true);
     let query = supabase
@@ -992,11 +996,19 @@ export default function SocialPanel({
 
           <div className="mt-2 space-y-2">
             {leaderRows.map((row, idx) => (
-              <div key={row.user_id} className="flex items-center justify-between rounded-xl border border-white/10 bg-black/25 px-3 py-2">
+              <div
+                key={row.user_id}
+                className={`flex items-center justify-between rounded-xl border px-3 py-2 ${
+                  row.user_id === userId
+                    ? "border-amber-300/40 bg-amber-500/10 shadow-[0_0_0_1px_rgba(252,211,77,0.12)]"
+                    : "border-white/10 bg-black/25"
+                }`}
+              >
                 <div className="min-w-0">
                   <div className="truncate text-sm">
                     <span className="mr-2 opacity-70">#{idx + 1}</span>
                     <span>{visibleName(row)}</span>
+                    {row.user_id === userId ? <span className="ml-2 text-[11px] text-amber-200">(sen)</span> : null}
                   </div>
                   <Link href={`/u/${row.username}`} className="text-xs underline opacity-70">
                     @{row.username}
