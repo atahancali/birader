@@ -849,18 +849,24 @@ export default function Home() {
       let rank = 1;
       while (used.has(rank) && rank <= 3) rank += 1;
 
-      const { error } = await supabase.from("favorite_beers").insert({
-        user_id: session.user.id,
-        beer_name: trimmed,
-        rank,
-      });
+      const { error } = await supabase.from("favorite_beers").upsert(
+        {
+          user_id: session.user.id,
+          beer_name: trimmed,
+          rank,
+        },
+        { onConflict: "user_id,beer_name", ignoreDuplicates: true }
+      );
 
       if (error) {
         alert(error.message);
         return;
       }
 
-      setFavorites((prev) => [...prev, { beer_name: trimmed, rank }].sort((a, b) => a.rank - b.rank));
+      setFavorites((prev) => {
+        if (prev.some((f) => f.beer_name === trimmed)) return prev;
+        return [...prev, { beer_name: trimmed, rank }].sort((a, b) => a.rank - b.rank);
+      });
       trackEvent({
         eventName: "favorite_added",
         userId: session.user.id,
@@ -1126,7 +1132,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       const { error } = await supabase.from("checkins").insert(rows);
 
       if (!error) {
-        for (const beer of targets) await syncFavoriteAfterCheckin(beer);
+        const favoriteTargets = Array.from(
+          new Set(targets.map((beer) => favoriteBeerName(beer)).filter((beer): beer is string => Boolean(beer)))
+        );
+        for (const beer of favoriteTargets) await syncFavoriteAfterCheckin(beer);
         trackEvent({
           eventName: "checkin_added",
           userId: session.user.id,
