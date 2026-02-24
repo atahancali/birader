@@ -60,6 +60,27 @@ type FeedComment = {
   display_name?: string | null;
 };
 
+type CommentLikeRow = {
+  comment_id: number;
+  user_id: string;
+};
+
+type NotificationRow = {
+  id: number;
+  user_id: string;
+  actor_id: string | null;
+  type: "comment" | "mention" | "comment_like";
+  ref_id: string;
+  payload?: Record<string, any> | null;
+  is_read: boolean;
+  created_at: string;
+};
+
+type NotificationView = NotificationRow & {
+  actor_username: string;
+  actor_display_name?: string | null;
+};
+
 type ShareInviteRow = {
   id: number;
   source_checkin_id: string;
@@ -218,8 +239,16 @@ export default function SocialPanel({
   const [feedMinRating, setFeedMinRating] = useState<number>(0);
   const [feedQuery, setFeedQuery] = useState("");
   const [feedCommentsByCheckin, setFeedCommentsByCheckin] = useState<Record<string, FeedComment[]>>({});
+  const [commentLikeCountById, setCommentLikeCountById] = useState<Record<number, number>>({});
+  const [commentLikedByMe, setCommentLikedByMe] = useState<Record<number, boolean>>({});
   const [commentDraftByCheckin, setCommentDraftByCheckin] = useState<Record<string, string>>({});
   const [commentSendingFor, setCommentSendingFor] = useState<string>("");
+  const [commentLikeBusyId, setCommentLikeBusyId] = useState<number>(0);
+  const [notifications, setNotifications] = useState<NotificationView[]>([]);
+  const [notifBusy, setNotifBusy] = useState(false);
+  const [notifPanelOpen, setNotifPanelOpen] = useState(true);
+  const [notifActionBusyId, setNotifActionBusyId] = useState<number>(0);
+  const [highlightCheckinId, setHighlightCheckinId] = useState("");
   const [pendingInvites, setPendingInvites] = useState<PendingInviteView[]>([]);
   const [inviteBusyId, setInviteBusyId] = useState<number>(0);
   const [ownRecentCheckins, setOwnRecentCheckins] = useState<OwnCheckinLite[]>([]);
@@ -288,6 +317,7 @@ export default function SocialPanel({
       );
     });
   }, [feedItems, feedMinRating, feedQuery, feedWindow]);
+  const unreadNotifCount = useMemo(() => notifications.filter((n) => !n.is_read).length, [notifications]);
 
   function markDbError(message: string) {
     const lower = message.toLowerCase();
@@ -405,6 +435,9 @@ export default function SocialPanel({
     const rows = (checkinRows as FeedCheckinRow[] | null) ?? [];
     if (!rows.length) {
       setFeedItems([]);
+      setFeedCommentsByCheckin({});
+      setCommentLikeCountById({});
+      setCommentLikedByMe({});
       return;
     }
 
@@ -493,6 +526,36 @@ export default function SocialPanel({
       for (const id of ids) next[id] = grouped[id] ?? [];
       return next;
     });
+
+    const commentIds = commentRows.map((x) => Number(x.id)).filter((x) => Number.isFinite(x));
+    if (!commentIds.length) {
+      return;
+    }
+
+    const { data: likeRows, error: likeErr } = await supabase
+      .from("checkin_comment_likes")
+      .select("comment_id, user_id")
+      .in("comment_id", commentIds)
+      .limit(5000);
+
+    if (likeErr) {
+      markDbError(likeErr.message);
+      return;
+    }
+
+    const counts: Record<number, number> = {};
+    const likedMap: Record<number, boolean> = {};
+    for (const cid of commentIds) {
+      counts[cid] = 0;
+      likedMap[cid] = false;
+    }
+    for (const row of ((likeRows as CommentLikeRow[] | null) ?? [])) {
+      const cid = Number(row.comment_id);
+      counts[cid] = (counts[cid] || 0) + 1;
+      if (row.user_id === userId) likedMap[cid] = true;
+    }
+    setCommentLikeCountById((prev) => ({ ...prev, ...counts }));
+    setCommentLikedByMe((prev) => ({ ...prev, ...likedMap }));
   }
 
   async function loadPendingInvites() {
@@ -583,6 +646,95 @@ export default function SocialPanel({
     const rows = (data as OwnCheckinLite[] | null) ?? [];
     setOwnRecentCheckins(rows);
     if (!inviteSourceCheckinId && rows.length > 0) setInviteSourceCheckinId(String(rows[0].id));
+  }
+
+  async function loadNotifications() {
+    setNotifBusy(true);
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("id, user_id, actor_id, type, ref_id, payload, is_read, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(30);
+    setNotifBusy(false);
+
+    if (error) {
+      markDbError(error.message);
+      return;
+    }
+
+    const rows = (data as NotificationRow[] | null) ?? [];
+    const actorIds = Array.from(new Set(rows.map((x) => x.actor_id).filter((x): x is string => Boolean(x))));
+    let actorById = new Map<string, { username: string; display_name?: string | null }>();
+    if (actorIds.length) {
+      const { data: actorRows, error: actorErr } = await supabase
+        .from("profiles")
+        .select("user_id, username, display_name")
+        .in("user_id", actorIds);
+      if (actorErr) {
+        markDbError(actorErr.message);
+        return;
+      }
+      actorById = new Map(
+        ((actorRows as Array<{ user_id: string; username: string; display_name?: string | null }> | null) ?? []).map(
+          (x) => [x.user_id, { username: x.username, display_name: x.display_name }]
+        )
+      );
+    }
+
+    const viewRows: NotificationView[] = rows.map((n) => {
+      const actor = (n.actor_id && actorById.get(n.actor_id)) || null;
+      return {
+        ...n,
+        actor_username: actor?.username || "kullanici",
+        actor_display_name: actor?.display_name || "",
+      };
+    });
+    setNotifications(viewRows);
+  }
+
+  async function ensureFeedCheckinLoaded(checkinId: string) {
+    const exists = feedIdsRef.current.includes(checkinId);
+    if (exists) return true;
+
+    const { data: row, error } = await supabase
+      .from("checkins")
+      .select("id, user_id, beer_name, rating, created_at")
+      .eq("id", checkinId)
+      .maybeSingle();
+    if (error || !row) return false;
+
+    const checkin = row as FeedCheckinRow;
+    const { data: p, error: pErr } = await supabase
+      .from("profiles")
+      .select("user_id, username, display_name")
+      .eq("user_id", checkin.user_id)
+      .maybeSingle();
+    if (pErr) return false;
+
+    const username = (p as any)?.username || "kullanici";
+    const displayName = (p as any)?.display_name || "";
+    setFeedItems((prev) =>
+      [
+        { ...checkin, username, display_name: displayName },
+        ...prev.filter((x) => String(x.id) !== String(checkin.id)),
+      ]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 40)
+    );
+    await loadCommentsForCheckins([String(checkin.id)]);
+    return true;
+  }
+
+  async function markNotificationRead(id: number) {
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("id", id)
+      .eq("user_id", userId);
+    if (!error) {
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
+    }
   }
 
   async function loadLeaderboard() {
@@ -686,7 +838,7 @@ export default function SocialPanel({
 
     const ids = (rows as FollowRow[] | null)?.map((r) => r.following_id) ?? [];
     setFollowingIds(new Set(ids));
-    await loadFeed(ids);
+    await loadFeed(Array.from(new Set([userId, ...ids])));
 
     if (!ids.length) {
       setFollowingProfiles([]);
@@ -783,7 +935,7 @@ export default function SocialPanel({
     }
 
     await loadFollowing();
-    await Promise.all([loadOwnRecentCheckins(), loadPendingInvites()]);
+    await Promise.all([loadOwnRecentCheckins(), loadPendingInvites(), loadNotifications()]);
     setLoading(false);
   }
 
@@ -823,7 +975,7 @@ export default function SocialPanel({
         { event: "INSERT", schema: "public", table: "checkins" },
         (payload) => {
           const row = payload.new as FeedCheckinRow;
-          if (!row?.id || !followingIdsRef.current.has(row.user_id)) return;
+          if (!row?.id || (row.user_id !== userId && !followingIdsRef.current.has(row.user_id))) return;
           const profileRef = followingNameRef.current.get(row.user_id);
           setFeedItems((prev) => {
             const next = [
@@ -846,7 +998,7 @@ export default function SocialPanel({
         { event: "UPDATE", schema: "public", table: "checkins" },
         (payload) => {
           const row = payload.new as FeedCheckinRow;
-          if (!row?.id || !followingIdsRef.current.has(row.user_id)) return;
+          if (!row?.id || (row.user_id !== userId && !followingIdsRef.current.has(row.user_id))) return;
           const profileRef = followingNameRef.current.get(row.user_id);
           setFeedItems((prev) =>
             prev
@@ -869,9 +1021,36 @@ export default function SocialPanel({
         { event: "DELETE", schema: "public", table: "checkins" },
         (payload) => {
           const oldRow = payload.old as { id?: string; user_id?: string };
-          if (!oldRow?.id || !oldRow.user_id || !followingIdsRef.current.has(oldRow.user_id)) return;
+          if (
+            !oldRow?.id ||
+            !oldRow.user_id ||
+            (oldRow.user_id !== userId && !followingIdsRef.current.has(oldRow.user_id))
+          ) {
+            return;
+          }
           setFeedItems((prev) => prev.filter((x) => x.id !== oldRow.id));
           void leaderboardReloadRef.current?.();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "checkin_comment_likes" },
+        () => {
+          const ids = feedIdsRef.current;
+          if (!ids.length) return;
+          void loadCommentsForCheckins(ids);
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          void loadNotifications();
         }
       )
       .on(
@@ -1157,11 +1336,15 @@ export default function SocialPanel({
     }
 
     setCommentSendingFor(checkinId);
-    const { error } = await supabase.from("checkin_comments").insert({
-      checkin_id: checkinId,
-      user_id: userId,
-      body,
-    });
+    const { data: inserted, error } = await supabase
+      .from("checkin_comments")
+      .insert({
+        checkin_id: checkinId,
+        user_id: userId,
+        body,
+      })
+      .select("id")
+      .single();
     setCommentSendingFor("");
 
     if (error) {
@@ -1170,9 +1353,120 @@ export default function SocialPanel({
       return;
     }
 
+    const commentId = Number((inserted as { id: number } | null)?.id || 0);
+    const feedRef = feedItems.find((x) => String(x.id) === String(checkinId));
+    const recipients = new Set<string>();
+    if (feedRef?.user_id && feedRef.user_id !== userId) recipients.add(feedRef.user_id);
+
+    const mentionHandles = Array.from(
+      new Set(
+        Array.from(body.matchAll(/@([a-zA-Z0-9._-]{3,32})/g))
+          .map((m) => normalizeUsername(m[1]))
+          .filter((x) => x.length >= 3)
+      )
+    );
+    if (mentionHandles.length) {
+      const { data: mentionUsers, error: mentionErr } = await supabase
+        .from("profiles")
+        .select("user_id, username")
+        .in("username", mentionHandles)
+        .limit(40);
+      if (!mentionErr) {
+        for (const u of ((mentionUsers as Array<{ user_id: string; username: string }> | null) ?? [])) {
+          if (u.user_id !== userId) recipients.add(u.user_id);
+        }
+      }
+    }
+
+    if (recipients.size) {
+      const mentionSet = new Set<string>();
+      if (mentionHandles.length) {
+        const { data: mentionUsers } = await supabase
+          .from("profiles")
+          .select("user_id, username")
+          .in("username", mentionHandles)
+          .limit(40);
+        for (const u of ((mentionUsers as Array<{ user_id: string; username: string }> | null) ?? [])) {
+          mentionSet.add(u.user_id);
+        }
+      }
+
+      const rows = Array.from(recipients).map((rid) => ({
+        user_id: rid,
+        actor_id: userId,
+        type: mentionSet.has(rid) ? "mention" : "comment",
+        ref_id: checkinId,
+        payload: {
+          checkin_id: checkinId,
+          comment_id: commentId || null,
+          beer_name: feedRef?.beer_name || "",
+        },
+      }));
+      const { error: notifErr } = await supabase.from("notifications").insert(rows);
+      if (notifErr) markDbError(notifErr.message);
+    }
+
     setCommentDraftByCheckin((prev) => ({ ...prev, [checkinId]: "" }));
     await loadCommentsForCheckins([checkinId]);
     trackEvent({ eventName: "checkin_comment_added", userId, props: { checkin_id: checkinId } });
+  }
+
+  async function toggleCommentLike(comment: FeedComment) {
+    const liked = Boolean(commentLikedByMe[comment.id]);
+    setCommentLikeBusyId(comment.id);
+    if (liked) {
+      const { error } = await supabase
+        .from("checkin_comment_likes")
+        .delete()
+        .eq("comment_id", comment.id)
+        .eq("user_id", userId);
+      setCommentLikeBusyId(0);
+      if (error) {
+        markDbError(error.message);
+        return;
+      }
+      setCommentLikedByMe((prev) => ({ ...prev, [comment.id]: false }));
+      setCommentLikeCountById((prev) => ({ ...prev, [comment.id]: Math.max(0, Number(prev[comment.id] || 1) - 1) }));
+      return;
+    }
+
+    const { error } = await supabase.from("checkin_comment_likes").insert({
+      comment_id: comment.id,
+      user_id: userId,
+    });
+    setCommentLikeBusyId(0);
+    if (error) {
+      markDbError(error.message);
+      return;
+    }
+
+    setCommentLikedByMe((prev) => ({ ...prev, [comment.id]: true }));
+    setCommentLikeCountById((prev) => ({ ...prev, [comment.id]: Number(prev[comment.id] || 0) + 1 }));
+    if (comment.user_id !== userId) {
+      const { error: notifErr } = await supabase.from("notifications").insert({
+        user_id: comment.user_id,
+        actor_id: userId,
+        type: "comment_like",
+        ref_id: comment.checkin_id,
+        payload: { comment_id: comment.id, checkin_id: comment.checkin_id },
+      });
+      if (notifErr) markDbError(notifErr.message);
+    }
+  }
+
+  async function openNotification(item: NotificationView) {
+    setNotifActionBusyId(item.id);
+    if (!item.is_read) await markNotificationRead(item.id);
+    const payload = (item.payload || {}) as Record<string, any>;
+    const checkinId = String(payload.checkin_id || item.ref_id || "");
+    if (checkinId) {
+      setFeedWindow("all");
+      setFeedQuery("");
+      await ensureFeedCheckinLoaded(checkinId);
+      setHighlightCheckinId(checkinId);
+      setTimeout(() => setHighlightCheckinId(""), 2600);
+    }
+    setNotifActionBusyId(0);
   }
 
   async function createShareInvite() {
@@ -1280,6 +1574,59 @@ export default function SocialPanel({
       ) : null}
 
       <div className="mt-4 grid gap-3">
+        <div className="rounded-2xl border border-amber-300/20 bg-amber-500/5 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs text-amber-200/90">
+              Bildirimler {unreadNotifCount ? `(${unreadNotifCount} yeni)` : ""}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setNotifPanelOpen((v) => !v)}
+                className="rounded-lg border border-amber-300/25 bg-amber-500/10 px-2 py-1 text-[11px]"
+              >
+                {notifPanelOpen ? "Kapat" : "Ac"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void loadNotifications()}
+                className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
+              >
+                Yenile
+              </button>
+            </div>
+          </div>
+          {notifPanelOpen ? (
+            <div className="mt-2 space-y-2">
+              {notifications.map((n) => (
+                <button
+                  key={n.id}
+                  type="button"
+                  disabled={notifActionBusyId === n.id}
+                  onClick={() => void openNotification(n)}
+                  className={`w-full rounded-xl border p-2 text-left ${
+                    n.is_read
+                      ? "border-white/10 bg-black/20"
+                      : "border-amber-300/40 bg-amber-400/10 shadow-[0_0_0_1px_rgba(252,211,77,0.15)]"
+                  }`}
+                >
+                  <div className="text-xs">
+                    <span className="underline">{visibleName({ username: n.actor_username, display_name: n.actor_display_name })}</span>
+                    {n.type === "comment" ? " loguna yorum yazdi." : null}
+                    {n.type === "mention" ? " seni yorumda etiketledi." : null}
+                    {n.type === "comment_like" ? " yorumunu begendi." : null}
+                  </div>
+                  <div className="mt-1 text-[11px] opacity-65">{new Date(n.created_at).toLocaleString("tr-TR")}</div>
+                </button>
+              ))}
+              {notifBusy ? <div className="text-xs opacity-60">Bildirimler yukleniyor...</div> : null}
+              {!notifBusy && !notifications.length ? (
+                <div className="text-xs opacity-60">Bildirim yok.</div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
         <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
           <div className="text-xs opacity-70">Birlikte icildi davetleri</div>
           <div className="mt-2 space-y-2">
@@ -1480,7 +1827,14 @@ export default function SocialPanel({
 
           <div className="mt-2 space-y-2">
             {filteredFeedItems.map((item) => (
-              <div key={item.id} className="rounded-xl border border-white/10 bg-black/25 p-3">
+              <div
+                key={item.id}
+                className={`rounded-xl border p-3 ${
+                  highlightCheckinId === String(item.id)
+                    ? "border-amber-300/45 bg-amber-500/10 shadow-[0_0_0_1px_rgba(252,211,77,0.18)]"
+                    : "border-white/10 bg-black/25"
+                }`}
+              >
                 <div className="flex items-center justify-between gap-3">
                   <Link href={`/u/${item.username}`} className="text-xs underline opacity-80">
                     {visibleName(item)}
@@ -1515,10 +1869,26 @@ export default function SocialPanel({
                   <div className="mt-1 max-h-28 space-y-1 overflow-auto">
                     {(feedCommentsByCheckin[item.id] || []).map((c) => (
                       <div key={c.id} className="rounded-md border border-white/10 bg-black/25 px-2 py-1 text-[11px]">
-                        <Link href={`/u/${c.username}`} className="mr-1 underline opacity-80">
-                          {visibleName(c)}
-                        </Link>
-                        <span className="opacity-90">{c.body}</span>
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <Link href={`/u/${c.username}`} className="mr-1 underline opacity-80">
+                              {visibleName(c)}
+                            </Link>
+                            <span className="opacity-90">{c.body}</span>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={commentLikeBusyId === c.id}
+                            onClick={() => void toggleCommentLike(c)}
+                            className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] ${
+                              commentLikedByMe[c.id]
+                                ? "border-amber-300/35 bg-amber-500/15"
+                                : "border-white/15 bg-white/5"
+                            }`}
+                          >
+                            ♥ {commentLikeCountById[c.id] || 0}
+                          </button>
+                        </div>
                       </div>
                     ))}
                     {!(feedCommentsByCheckin[item.id] || []).length ? (
@@ -1531,7 +1901,7 @@ export default function SocialPanel({
                       onChange={(e) =>
                         setCommentDraftByCheckin((prev) => ({ ...prev, [item.id]: e.target.value }))
                       }
-                      placeholder="Yorum yaz..."
+                      placeholder="Yorum yaz... (mention: @kullanici)"
                       maxLength={240}
                       className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
                     />
