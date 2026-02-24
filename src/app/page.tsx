@@ -565,6 +565,7 @@ export default function Home() {
     const { data, error } = await supabase
       .from("checkins")
       .select("id, beer_name, rating, created_at, country_code, city, district, location_text, price_try, note, latitude, longitude")
+      .eq("user_id", session.user.id)
       .gte("created_at", start)
       .lt("created_at", end)
       .order("created_at", { ascending: false });
@@ -878,7 +879,7 @@ export default function Home() {
 async function deleteCheckin(id: string) {
   // Session varsa Supabase dene
   if (session?.user?.id) {
-    const { error } = await supabase.from("checkins").delete().eq("id", id);
+    const { error } = await supabase.from("checkins").delete().eq("id", id).eq("user_id", session.user.id);
     if (!error) {
       trackEvent({
         eventName: "checkin_deleted",
@@ -910,7 +911,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     const { error } = await supabase
       .from("checkins")
       .update({ beer_name: name, rating: normalizedRating })
-      .eq("id", payload.id);
+      .eq("id", payload.id)
+      .eq("user_id", session.user.id);
 
     if (!error) {
       trackEvent({
