@@ -13,6 +13,11 @@ create table if not exists public.profiles (
 
 alter table public.profiles add column if not exists avatar_path text not null default '';
 alter table public.profiles add column if not exists display_name text not null default '';
+alter table public.checkins add column if not exists location_text text not null default '';
+alter table public.checkins add column if not exists price_try numeric(10,2);
+alter table public.checkins add column if not exists note text not null default '';
+alter table public.checkins add column if not exists latitude double precision;
+alter table public.checkins add column if not exists longitude double precision;
 
 create table if not exists public.follows (
   follower_id uuid not null references auth.users(id) on delete cascade,
@@ -48,6 +53,8 @@ create index if not exists idx_profiles_username on public.profiles (username);
 create index if not exists idx_profiles_display_name on public.profiles (display_name);
 create index if not exists idx_follows_follower on public.follows (follower_id);
 create index if not exists idx_follows_following on public.follows (following_id);
+create index if not exists idx_checkins_location_text on public.checkins (location_text);
+create index if not exists idx_checkins_geo on public.checkins (latitude, longitude);
 create index if not exists idx_analytics_events_name_time on public.analytics_events (event_name, created_at desc);
 create index if not exists idx_analytics_events_user_time on public.analytics_events (user_id, created_at desc);
 

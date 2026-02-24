@@ -7,6 +7,7 @@ import DayModal from "@/components/DayModal";
 import MonthZoom from "@/components/MonthZoom";
 import FieldHeatmap from "@/components/FieldHeatmap";
 import FootballHeatmap from "@/components/FootballHeatmap";
+import GeoHeatmap from "@/components/GeoHeatmap";
 import SocialPanel from "@/components/SocialPanel";
 import { usernameFromEmail, usernameToCandidateEmails } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
@@ -17,6 +18,11 @@ type Checkin = {
   beer_name: string;
   rating: number | null;
   created_at: string;
+  location_text?: string | null;
+  price_try?: number | null;
+  note?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 type FavoriteBeer = {
@@ -165,6 +171,14 @@ function sanitizeRating(n: number | null | undefined) {
   const v = Number(n);
   if (!Number.isFinite(v)) return null;
   return clamp(v, 0, 5);
+}
+
+function sanitizePrice(input: string) {
+  const normalized = input.replace(",", ".").trim();
+  if (!normalized) return null;
+  const n = Number(normalized);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100) / 100;
 }
 
 function looksLikeEmail(input: string) {
@@ -492,6 +506,11 @@ export default function Home() {
   const [beerQuery, setBeerQuery] = useState("");
   const [beerName, setBeerName] = useState<string>("");
   const [rating, setRating] = useState<number | null>(null);
+  const [locationText, setLocationText] = useState("");
+  const [priceText, setPriceText] = useState("");
+  const [logNote, setLogNote] = useState("");
+  const [geoPoint, setGeoPoint] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [geoBusy, setGeoBusy] = useState(false);
   const [activeRatingBucket, setActiveRatingBucket] = useState<number | null>(null);
   const [dateISO, setDateISO] = useState(today);
   const [dateOpen, setDateOpen] = useState(false);
@@ -520,7 +539,7 @@ export default function Home() {
 
     const { data, error } = await supabase
       .from("checkins")
-      .select("id, beer_name, rating, created_at")
+      .select("id, beer_name, rating, created_at, location_text, price_try, note, latitude, longitude")
       .gte("created_at", start)
       .lt("created_at", end)
       .order("created_at", { ascending: false });
@@ -772,6 +791,28 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function useCurrentLocation() {
+    if (!navigator.geolocation) {
+      alert("Bu cihaz konum bilgisini desteklemiyor.");
+      return;
+    }
+    setGeoBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGeoPoint({
+          latitude: Math.round(pos.coords.latitude * 1e6) / 1e6,
+          longitude: Math.round(pos.coords.longitude * 1e6) / 1e6,
+        });
+        setGeoBusy(false);
+      },
+      (err) => {
+        alert(`Konum alinamadi: ${err.message}`);
+        setGeoBusy(false);
+      },
+      { enableHighAccuracy: false, timeout: 10000 }
+    );
+  }
+
 async function deleteCheckin(id: string) {
   // Session varsa Supabase dene
   if (session?.user?.id) {
@@ -840,6 +881,9 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     const targets = isBackDate && batchBeerNames.length > 0 ? batchBeerNames : name ? [name] : [];
     if (!targets.length) return;
     const normalizedRating = sanitizeRating(rating);
+    const normalizedPrice = sanitizePrice(priceText);
+    const normalizedLocation = locationText.trim();
+    const normalizedNote = logNote.trim();
 
     const created_at =
       dateISO === today ? new Date().toISOString() : new Date(`${dateISO}T12:00:00.000Z`).toISOString();
@@ -851,6 +895,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         beer_name: beer,
         rating: normalizedRating,
         created_at,
+        location_text: normalizedLocation || "",
+        price_try: normalizedPrice,
+        note: normalizedNote || "",
+        latitude: geoPoint?.latitude ?? null,
+        longitude: geoPoint?.longitude ?? null,
       }));
       const { error } = await supabase.from("checkins").insert(rows);
 
@@ -863,6 +912,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         });
         setDateISO(today);
         setRating(null);
+        setLocationText("");
+        setPriceText("");
+        setLogNote("");
+        setGeoPoint(null);
         setDateOpen(false);
         setBatchBeerNames([]);
         await loadCheckins();
@@ -881,6 +934,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           beer_name: beer,
           rating: normalizedRating,
           created_at,
+          location_text: normalizedLocation || "",
+          price_try: normalizedPrice,
+          note: normalizedNote || "",
+          latitude: geoPoint?.latitude ?? null,
+          longitude: geoPoint?.longitude ?? null,
         })),
         ...prev,
       ];
@@ -889,6 +947,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
     setDateISO(today);
     setRating(null);
+    setLocationText("");
+    setPriceText("");
+    setLogNote("");
+    setGeoPoint(null);
     setDateOpen(false);
     setBatchBeerNames([]);
     trackEvent({
@@ -960,7 +1022,17 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           onAdd={async ({ day, beer_name, rating }) => {
             const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
             setCheckins((prev) => [
-              { id: uuid(), beer_name, rating: sanitizeRating(rating), created_at },
+              {
+                id: uuid(),
+                beer_name,
+                rating: sanitizeRating(rating),
+                created_at,
+                location_text: "",
+                price_try: null,
+                note: "",
+                latitude: null,
+                longitude: null,
+              },
               ...prev,
           ]);
         }}
@@ -1121,6 +1193,45 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           </div>
         </div>
 
+        <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
+          <div className="text-xs opacity-80">Opsiyonel detaylar</div>
+          <div className="mt-2 grid gap-2">
+            <input
+              value={locationText}
+              onChange={(e) => setLocationText(e.target.value)}
+              placeholder="Lokasyon (örn. Kadikoy, Moda)"
+              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+            />
+            <div className="grid grid-cols-[1fr_auto] gap-2">
+              <input
+                value={priceText}
+                onChange={(e) => setPriceText(e.target.value)}
+                placeholder="Fiyat (TL)"
+                inputMode="decimal"
+                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+              />
+              <button
+                type="button"
+                onClick={useCurrentLocation}
+                disabled={geoBusy}
+                className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs"
+              >
+                {geoBusy ? "..." : "Konum al"}
+              </button>
+            </div>
+            <textarea
+              value={logNote}
+              onChange={(e) => setLogNote(e.target.value.slice(0, 220))}
+              placeholder="Yorum (konum/fiyat/atmosfer notu)"
+              rows={3}
+              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+            />
+          </div>
+          <div className="mt-2 text-xs opacity-65">
+            {geoPoint ? `Koordinat: ${geoPoint.latitude}, ${geoPoint.longitude}` : "Koordinat eklenmedi."}
+          </div>
+        </div>
+
         {isBackDate ? (
           <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
             <div className="flex items-center justify-between gap-2">
@@ -1217,6 +1328,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               <div className="text-xs opacity-70 mt-1">
                 {new Date(c.created_at).toLocaleString("tr-TR")}
               </div>
+              {c.location_text ? <div className="text-xs opacity-80 mt-1">📍 {c.location_text}</div> : null}
+              {c.price_try !== null && c.price_try !== undefined ? (
+                <div className="text-xs opacity-80 mt-1">💸 {Number(c.price_try).toFixed(2)} TL</div>
+              ) : null}
+              {c.note ? <div className="text-xs opacity-75 mt-1">{c.note}</div> : null}
             </div>
           ))}
           {checkins.length === 0 ? (
@@ -1252,6 +1368,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       {activeSection === "heatmap" ? (
         <>
           <FootballHeatmap year={year} checkins={checkins} onSelectDay={(d) => setSelectedDay(d)} />
+          <GeoHeatmap year={year} checkins={checkins} />
           <MonthZoom
             open={selectedMonth !== null}
             year={year}
@@ -1279,6 +1396,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         beer_name,
         rating: normalizedRating,
         created_at,
+        location_text: "",
+        price_try: null,
+        note: "",
+        latitude: null,
+        longitude: null,
       });
 
       if (error) {
@@ -1296,7 +1418,17 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     }
 
     setCheckins((prev) => [
-      { id: uuid(), beer_name, rating: normalizedRating, created_at },
+      {
+        id: uuid(),
+        beer_name,
+        rating: normalizedRating,
+        created_at,
+        location_text: "",
+        price_try: null,
+        note: "",
+        latitude: null,
+        longitude: null,
+      },
       ...prev,
     ]);
   }}
