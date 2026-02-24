@@ -97,6 +97,7 @@ const BEER_CATALOG: BeerItem[] = [
   { brand: "Venüs", format: "Şişe/Kutu", ml: 500 },
   { brand: "Skol", format: "Şişe/Kutu", ml: 500 },
   { brand: "Stella Artois", format: "Şişe/Kutu", ml: 330 },
+  { brand: "Stella Artois", format: "Şişe/Kutu", ml: 500 },
   { brand: "Heineken", format: "Şişe/Kutu", ml: 330 },
   { brand: "Heineken", format: "Şişe/Kutu", ml: 500 },
   { brand: "Heineken Silver", format: "Şişe/Kutu", ml: 330 },
@@ -513,8 +514,8 @@ export default function Home() {
   async function loadCheckins() {
     if (!session?.user?.id) return;
 
-    const start = new Date(year, 0, 1).toISOString();
-    const end = new Date(year + 1, 0, 1).toISOString();
+    const start = `${year}-01-01T00:00:00.000Z`;
+    const end = `${year + 1}-01-01T00:00:00.000Z`;
 
     const { data, error } = await supabase
       .from("checkins")

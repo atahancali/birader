@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import FieldHeatmap from "@/components/FieldHeatmap";
+import FootballHeatmap from "@/components/FootballHeatmap";
 import { supabase } from "@/lib/supabase";
 import { normalizeUsername } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
@@ -44,7 +44,8 @@ export default function PublicProfileView({ username }: { username: string }) {
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState<string | null>(null);
 
-  const year = useMemo(() => new Date().getFullYear(), []);
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
+  const [year, setYear] = useState(currentYear);
   const avg = useMemo(() => avgRating(checkins), [checkins]);
 
   function avatarPublicUrl(path?: string | null) {
@@ -93,8 +94,8 @@ export default function PublicProfileView({ username }: { username: string }) {
 
       setProfile(p);
 
-      const start = new Date(year, 0, 1).toISOString();
-      const end = new Date(year + 1, 0, 1).toISOString();
+      const start = `${year}-01-01T00:00:00.000Z`;
+      const end = `${year + 1}-01-01T00:00:00.000Z`;
 
       const [favoritesRes, checkinsRes, followersRes, followingRes] = await Promise.all([
         supabase
@@ -274,8 +275,21 @@ export default function PublicProfileView({ username }: { username: string }) {
       </section>
 
       <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
-        <div className="text-sm opacity-80">Isi haritasi ({year})</div>
-        <FieldHeatmap year={year} checkins={checkins} onSelectDay={() => {}} readOnly />
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="text-sm opacity-80">Isi haritasi ({year})</div>
+          <select
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value))}
+            className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
+          >
+            {[currentYear, currentYear - 1, currentYear - 2].map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+        </div>
+        <FootballHeatmap year={year} checkins={checkins} onSelectDay={() => {}} />
       </section>
 
       <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">

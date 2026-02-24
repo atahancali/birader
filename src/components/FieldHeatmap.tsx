@@ -48,7 +48,7 @@ export default function FieldHeatmap({
   // count per day
   const counts: Record<string, number> = {};
   for (const c of checkins) {
-    const day = isoLocal(new Date(c.created_at));
+    const day = c.created_at?.slice(0, 10) || isoLocal(new Date(c.created_at));
     counts[day] = (counts[day] || 0) + 1;
   }
 

@@ -62,7 +62,7 @@ export default function FootballHeatmap({
   const counts = useMemo(() => {
     const m: Record<string, number> = {};
     for (const c of checkins) {
-      const day = isoLocal(new Date(c.created_at));
+      const day = c.created_at?.slice(0, 10) || isoLocal(new Date(c.created_at));
       m[day] = (m[day] || 0) + 1;
     }
     return m;
@@ -392,4 +392,3 @@ export default function FootballHeatmap({
     </div>
   );
 }
-
