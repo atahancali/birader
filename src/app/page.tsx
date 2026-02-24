@@ -44,6 +44,7 @@ type HeaderProfile = {
 type HomeSection = "log" | "social" | "heatmap" | "stats";
 type LocationSuggestion = { city: string; district: string; score: number };
 const MAX_BULK_BACKDATE_COUNT = 10;
+const ONBOARDING_SEEN_KEY = "birader:onboarding:v1";
 
 type BeerItem = {
   brand: string;
@@ -612,6 +613,7 @@ export default function Home() {
   const [suggestionCategory, setSuggestionCategory] = useState("general");
   const [suggestionMessage, setSuggestionMessage] = useState("");
   const [suggestionBusy, setSuggestionBusy] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [recentExpandStep, setRecentExpandStep] = useState(0);
   const [headerProfile, setHeaderProfile] = useState<HeaderProfile | null>(null);
 
@@ -695,6 +697,14 @@ export default function Home() {
         });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    try {
+      const seen = localStorage.getItem(ONBOARDING_SEEN_KEY);
+      if (!seen) setOnboardingOpen(true);
+    } catch {}
   }, [session?.user?.id]);
 
   useEffect(() => {
@@ -990,6 +1000,15 @@ export default function Home() {
     setSuggestionMessage("");
     setSuggestionCategory("general");
     setSuggestionOpen(false);
+  }
+
+  function closeOnboarding(markSeen = true) {
+    if (markSeen) {
+      try {
+        localStorage.setItem(ONBOARDING_SEEN_KEY, "1");
+      } catch {}
+    }
+    setOnboardingOpen(false);
   }
 
 async function deleteCheckin(id: string) {
@@ -1312,6 +1331,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           >
             EXIT ⟶
           </button>
+          <Link
+            href="/yardim"
+            className="rounded-md border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/80"
+          >
+            Yardim
+          </Link>
         </div>
       </div>
 
@@ -1912,8 +1937,39 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         </div>
       ) : null}
 
+      {onboardingOpen ? (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/70" onClick={() => closeOnboarding(true)} />
+          <div className="absolute left-1/2 top-1/2 w-[92%] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/10 bg-black p-4">
+            <div className="text-lg font-semibold">Hizli baslangic</div>
+            <div className="mt-3 space-y-2 text-sm opacity-90">
+              <div>1. `Logla` sekmesinde adim adim bira ekle.</div>
+              <div>2. Gecmis gun icin `adet` ile toplu log at, sonra puanlari duzenle.</div>
+              <div>3. `Harita`da gun/konum yogunlugunu gor.</div>
+              <div>4. `Sosyal`de takip et, akis ve leaderboard’u kullan.</div>
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-2">
+              <Link
+                href="/yardim"
+                onClick={() => closeOnboarding(true)}
+                className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs"
+              >
+                Detayli yardim
+              </Link>
+              <button
+                type="button"
+                onClick={() => closeOnboarding(true)}
+                className="rounded-xl border border-amber-300/35 bg-amber-500/20 px-3 py-2 text-xs text-amber-100"
+              >
+                Basla
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/85 backdrop-blur-md">
-        <div className="mx-auto grid max-w-md grid-cols-4 gap-1 p-2">
+        <div className="mx-auto grid max-w-md grid-cols-5 gap-1 p-2">
           {[
             { key: "log", label: "Logla" },
             { key: "social", label: "Sosyal" },
@@ -1933,6 +1989,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               {item.label}
             </button>
           ))}
+          <Link
+            href="/yardim"
+            className="rounded-xl border border-white/10 bg-black/30 px-2 py-2 text-center text-xs text-white/75"
+          >
+            Yardım
+          </Link>
         </div>
       </nav>
     </main>
