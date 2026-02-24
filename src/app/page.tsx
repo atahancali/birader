@@ -330,6 +330,10 @@ function ComboboxBeer({
 
   const pinnedSet = new Set(shownPinned);
   const merged = [...shownPinned, ...shownOptions.filter((x) => !pinnedSet.has(x))].slice(0, 30);
+  const customCandidate = query.trim();
+  const hasExact =
+    !!customCandidate &&
+    [...options, ...pinned].some((x) => x.toLowerCase() === customCandidate.toLowerCase());
 
   return (
     <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
@@ -383,6 +387,19 @@ function ComboboxBeer({
 
       {open && (
         <div className="mt-3 max-h-64 overflow-auto rounded-xl border border-white/10 bg-black/60 p-2">
+          {customCandidate && !hasExact ? (
+            <button
+              type="button"
+              onClick={() => {
+                onChange(customCandidate);
+                setQuery(customCandidate);
+                setOpen(false);
+              }}
+              className="mb-2 w-full rounded-lg border border-amber-300/30 bg-amber-500/10 px-2 py-2 text-left text-sm"
+            >
+              Listede yok, bunu kullan: {customCandidate}
+            </button>
+          ) : null}
           {merged.length === 0 ? (
             <div className="px-2 py-2 text-sm opacity-60">Sonuç yok.</div>
           ) : (
@@ -531,6 +548,7 @@ export default function Home() {
   const [rating, setRating] = useState<number | null>(null);
   const [city, setCity] = useState<string>(TURKEY_CITIES[39] ?? "Istanbul");
   const [district, setDistrict] = useState<string>("");
+  const [customDistrict, setCustomDistrict] = useState("");
   const [locationSuggestQuery, setLocationSuggestQuery] = useState("");
   const [locationText, setLocationText] = useState("");
   const [priceText, setPriceText] = useState("");
@@ -550,6 +568,10 @@ export default function Home() {
   const year = useMemo(() => new Date().getFullYear(), []);
   const isBackDate = dateISO !== today;
   const districtOptions = useMemo(() => districtsForCity(city), [city]);
+  const resolvedDistrict = useMemo(
+    () => (district === "Diger" ? customDistrict.trim() : district.trim()),
+    [customDistrict, district]
+  );
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -739,6 +761,10 @@ export default function Home() {
     }
   }, [district, districtOptions]);
 
+  useEffect(() => {
+    if (district !== "Diger" && customDistrict) setCustomDistrict("");
+  }, [customDistrict, district]);
+
   async function syncFavoriteAfterCheckin(beer: string) {
     if (!session?.user?.id || !favoriteOnSave) return;
     const trimmed = favoriteBeerName(beer);
@@ -815,7 +841,9 @@ export default function Home() {
 
   const locationSuggestions = useMemo<LocationSuggestion[]>(() => {
     const staticPairs = TURKEY_CITIES.flatMap((c) =>
-      districtsForCity(c).map((d) => ({ city: c, district: d, base: 1 }))
+      districtsForCity(c)
+        .filter((d) => d !== "Diger")
+        .map((d) => ({ city: c, district: d, base: 1 }))
     );
 
     const personalPairCounts = new Map<string, number>();
@@ -951,7 +979,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     const normalizedLocation = locationText.trim();
     const normalizedNote = logNote.trim();
     const normalizedCity = city.trim();
-    const normalizedDistrict = district.trim();
+    const normalizedDistrict = resolvedDistrict;
+    if (!normalizedDistrict) {
+      alert("Ilce sec veya Diger icin ilce adini yaz.");
+      return;
+    }
 
     const created_at =
       dateISO === today ? new Date().toISOString() : new Date(`${dateISO}T12:00:00.000Z`).toISOString();
@@ -984,6 +1016,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         setDateISO(today);
         setRating(null);
         setLogStep(1);
+        setCustomDistrict("");
         setLocationText("");
         setPriceText("");
         setLogNote("");
@@ -1022,6 +1055,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     setDateISO(today);
     setRating(null);
     setLogStep(1);
+    setCustomDistrict("");
     setLocationText("");
     setPriceText("");
     setLogNote("");
@@ -1103,7 +1137,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 created_at,
                 country_code: "TR",
                 city,
-                district,
+                district: resolvedDistrict,
                 location_text: "",
                 price_try: null,
                 note: "",
@@ -1325,18 +1359,33 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       <button
                         key={`${s.city}-${s.district}`}
                         type="button"
-                        onClick={() => {
-                          setCity(s.city);
-                          setDistrict(s.district);
-                          setLocationSuggestQuery(`${s.city} / ${s.district}`);
-                        }}
-                        className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs"
-                      >
-                        {s.city} / {s.district}
-                      </button>
-                    ))}
-                  </div>
+                    onClick={() => {
+                      setCity(s.city);
+                      const opts = districtsForCity(s.city);
+                      if (opts.includes(s.district)) {
+                        setDistrict(s.district);
+                        setCustomDistrict("");
+                      } else {
+                        setDistrict("Diger");
+                        setCustomDistrict(s.district);
+                      }
+                      setLocationSuggestQuery(`${s.city} / ${s.district}`);
+                    }}
+                      className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs"
+                    >
+                      {s.city} / {s.district}
+                    </button>
+                  ))}
                 </div>
+              </div>
+                {district === "Diger" ? (
+                  <input
+                    value={customDistrict}
+                    onChange={(e) => setCustomDistrict(e.target.value)}
+                    placeholder="Ilce adini yaz"
+                    className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+                  />
+                ) : null}
                 <input
                   value={locationText}
                   onChange={(e) => setLocationText(e.target.value)}
@@ -1402,7 +1451,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               <div className="mt-1 text-xs opacity-75">Format: {format}</div>
               <div className="text-xs opacity-75">Tarih: {dateISO}</div>
               <div className="text-xs opacity-75">Puan: {rating === null ? "Puansız" : `${rating}⭐`}</div>
-              <div className="text-xs opacity-75">Konum: {city}{district ? ` / ${district}` : ""}</div>
+              <div className="text-xs opacity-75">Konum: {city}{resolvedDistrict ? ` / ${resolvedDistrict}` : ""}</div>
             </div>
 
             <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
@@ -1552,7 +1601,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         created_at,
         country_code: "TR",
         city,
-        district,
+        district: resolvedDistrict,
         location_text: "",
         price_try: null,
         note: "",
@@ -1582,7 +1631,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         created_at,
         country_code: "TR",
         city,
-        district,
+        district: resolvedDistrict,
         location_text: "",
         price_try: null,
         note: "",
