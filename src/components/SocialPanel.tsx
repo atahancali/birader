@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { normalizeUsername, usernameFromEmail } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
+import { favoriteBeerName } from "@/lib/beer";
 
 type ProfileRow = {
   user_id: string;
@@ -32,6 +33,65 @@ type CheckinRow = {
   rating: number;
 };
 
+const KEYBOARD_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
+
+function keyboardNeighborMap() {
+  const map = new Map<string, Set<string>>();
+
+  function ensure(ch: string) {
+    if (!map.has(ch)) map.set(ch, new Set<string>());
+    return map.get(ch)!;
+  }
+
+  for (let r = 0; r < KEYBOARD_ROWS.length; r += 1) {
+    const row = KEYBOARD_ROWS[r];
+    for (let c = 0; c < row.length; c += 1) {
+      const ch = row[c];
+      const bucket = ensure(ch);
+      for (let rr = Math.max(0, r - 1); rr <= Math.min(KEYBOARD_ROWS.length - 1, r + 1); rr += 1) {
+        const nearRow = KEYBOARD_ROWS[rr];
+        for (let cc = Math.max(0, c - 1); cc <= Math.min(nearRow.length - 1, c + 1); cc += 1) {
+          const near = nearRow[cc];
+          if (near !== ch) bucket.add(near);
+        }
+      }
+    }
+  }
+
+  return map;
+}
+
+const NEIGHBORS = keyboardNeighborMap();
+
+function substitutionCost(a: string, b: string) {
+  if (a === b) return 0;
+  const n = NEIGHBORS.get(a);
+  if (n?.has(b)) return 0.35;
+  return 1;
+}
+
+function typoDistance(aRaw: string, bRaw: string) {
+  const a = aRaw.toLowerCase();
+  const b = bRaw.toLowerCase();
+  const dp: number[][] = Array.from({ length: a.length + 1 }, () =>
+    Array.from({ length: b.length + 1 }, () => 0)
+  );
+
+  for (let i = 0; i <= a.length; i += 1) dp[i][0] = i;
+  for (let j = 0; j <= b.length; j += 1) dp[0][j] = j;
+
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = 1; j <= b.length; j += 1) {
+      const del = dp[i - 1][j] + 1;
+      const ins = dp[i][j - 1] + 1;
+      const sub = dp[i - 1][j - 1] + substitutionCost(a[i - 1], b[j - 1]);
+      dp[i][j] = Math.min(del, ins, sub);
+    }
+  }
+
+  return dp[a.length][b.length];
+}
+
 function averageRating(checkins: CheckinRow[]) {
   if (!checkins.length) return 0;
   const sum = checkins.reduce((acc, c) => acc + Number(c.rating || 0), 0);
@@ -41,7 +101,7 @@ function averageRating(checkins: CheckinRow[]) {
 function topBeers(checkins: CheckinRow[], limit = 12) {
   const counts: Record<string, number> = {};
   for (const c of checkins) {
-    const key = (c.beer_name || "").trim();
+    const key = favoriteBeerName(c.beer_name || "");
     if (!key) continue;
     counts[key] = (counts[key] || 0) + 1;
   }
@@ -93,7 +153,7 @@ export default function SocialPanel({
   const topBeerOptions = useMemo(() => topBeers(checkins, 16), [checkins]);
   const favoriteOptionPool = useMemo(() => {
     const seen = new Set<string>();
-    const merged = [...topBeerOptions, ...allBeerOptions];
+    const merged = [...topBeerOptions, ...allBeerOptions].map((name) => favoriteBeerName(name));
     const unique: string[] = [];
     for (const name of merged) {
       const key = name.trim();
@@ -103,7 +163,10 @@ export default function SocialPanel({
     }
     return unique;
   }, [allBeerOptions, topBeerOptions]);
-  const favoriteNames = useMemo(() => new Set(favorites.map((f) => f.beer_name)), [favorites]);
+  const favoriteNames = useMemo(
+    () => new Set(favorites.map((f) => favoriteBeerName(f.beer_name))),
+    [favorites]
+  );
   const filteredFavoriteOptions = useMemo(() => {
     const q = favoriteQuery.trim().toLowerCase();
     const pool = favoriteOptionPool.filter((name) => !favoriteNames.has(name));
@@ -227,7 +290,11 @@ export default function SocialPanel({
     if (favoritesRes.error) {
       markDbError(favoritesRes.error.message);
     } else {
-      setFavorites((favoritesRes.data as FavoriteBeerRow[] | null) ?? []);
+      const normalized = ((favoritesRes.data as FavoriteBeerRow[] | null) ?? []).map((f) => ({
+        ...f,
+        beer_name: favoriteBeerName(f.beer_name),
+      }));
+      setFavorites(normalized);
     }
 
     if (checkinsRes.error) {
@@ -281,7 +348,7 @@ export default function SocialPanel({
   }
 
   async function addFavorite() {
-    const beer = addingFavorite.trim();
+    const beer = favoriteBeerName(addingFavorite.trim());
     if (!beer) return;
     if (favoriteNames.has(beer)) return;
     if (favorites.length >= 3) {
@@ -335,7 +402,7 @@ export default function SocialPanel({
 
   async function searchUsers() {
     const q = normalizeUsername(searchQuery);
-    if (q.length < 2) {
+    if (q.length < 3) {
       setSearchResults([]);
       return;
     }
@@ -344,11 +411,10 @@ export default function SocialPanel({
     const { data, error } = await supabase
       .from("profiles")
       .select("user_id, username, bio, is_public")
-      .ilike("username", `%${q}%`)
       .neq("user_id", userId)
       .eq("is_public", true)
       .order("username", { ascending: true })
-      .limit(12);
+      .limit(300);
     setSearchBusy(false);
 
     if (error) {
@@ -356,7 +422,27 @@ export default function SocialPanel({
       return;
     }
 
-    setSearchResults((data as SearchProfile[] | null) ?? []);
+    const rows = (data as SearchProfile[] | null) ?? [];
+    const scored = rows
+      .map((p) => {
+        const uname = normalizeUsername(p.username);
+        const dist = typoDistance(q, uname);
+        const contains = uname.includes(q);
+        const starts = uname.startsWith(q);
+        const threshold = Math.max(1.4, Math.floor(q.length / 3));
+        return { p, dist, contains, starts, pass: contains || dist <= threshold };
+      })
+      .filter((x) => x.pass)
+      .sort((a, b) => {
+        if (a.starts !== b.starts) return a.starts ? -1 : 1;
+        if (a.contains !== b.contains) return a.contains ? -1 : 1;
+        if (a.dist !== b.dist) return a.dist - b.dist;
+        return a.p.username.localeCompare(b.p.username, "tr");
+      })
+      .slice(0, 12)
+      .map((x) => x.p);
+
+    setSearchResults(scored);
     trackEvent({ eventName: "profile_search", userId, props: { query: q } });
   }
 

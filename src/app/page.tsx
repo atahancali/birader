@@ -9,6 +9,7 @@ import FootballHeatmap from "@/components/FootballHeatmap";
 import SocialPanel from "@/components/SocialPanel";
 import { usernameToCandidateEmails } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
+import { favoriteBeerName } from "@/lib/beer";
 
 type Checkin = {
   id: string;
@@ -129,6 +130,10 @@ function uuid() {
 
 function beerLabel(b: BeerItem) {
   return `${b.brand} — ${b.format} — ${b.ml}ml`;
+}
+
+function beerStyleLabel(b: BeerItem) {
+  return `${b.brand} — ${b.format}`;
 }
 
 function isoTodayLocal() {
@@ -505,7 +510,11 @@ export default function Home() {
       console.error(error);
       return;
     }
-    setFavorites((data as FavoriteBeer[] | null) ?? []);
+    const normalized = ((data as FavoriteBeer[] | null) ?? []).map((f) => ({
+      ...f,
+      beer_name: favoriteBeerName(f.beer_name),
+    }));
+    setFavorites(normalized);
   }
 
   useEffect(() => {
@@ -601,7 +610,9 @@ export default function Home() {
   }, [format]);
 
   const allBeerLabels = useMemo(() => {
-    return BEER_CATALOG.map(beerLabel).sort((a, b) => a.localeCompare(b, "tr"));
+    return Array.from(new Set(BEER_CATALOG.map(beerStyleLabel))).sort((a, b) =>
+      a.localeCompare(b, "tr")
+    );
   }, []);
 
   useEffect(() => {
@@ -615,7 +626,7 @@ export default function Home() {
 
   async function syncFavoriteAfterCheckin(beer: string) {
     if (!session?.user?.id || !favoriteOnSave) return;
-    const trimmed = beer.trim();
+    const trimmed = favoriteBeerName(beer);
     if (!trimmed) return;
 
     const alreadyFavorite = favorites.some((f) => f.beer_name === trimmed);
@@ -672,6 +683,8 @@ export default function Home() {
       props: { old_beer_name: target.beer_name, new_beer_name: trimmed, rank: rankToReplace },
     });
   }
+
+  const favoriteCandidate = useMemo(() => favoriteBeerName(beerName), [beerName]);
 
 async function deleteCheckin(id: string) {
   // Session varsa Supabase dene
@@ -984,7 +997,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
           {favoriteOnSave ? (
             <div className="mt-2 text-xs opacity-70">
-              {favorites.some((f) => f.beer_name === beerName)
+              {favorites.some((f) => f.beer_name === favoriteCandidate)
                 ? "Bu bira zaten favorilerinde."
                 : favorites.length < 3
                   ? `Favori listene eklenecek (${favorites.length}/3).`
@@ -992,7 +1005,9 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             </div>
           ) : null}
 
-          {favoriteOnSave && favorites.length >= 3 && !favorites.some((f) => f.beer_name === beerName) ? (
+          {favoriteOnSave &&
+          favorites.length >= 3 &&
+          !favorites.some((f) => f.beer_name === favoriteCandidate) ? (
             <div className="mt-2">
               <label className="mb-1 block text-xs opacity-70">Degisecek favori</label>
               <select
