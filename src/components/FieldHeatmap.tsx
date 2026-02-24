@@ -38,10 +38,12 @@ export default function FieldHeatmap({
   year,
   checkins,
   onSelectDay,
+  readOnly = false,
 }: {
   year: number;
   checkins: CheckinLite[];
   onSelectDay: (isoDay: string) => void;
+  readOnly?: boolean;
 }) {
   // count per day
   const counts: Record<string, number> = {};
@@ -94,10 +96,10 @@ export default function FieldHeatmap({
               ))}
             </div>
 
-            <div className="overflow-hidden">
+            <div>
               {/* actual grid */}
               <div
-                className="grid"
+                className="grid min-w-max"
                 style={{ gridTemplateColumns: `repeat(${maxWeek + 1}, 18px)` }}
               >
                 {Array.from({ length: maxWeek + 1 }).map((_, col) => (
@@ -110,12 +112,12 @@ export default function FieldHeatmap({
                         <button
                           key={`${row}-${col}`}
                           disabled={!iso}
-                          onClick={() => iso && onSelectDay(iso)}
+                          onClick={() => !readOnly && iso && onSelectDay(iso)}
                           title={iso ? `${iso} • ${count} bira` : ""}
                           className={[
                             "h-5 w-[18px] rounded border border-white/10",
                             iso ? colorByCount(count) : "bg-transparent border-transparent",
-                            iso ? "active:scale-[0.98]" : "",
+                            iso && !readOnly ? "active:scale-[0.98]" : "",
                           ].join(" ")}
                         />
                       );
@@ -127,11 +129,10 @@ export default function FieldHeatmap({
           </div>
 
           <div className="mt-3 text-xs opacity-60">
-            İpucu: sağa kaydır. Hücreye dokun → gün detayı.
+            {readOnly ? "İpucu: sağa kaydır." : "İpucu: sağa kaydır. Hücreye dokun → gün detayı."}
           </div>
         </div>
       </div>
     </div>
   );
 }
-

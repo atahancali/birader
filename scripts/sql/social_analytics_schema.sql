@@ -20,11 +20,16 @@ create table if not exists public.follows (
 create table if not exists public.favorite_beers (
   user_id uuid not null references auth.users(id) on delete cascade,
   beer_name text not null,
-  rank smallint not null check (rank between 1 and 6),
+  rank smallint not null check (rank between 1 and 3),
   created_at timestamptz not null default now(),
   primary key (user_id, rank),
   unique (user_id, beer_name)
 );
+
+alter table public.favorite_beers drop constraint if exists favorite_beers_rank_check;
+delete from public.favorite_beers where rank > 3;
+alter table public.favorite_beers
+add constraint favorite_beers_rank_check check (rank between 1 and 3);
 
 create table if not exists public.analytics_events (
   id bigserial primary key,

@@ -55,9 +55,11 @@ function topBeers(checkins: CheckinRow[], limit = 12) {
 export default function SocialPanel({
   userId,
   sessionEmail,
+  allBeerOptions,
 }: {
   userId: string;
   sessionEmail?: string | null;
+  allBeerOptions: string[];
 }) {
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
@@ -87,6 +89,18 @@ export default function SocialPanel({
 
   const avg = useMemo(() => averageRating(checkins), [checkins]);
   const topBeerOptions = useMemo(() => topBeers(checkins, 16), [checkins]);
+  const favoriteOptionPool = useMemo(() => {
+    const seen = new Set<string>();
+    const merged = [...topBeerOptions, ...allBeerOptions];
+    const unique: string[] = [];
+    for (const name of merged) {
+      const key = name.trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      unique.push(key);
+    }
+    return unique;
+  }, [allBeerOptions, topBeerOptions]);
   const favoriteNames = useMemo(() => new Set(favorites.map((f) => f.beer_name)), [favorites]);
 
   function markDbError(message: string) {
@@ -262,14 +276,14 @@ export default function SocialPanel({
     const beer = addingFavorite.trim();
     if (!beer) return;
     if (favoriteNames.has(beer)) return;
-    if (favorites.length >= 6) {
-      alert("En fazla 6 favori ekleyebilirsin.");
+    if (favorites.length >= 3) {
+      alert("En fazla 3 favori ekleyebilirsin.");
       return;
     }
 
     const usedRanks = new Set(favorites.map((f) => Number(f.rank)));
     let rank = 1;
-    while (usedRanks.has(rank) && rank <= 6) rank += 1;
+    while (usedRanks.has(rank) && rank <= 3) rank += 1;
 
     const { error } = await supabase.from("favorite_beers").insert({
       user_id: userId,
@@ -446,7 +460,7 @@ export default function SocialPanel({
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-          <div className="text-xs opacity-70">Favoriler (en fazla 6)</div>
+          <div className="text-xs opacity-70">Favoriler (en fazla 3)</div>
           <div className="mt-2 flex flex-wrap gap-2">
             {favorites.map((f) => (
               <button
@@ -469,7 +483,7 @@ export default function SocialPanel({
               className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
             >
               <option value="">Bira sec...</option>
-              {topBeerOptions
+              {favoriteOptionPool
                 .filter((name) => !favoriteNames.has(name))
                 .map((name) => (
                   <option key={name} value={name}>

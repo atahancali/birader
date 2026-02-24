@@ -255,7 +255,7 @@ export default function PublicProfileView({ username }: { username: string }) {
 
       <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
         <div className="text-sm opacity-80">Isi haritasi ({year})</div>
-        <FieldHeatmap year={year} checkins={checkins} onSelectDay={() => {}} />
+        <FieldHeatmap year={year} checkins={checkins} onSelectDay={() => {}} readOnly />
       </section>
 
       <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">

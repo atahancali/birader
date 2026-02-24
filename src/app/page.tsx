@@ -561,6 +561,10 @@ export default function Home() {
       .sort((a, b) => a.localeCompare(b, "tr"));
   }, [format]);
 
+  const allBeerLabels = useMemo(() => {
+    return BEER_CATALOG.map(beerLabel).sort((a, b) => a.localeCompare(b, "tr"));
+  }, []);
+
   useEffect(() => {
     // ensure beerName is valid when format changes
     const pinned = topBeerLabelsByFormat[format] ?? [];
@@ -877,7 +881,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         </button>
       </section>
 
-      <SocialPanel userId={session.user.id} sessionEmail={session.user.email} />
+      <SocialPanel
+        userId={session.user.id}
+        sessionEmail={session.user.email}
+        allBeerOptions={allBeerLabels}
+      />
 
       <FootballHeatmap year={year} checkins={checkins} onSelectDay={(d) => setSelectedDay(d)} />
 
