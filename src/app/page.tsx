@@ -1971,7 +1971,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/85 backdrop-blur-md">
         <div className="mx-auto grid max-w-md grid-cols-5 gap-1 p-2">
           {[
-            { key: "log", label: "Logla" },
+            { key: "log", label: "Log" },
             { key: "social", label: "Sosyal" },
             { key: "heatmap", label: "Harita" },
             { key: "stats", label: "İstat" },
