@@ -1238,6 +1238,13 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           open={selectedDay !== null}
           day={selectedDay ?? ""}
           checkins={dayCheckins}
+          beerOptions={allBeerLabels}
+          onOpenLogForDay={(d) => {
+            setDateISO(d);
+            setActiveSection("log");
+            setLogStep(2);
+            setSelectedDay(null);
+          }}
           onClose={() => setSelectedDay(null)}
           onAdd={async ({ day, beer_name, rating }) => {
             const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
@@ -1734,6 +1741,13 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       open={selectedDay !== null}
       day={selectedDay ?? ""}
       checkins={dayCheckins}
+      beerOptions={allBeerLabels}
+      onOpenLogForDay={(d) => {
+        setDateISO(d);
+        setActiveSection("log");
+        setLogStep(2);
+        setSelectedDay(null);
+      }}
       onClose={() => setSelectedDay(null)}
       onAdd={async ({ day, beer_name, rating }) => {
         const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();

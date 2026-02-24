@@ -15,18 +15,22 @@ export default function DayModal({
   open,
   day,
   checkins,
+  beerOptions = [],
   onClose,
   onAdd,
   onDelete,
   onUpdate,
+  onOpenLogForDay,
 }: {
   open: boolean;
   day: string;
   checkins: Checkin[];
+  beerOptions?: string[];
   onClose: () => void;
   onAdd: (payload: { day: string; beer_name: string; rating: number | null }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onUpdate: (payload: { id: string; beer_name: string; rating: number | null }) => Promise<void>;
+  onOpenLogForDay?: (day: string) => void;
 }) {
   // add form
   const [beerName, setBeerName] = useState("");
@@ -126,14 +130,31 @@ export default function DayModal({
 
         {/* ADD FORM */}
         <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3">
-          <div className="text-xs opacity-70 mb-2">Bu güne bira ekle</div>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="text-xs opacity-70">Bu güne bira ekle</div>
+            {onOpenLogForDay ? (
+              <button
+                type="button"
+                onClick={() => onOpenLogForDay(day)}
+                className="rounded-xl border border-white/10 bg-black/20 px-2 py-1 text-[11px]"
+              >
+                Secimli ekrana git
+              </button>
+            ) : null}
+          </div>
 
           <input
             value={beerName}
             onChange={(e) => setBeerName(e.target.value)}
             placeholder="Bira adı"
+            list="daymodal-beer-options"
             className="w-full rounded-2xl bg-black/20 border border-white/10 px-3 py-3 outline-none"
           />
+          <datalist id="daymodal-beer-options">
+            {beerOptions.slice(0, 250).map((b) => (
+              <option key={b} value={b} />
+            ))}
+          </datalist>
 
           <button
             type="button"
