@@ -76,6 +76,7 @@ const BEER_CATALOG: BeerItem[] = [
   { brand: "Stella Artois", format: "Fici", ml: 500 },
   { brand: "Guinness", format: "Fici", ml: 500 },
   { brand: "Hoegaarden", format: "Fici", ml: 500 },
+  { brand: "1664 Blanc", format: "Fici", ml: 500 },
   { brand: "Paulaner Hefe Weissbier", format: "Fici", ml: 500 },
   { brand: "Erdinger Weissbier", format: "Fici", ml: 500 },
 
@@ -125,6 +126,7 @@ const BEER_CATALOG: BeerItem[] = [
   { brand: "Duvel", format: "Şişe/Kutu", ml: 330 },
   { brand: "Guinness", format: "Şişe/Kutu", ml: 440 },
   { brand: "Hoegaarden", format: "Şişe/Kutu", ml: 330 },
+  { brand: "1664 Blanc", format: "Şişe/Kutu", ml: 330 },
   { brand: "Paulaner Hefe Weissbier", format: "Şişe/Kutu", ml: 500 },
   { brand: "Erdinger Weissbier", format: "Şişe/Kutu", ml: 500 },
   { brand: "Weihenstephaner Hefe Weissbier", format: "Şişe/Kutu", ml: 500 },
