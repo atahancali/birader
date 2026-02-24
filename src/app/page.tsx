@@ -15,7 +15,7 @@ import { favoriteBeerName } from "@/lib/beer";
 type Checkin = {
   id: string;
   beer_name: string;
-  rating: number;
+  rating: number | null;
   created_at: string;
 };
 
@@ -58,6 +58,7 @@ const BEER_CATALOG: BeerItem[] = [
   { brand: "Heineken", format: "Fici", ml: 500 },
   { brand: "Corona Extra", format: "Fici", ml: 500 },
   { brand: "Leffe Blonde", format: "Fici", ml: 500 },
+  { brand: "Stella Artois", format: "Fici", ml: 500 },
   { brand: "Guinness", format: "Fici", ml: 500 },
   { brand: "Hoegaarden", format: "Fici", ml: 500 },
   { brand: "Paulaner Hefe Weissbier", format: "Fici", ml: 500 },
@@ -95,6 +96,7 @@ const BEER_CATALOG: BeerItem[] = [
   { brand: "Troy", format: "Şişe/Kutu", ml: 500 },
   { brand: "Venüs", format: "Şişe/Kutu", ml: 500 },
   { brand: "Skol", format: "Şişe/Kutu", ml: 500 },
+  { brand: "Stella Artois", format: "Şişe/Kutu", ml: 330 },
   { brand: "Heineken", format: "Şişe/Kutu", ml: 330 },
   { brand: "Heineken", format: "Şişe/Kutu", ml: 500 },
   { brand: "Heineken Silver", format: "Şişe/Kutu", ml: 330 },
@@ -156,6 +158,13 @@ function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
+function sanitizeRating(n: number | null | undefined) {
+  if (n === null || n === undefined) return null;
+  const v = Number(n);
+  if (!Number.isFinite(v)) return null;
+  return clamp(v, 0, 5);
+}
+
 function looksLikeEmail(input: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.trim().toLowerCase());
 }
@@ -185,12 +194,13 @@ function StarRatingHalf({
   onChange,
   max = 5,
 }: {
-  value: number;
-  onChange: (v: number) => void;
+  value: number | null;
+  onChange: (v: number | null) => void;
   max?: number;
 }) {
   const [hover, setHover] = useState<number | null>(null);
-  const display = hover ?? value;
+  const safeValue = value ?? 0;
+  const display = hover ?? safeValue;
 
   function getFillRatio(starIndex1toN: number) {
     const fullBefore = starIndex1toN - 1;
@@ -211,7 +221,7 @@ function StarRatingHalf({
     const x = e.clientX - rect.left;
     const half = x < rect.width / 2 ? 0.5 : 1;
     const v = star - 1 + half;
-    onChange(v === value ? 0 : v);
+    onChange(v === safeValue ? null : v);
   }
 
   return (
@@ -236,7 +246,7 @@ function StarRatingHalf({
               onClick={(e) => commit(e, star)}
               aria-label={`${star} star`}
               role="radio"
-              aria-checked={value >= star}
+              aria-checked={safeValue >= star}
             >
               <div
                 className={
@@ -250,7 +260,7 @@ function StarRatingHalf({
         })}
       </div>
       <div className="text-sm opacity-70 w-14 text-right">
-        {value ? value.toFixed(1) : "—"}
+        {value !== null ? value.toFixed(1) : "—"}
       </div>
     </div>
   );
@@ -479,10 +489,11 @@ export default function Home() {
   const [format, setFormat] = useState<BeerItem["format"]>("Fici");
   const [beerQuery, setBeerQuery] = useState("");
   const [beerName, setBeerName] = useState<string>("");
-  const [rating, setRating] = useState(3.5);
+  const [rating, setRating] = useState<number | null>(null);
   const [activeRatingBucket, setActiveRatingBucket] = useState<number | null>(null);
   const [dateISO, setDateISO] = useState(today);
   const [dateOpen, setDateOpen] = useState(false);
+  const [batchBeerNames, setBatchBeerNames] = useState<string[]>([]);
   const [favoriteOnSave, setFavoriteOnSave] = useState(false);
   const [favorites, setFavorites] = useState<FavoriteBeer[]>([]);
   const [replaceFavoriteRank, setReplaceFavoriteRank] = useState<number | null>(null);
@@ -491,6 +502,7 @@ export default function Home() {
   const [headerProfile, setHeaderProfile] = useState<HeaderProfile | null>(null);
 
   const year = useMemo(() => new Date().getFullYear(), []);
+  const isBackDate = dateISO !== today;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -602,9 +614,10 @@ export default function Home() {
 
   const ratingDistribution = useMemo(() => {
     const buckets = ratingSteps.map((r) => ({ rating: r, count: 0, percent: 0 }));
-    const total = checkins.length;
+    const ratedCheckins = checkins.filter((c) => c.rating !== null && c.rating !== undefined);
+    const total = ratedCheckins.length;
 
-    for (const c of checkins) {
+    for (const c of ratedCheckins) {
       const raw = Number(c.rating ?? 0);
       const normalized = Math.round(clamp(raw, 0, 5) * 2) / 2;
       const idx = Math.round(normalized * 2);
@@ -661,6 +674,10 @@ export default function Home() {
     if (!beerName || !all.includes(beerName)) setBeerName(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [format, beerLabelsForFormat.length]);
+
+  useEffect(() => {
+    if (!isBackDate && batchBeerNames.length) setBatchBeerNames([]);
+  }, [batchBeerNames.length, isBackDate]);
 
   async function syncFavoriteAfterCheckin(beer: string) {
     if (!session?.user?.id || !favoriteOnSave) return;
@@ -745,7 +762,8 @@ export default function Home() {
 
     setBeerName(incomingBeer);
     setBeerQuery(incomingBeer);
-    setRating(Math.round(clamp(Number(payload.rating || 0), 0, 5) * 2) / 2);
+    const nextRating = Number(payload.rating || 0);
+    setRating(nextRating > 0 ? Math.round(clamp(nextRating, 0, 5) * 2) / 2 : null);
     setActiveSection("log");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -775,22 +793,23 @@ async function deleteCheckin(id: string) {
   });
 }
 
-async function updateCheckin(payload: { id: string; beer_name: string; rating: number }) {
+async function updateCheckin(payload: { id: string; beer_name: string; rating: number | null }) {
   const name = payload.beer_name.trim();
   if (!name) return;
+  const normalizedRating = sanitizeRating(payload.rating);
 
   // Session varsa Supabase dene
   if (session?.user?.id) {
     const { error } = await supabase
       .from("checkins")
-      .update({ beer_name: name, rating: clamp(payload.rating, 0, 5) })
+      .update({ beer_name: name, rating: normalizedRating })
       .eq("id", payload.id);
 
     if (!error) {
       trackEvent({
         eventName: "checkin_updated",
         userId: session.user.id,
-        props: { id: payload.id, rating: clamp(payload.rating, 0, 5) },
+        props: { id: payload.id, rating: normalizedRating },
       });
       await loadCheckins();
       return;
@@ -802,42 +821,46 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
   setCheckins((prev) =>
     prev.map((x) =>
       x.id === payload.id
-        ? { ...x, beer_name: name, rating: clamp(payload.rating, 0, 5) }
+        ? { ...x, beer_name: name, rating: normalizedRating }
         : x
     )
   );
   trackEvent({
     eventName: "checkin_updated_local",
     userId: session?.user?.id ?? null,
-    props: { id: payload.id, rating: clamp(payload.rating, 0, 5) },
+    props: { id: payload.id, rating: normalizedRating },
   });
 }
   async function addCheckin() {
     const name = (beerName || "").trim();
-    if (!name) return;
+    const targets = isBackDate && batchBeerNames.length > 0 ? batchBeerNames : name ? [name] : [];
+    if (!targets.length) return;
+    const normalizedRating = sanitizeRating(rating);
 
     const created_at =
       dateISO === today ? new Date().toISOString() : new Date(`${dateISO}T12:00:00.000Z`).toISOString();
 
     // 1) session varsa supabase dene
     if (session?.user?.id) {
-      const { error } = await supabase.from("checkins").insert({
+      const rows = targets.map((beer) => ({
         user_id: session.user.id,
-        beer_name: name,
-        rating: clamp(rating, 0, 5),
+        beer_name: beer,
+        rating: normalizedRating,
         created_at,
-      });
+      }));
+      const { error } = await supabase.from("checkins").insert(rows);
 
       if (!error) {
-        await syncFavoriteAfterCheckin(name);
+        for (const beer of targets) await syncFavoriteAfterCheckin(beer);
         trackEvent({
           eventName: "checkin_added",
           userId: session.user.id,
-          props: { rating: clamp(rating, 0, 5), beer_name: name },
+          props: { rating: normalizedRating, beer_count: targets.length, date: dateISO },
         });
         setDateISO(today);
-        setRating(3.5);
+        setRating(null);
         setDateOpen(false);
+        setBatchBeerNames([]);
         await loadCheckins();
         return;
       }
@@ -846,22 +869,28 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       console.error("Supabase insert failed -> local fallback:", error.message);
     }
 
-    // 2) local fallback
-    setCheckins((prev) => {
-      const next: Checkin[] = [
-        { id: uuid(), beer_name: name, rating: clamp(rating, 0, 5), created_at },
+  // 2) local fallback
+  setCheckins((prev) => {
+    const next: Checkin[] = [
+        ...targets.map((beer) => ({
+          id: uuid(),
+          beer_name: beer,
+          rating: normalizedRating,
+          created_at,
+        })),
         ...prev,
       ];
       return next;
     });
 
     setDateISO(today);
-    setRating(3.5);
+    setRating(null);
     setDateOpen(false);
+    setBatchBeerNames([]);
     trackEvent({
       eventName: "checkin_added_local",
       userId: session?.user?.id ?? null,
-      props: { rating: clamp(rating, 0, 5), beer_name: name },
+      props: { rating: normalizedRating, beer_count: targets.length, date: dateISO },
     });
   }
 
@@ -927,7 +956,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           onAdd={async ({ day, beer_name, rating }) => {
             const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
             setCheckins((prev) => [
-              { id: uuid(), beer_name, rating: clamp(rating, 0, 5), created_at },
+              { id: uuid(), beer_name, rating: sanitizeRating(rating), created_at },
               ...prev,
           ]);
         }}
@@ -1070,11 +1099,55 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
         <div className="mb-3">
           <label className="block text-xs opacity-70 mb-2">Puan</label>
+          <button
+            type="button"
+            onClick={() => setRating((r) => (r === null ? 3.5 : null))}
+            className={`mb-2 rounded-xl border px-3 py-1.5 text-xs ${
+              rating === null ? "border-white/30 bg-white/15" : "border-white/10 bg-black/20"
+            }`}
+          >
+            {rating === null ? "Puansız log (açık)" : "Puansız log"}
+          </button>
           <StarRatingHalf value={rating} onChange={setRating} />
           <div className="mt-1 text-xs opacity-60">
-            Hover → yarım/yıldız seç • Tıkla → set • Aynı puana tıkla → sıfırla
+            {rating === null
+              ? "Bu log puansız kaydedilecek."
+              : "Hover → yarım/yıldız seç • Tıkla → set • Aynı puana tıkla → puansız"}
           </div>
         </div>
+
+        {isBackDate ? (
+          <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs opacity-80">Eski tarih için çoklu log</div>
+              <button
+                type="button"
+                onClick={() => {
+                  const n = (beerName || "").trim();
+                  if (!n) return;
+                  setBatchBeerNames((prev) => (prev.includes(n) ? prev : [...prev, n]));
+                }}
+                className="rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs"
+              >
+                Listeye ekle
+              </button>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {batchBeerNames.map((b) => (
+                <button
+                  key={b}
+                  type="button"
+                  onClick={() => setBatchBeerNames((prev) => prev.filter((x) => x !== b))}
+                  className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs"
+                  title="Listeden çıkar"
+                >
+                  {b} ×
+                </button>
+              ))}
+              {!batchBeerNames.length ? <div className="text-xs opacity-60">Henüz listede bira yok.</div> : null}
+            </div>
+          </div>
+        ) : null}
 
         <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
           <label className="flex items-center gap-2 text-xs opacity-85">
@@ -1118,10 +1191,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
         <button
           onClick={addCheckin}
-          disabled={!beerName}
+          disabled={!(isBackDate ? batchBeerNames.length > 0 || !!beerName : !!beerName)}
           className="mt-2 w-full rounded-2xl bg-white text-black py-3 font-semibold active:scale-[0.99] disabled:opacity-50"
         >
-          Kaydet
+          {isBackDate && batchBeerNames.length > 0 ? `${batchBeerNames.length} birayı kaydet` : "Kaydet"}
         </button>
       </section>
       ) : null}
@@ -1134,7 +1207,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             <div key={c.id} className="rounded-3xl border border-white/10 bg-white/5 p-4">
               <div className="flex items-center justify-between">
                 <div className="font-semibold">{c.beer_name}</div>
-                <div className="text-sm">{c.rating}⭐</div>
+                <div className="text-sm">{c.rating === null ? "—" : `${c.rating}⭐`}</div>
               </div>
               <div className="text-xs opacity-70 mt-1">
                 {new Date(c.created_at).toLocaleString("tr-TR")}
@@ -1193,12 +1266,13 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       onClose={() => setSelectedDay(null)}
       onAdd={async ({ day, beer_name, rating }) => {
         const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
+        const normalizedRating = sanitizeRating(rating);
 
     if (session?.user?.id) {
       const { error } = await supabase.from("checkins").insert({
         user_id: session.user.id,
         beer_name,
-        rating: clamp(rating, 0, 5),
+        rating: normalizedRating,
         created_at,
       });
 
@@ -1210,14 +1284,14 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       trackEvent({
         eventName: "checkin_added",
         userId: session.user.id,
-        props: { rating: clamp(rating, 0, 5), beer_name },
+        props: { rating: normalizedRating, beer_name },
       });
       await loadCheckins();
       return;
     }
 
     setCheckins((prev) => [
-      { id: uuid(), beer_name, rating: clamp(rating, 0, 5), created_at },
+      { id: uuid(), beer_name, rating: normalizedRating, created_at },
       ...prev,
     ]);
   }}

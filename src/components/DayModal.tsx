@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 type Checkin = {
   id: string;
   beer_name: string;
-  rating: number;
+  rating: number | null;
   created_at: string;
 };
 
@@ -24,19 +24,19 @@ export default function DayModal({
   day: string;
   checkins: Checkin[];
   onClose: () => void;
-  onAdd: (payload: { day: string; beer_name: string; rating: number }) => Promise<void>;
+  onAdd: (payload: { day: string; beer_name: string; rating: number | null }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
-  onUpdate: (payload: { id: string; beer_name: string; rating: number }) => Promise<void>;
+  onUpdate: (payload: { id: string; beer_name: string; rating: number | null }) => Promise<void>;
 }) {
   // add form
   const [beerName, setBeerName] = useState("");
-  const [rating, setRating] = useState(3.5);
+  const [rating, setRating] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
   // edit state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBeer, setEditBeer] = useState("");
-  const [editRating, setEditRating] = useState(3.5);
+  const [editRating, setEditRating] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   // modal kapanınca edit state sıfırla
@@ -48,8 +48,9 @@ export default function DayModal({
   }, [open]);
 
   const avg = useMemo(() => {
-    if (checkins.length === 0) return 0;
-    return checkins.reduce((s, c) => s + Number(c.rating ?? 0), 0) / checkins.length;
+    const rated = checkins.filter((c) => c.rating !== null && c.rating !== undefined);
+    if (rated.length === 0) return 0;
+    return rated.reduce((s, c) => s + Number(c.rating ?? 0), 0) / rated.length;
   }, [checkins]);
 
   async function handleAdd() {
@@ -60,7 +61,7 @@ export default function DayModal({
     try {
       await onAdd({ day, beer_name: name, rating });
       setBeerName("");
-      setRating(3.5);
+      setRating(null);
     } finally {
       setSaving(false);
     }
@@ -69,13 +70,13 @@ export default function DayModal({
   function startEdit(c: Checkin) {
     setEditingId(c.id);
     setEditBeer(c.beer_name ?? "");
-    setEditRating(Number(c.rating ?? 0) || 3.5);
+    setEditRating(c.rating === null || c.rating === undefined ? null : Number(c.rating));
   }
 
   function cancelEdit() {
     setEditingId(null);
     setEditBeer("");
-    setEditRating(3.5);
+    setEditRating(null);
   }
 
   async function handleDelete(id: string) {
@@ -115,7 +116,7 @@ export default function DayModal({
             <div className="text-xs opacity-70">{day}</div>
             <div className="text-lg font-bold">Gün Detayı</div>
             <div className="text-sm opacity-80 mt-1">
-              {checkins.length} bira • Ortalama: {checkins.length ? avg.toFixed(2) : "-"} ⭐
+              {checkins.length} bira • Ortalama: {avg ? avg.toFixed(2) : "-"} ⭐
             </div>
           </div>
           <button onClick={onClose} className="text-xl opacity-80">
@@ -133,6 +134,16 @@ export default function DayModal({
             placeholder="Bira adı"
             className="w-full rounded-2xl bg-black/20 border border-white/10 px-3 py-3 outline-none"
           />
+
+          <button
+            type="button"
+            onClick={() => setRating((r) => (r === null ? 3.5 : null))}
+            className={`mt-2 px-3 py-2 rounded-2xl border text-sm ${
+              rating === null ? "bg-white text-black" : "border-white/10 bg-black/20"
+            }`}
+          >
+            {rating === null ? "Puansız log (açık)" : "Puansız log"}
+          </button>
 
           <div className="mt-2 flex gap-2 flex-wrap">
             {RATINGS.map((r) => (
@@ -180,7 +191,9 @@ export default function DayModal({
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <div className="text-sm whitespace-nowrap">{c.rating}⭐</div>
+                        <div className="text-sm whitespace-nowrap">
+                          {c.rating === null ? "—" : `${c.rating}⭐`}
+                        </div>
 
                         <button
                           type="button"
@@ -211,6 +224,16 @@ export default function DayModal({
                       className="w-full rounded-2xl bg-black/20 border border-white/10 px-3 py-3 outline-none"
                       placeholder="Bira adı"
                     />
+
+                    <button
+                      type="button"
+                      onClick={() => setEditRating((r) => (r === null ? 3.5 : null))}
+                      className={`mt-2 px-3 py-2 rounded-2xl border text-sm ${
+                        editRating === null ? "bg-white text-black" : "border-white/10 bg-black/20"
+                      }`}
+                    >
+                      {editRating === null ? "Puansız log (açık)" : "Puansız log"}
+                    </button>
 
                     <div className="mt-2 flex gap-2 flex-wrap">
                       {RATINGS.map((r) => (
