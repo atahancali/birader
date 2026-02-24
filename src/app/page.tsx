@@ -17,6 +17,11 @@ type Checkin = {
   created_at: string;
 };
 
+type FavoriteBeer = {
+  beer_name: string;
+  rank: number;
+};
+
 type BeerItem = {
   brand: string;
   format: "Fici" | "Şişe/Kutu";
@@ -456,6 +461,9 @@ export default function Home() {
   const [activeRatingBucket, setActiveRatingBucket] = useState<number | null>(null);
   const [dateISO, setDateISO] = useState(today);
   const [dateOpen, setDateOpen] = useState(false);
+  const [favoriteOnSave, setFavoriteOnSave] = useState(false);
+  const [favorites, setFavorites] = useState<FavoriteBeer[]>([]);
+  const [replaceFavoriteRank, setReplaceFavoriteRank] = useState<number | null>(null);
 
   const year = useMemo(() => new Date().getFullYear(), []);
 
@@ -485,10 +493,41 @@ export default function Home() {
     setCheckins((data as any) ?? []);
   }
 
+  async function loadFavorites() {
+    if (!session?.user?.id) return;
+    const { data, error } = await supabase
+      .from("favorite_beers")
+      .select("beer_name, rank")
+      .eq("user_id", session.user.id)
+      .order("rank", { ascending: true });
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+    setFavorites((data as FavoriteBeer[] | null) ?? []);
+  }
+
   useEffect(() => {
-    if (session?.user?.id) loadCheckins();
+    if (session?.user?.id) {
+      loadCheckins();
+      loadFavorites();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (favorites.length < 3) {
+      setReplaceFavoriteRank(null);
+      return;
+    }
+    if (replaceFavoriteRank === null) {
+      setReplaceFavoriteRank(Number(favorites[0]?.rank ?? 1));
+      return;
+    }
+    const stillValid = favorites.some((f) => Number(f.rank) === replaceFavoriteRank);
+    if (!stillValid) setReplaceFavoriteRank(Number(favorites[0]?.rank ?? 1));
+  }, [favorites, replaceFavoriteRank]);
 
   const topBeerLabelsByFormat = useMemo(() => {
     const countsF: Record<string, number> = {};
@@ -574,6 +613,66 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [format, beerLabelsForFormat.length]);
 
+  async function syncFavoriteAfterCheckin(beer: string) {
+    if (!session?.user?.id || !favoriteOnSave) return;
+    const trimmed = beer.trim();
+    if (!trimmed) return;
+
+    const alreadyFavorite = favorites.some((f) => f.beer_name === trimmed);
+    if (alreadyFavorite) return;
+
+    if (favorites.length < 3) {
+      const used = new Set(favorites.map((f) => Number(f.rank)));
+      let rank = 1;
+      while (used.has(rank) && rank <= 3) rank += 1;
+
+      const { error } = await supabase.from("favorite_beers").insert({
+        user_id: session.user.id,
+        beer_name: trimmed,
+        rank,
+      });
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      setFavorites((prev) => [...prev, { beer_name: trimmed, rank }].sort((a, b) => a.rank - b.rank));
+      trackEvent({
+        eventName: "favorite_added",
+        userId: session.user.id,
+        props: { beer_name: trimmed, rank, source: "checkin_form" },
+      });
+      return;
+    }
+
+    const rankToReplace = replaceFavoriteRank ?? Number(favorites[0]?.rank ?? 1);
+    const target = favorites.find((f) => Number(f.rank) === rankToReplace);
+    if (!target) return;
+
+    const { error } = await supabase
+      .from("favorite_beers")
+      .update({ beer_name: trimmed })
+      .eq("user_id", session.user.id)
+      .eq("rank", rankToReplace);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    setFavorites((prev) =>
+      prev
+        .map((f) => (Number(f.rank) === rankToReplace ? { ...f, beer_name: trimmed } : f))
+        .sort((a, b) => a.rank - b.rank)
+    );
+    trackEvent({
+      eventName: "favorite_replaced",
+      userId: session.user.id,
+      props: { old_beer_name: target.beer_name, new_beer_name: trimmed, rank: rankToReplace },
+    });
+  }
+
 async function deleteCheckin(id: string) {
   // Session varsa Supabase dene
   if (session?.user?.id) {
@@ -653,6 +752,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       });
 
       if (!error) {
+        await syncFavoriteAfterCheckin(name);
         trackEvent({
           eventName: "checkin_added",
           userId: session.user.id,
@@ -870,6 +970,44 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           <div className="mt-1 text-xs opacity-60">
             Hover → yarım/yıldız seç • Tıkla → set • Aynı puana tıkla → sıfırla
           </div>
+        </div>
+
+        <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
+          <label className="flex items-center gap-2 text-xs opacity-85">
+            <input
+              type="checkbox"
+              checked={favoriteOnSave}
+              onChange={(e) => setFavoriteOnSave(e.target.checked)}
+            />
+            Bu logdaki birayi favorilere ekle
+          </label>
+
+          {favoriteOnSave ? (
+            <div className="mt-2 text-xs opacity-70">
+              {favorites.some((f) => f.beer_name === beerName)
+                ? "Bu bira zaten favorilerinde."
+                : favorites.length < 3
+                  ? `Favori listene eklenecek (${favorites.length}/3).`
+                  : "Favori listesi dolu (3/3). Asagidan degisecek favoriyi sec."}
+            </div>
+          ) : null}
+
+          {favoriteOnSave && favorites.length >= 3 && !favorites.some((f) => f.beer_name === beerName) ? (
+            <div className="mt-2">
+              <label className="mb-1 block text-xs opacity-70">Degisecek favori</label>
+              <select
+                value={replaceFavoriteRank ?? ""}
+                onChange={(e) => setReplaceFavoriteRank(Number(e.target.value))}
+                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+              >
+                {favorites.map((f) => (
+                  <option key={f.rank} value={f.rank}>
+                    #{f.rank} {f.beer_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
         </div>
 
         <button

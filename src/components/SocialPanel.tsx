@@ -73,6 +73,8 @@ export default function SocialPanel({
   const [favorites, setFavorites] = useState<FavoriteBeerRow[]>([]);
   const [checkins, setCheckins] = useState<CheckinRow[]>([]);
   const [addingFavorite, setAddingFavorite] = useState<string>("");
+  const [favoriteQuery, setFavoriteQuery] = useState("");
+  const [favoriteOpen, setFavoriteOpen] = useState(false);
 
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const [followingProfiles, setFollowingProfiles] = useState<SearchProfile[]>([]);
@@ -102,6 +104,12 @@ export default function SocialPanel({
     return unique;
   }, [allBeerOptions, topBeerOptions]);
   const favoriteNames = useMemo(() => new Set(favorites.map((f) => f.beer_name)), [favorites]);
+  const filteredFavoriteOptions = useMemo(() => {
+    const q = favoriteQuery.trim().toLowerCase();
+    const pool = favoriteOptionPool.filter((name) => !favoriteNames.has(name));
+    if (!q) return pool.slice(0, 30);
+    return pool.filter((name) => name.toLowerCase().includes(q)).slice(0, 30);
+  }, [favoriteNames, favoriteOptionPool, favoriteQuery]);
 
   function markDbError(message: string) {
     if (message.toLowerCase().includes("does not exist")) {
@@ -298,6 +306,8 @@ export default function SocialPanel({
 
     setFavorites((prev) => [...prev, { beer_name: beer, rank }].sort((a, b) => a.rank - b.rank));
     setAddingFavorite("");
+    setFavoriteQuery("");
+    setFavoriteOpen(false);
     trackEvent({ eventName: "favorite_added", userId, props: { beer_name: beer, rank } });
   }
 
@@ -476,28 +486,64 @@ export default function SocialPanel({
             {!favorites.length ? <div className="text-xs opacity-60">Henuz favori yok.</div> : null}
           </div>
 
-          <div className="mt-3 flex gap-2">
-            <select
-              value={addingFavorite}
-              onChange={(e) => setAddingFavorite(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
-            >
-              <option value="">Bira sec...</option>
-              {favoriteOptionPool
-                .filter((name) => !favoriteNames.has(name))
-                .map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-            </select>
-            <button
-              type="button"
-              onClick={addFavorite}
-              className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm"
-            >
-              Ekle
-            </button>
+          <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-2">
+            <div className="relative">
+              <input
+                value={favoriteQuery}
+                onChange={(e) => {
+                  setFavoriteQuery(e.target.value);
+                  setFavoriteOpen(true);
+                }}
+                onFocus={() => setFavoriteOpen(true)}
+                placeholder="Favori bira ara..."
+                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setFavoriteOpen((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs"
+              >
+                {favoriteOpen ? "Kapat" : "Ac"}
+              </button>
+            </div>
+
+            {favoriteOpen ? (
+              <div className="mt-2 max-h-44 overflow-auto rounded-xl border border-white/10 bg-black/40 p-1">
+                {filteredFavoriteOptions.length === 0 ? (
+                  <div className="px-2 py-2 text-xs opacity-60">Sonuc yok.</div>
+                ) : (
+                  filteredFavoriteOptions.map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => {
+                        setAddingFavorite(name);
+                        setFavoriteQuery(name);
+                        setFavoriteOpen(false);
+                      }}
+                      className={`w-full rounded-lg px-2 py-2 text-left text-sm hover:bg-white/10 ${
+                        addingFavorite === name ? "bg-white/10" : ""
+                      }`}
+                    >
+                      {name}
+                    </button>
+                  ))
+                )}
+              </div>
+            ) : null}
+
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <div className="truncate text-xs opacity-70">
+                Secili: <span className="opacity-90">{addingFavorite || "—"}</span>
+              </div>
+              <button
+                type="button"
+                onClick={addFavorite}
+                className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm"
+              >
+                Ekle
+              </button>
+            </div>
           </div>
         </div>
 
