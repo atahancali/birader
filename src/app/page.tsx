@@ -951,8 +951,8 @@ export default function Home() {
 async function deleteCheckin(id: string) {
   // Session varsa Supabase dene
   if (session?.user?.id) {
-    const { error } = await supabase.from("checkins").delete().eq("id", id).eq("user_id", session.user.id);
-    if (!error) {
+    const { data, error } = await supabase.rpc("delete_own_checkin", { p_id: String(id) });
+    if (!error && data === true) {
       trackEvent({
         eventName: "checkin_deleted",
         userId: session.user.id,
@@ -961,7 +961,8 @@ async function deleteCheckin(id: string) {
       await loadCheckins();
       return;
     }
-    alert(`Silme basarisiz: ${error.message}`);
+    const reason = error?.message || "Kayit bulunamadi ya da yetki yok.";
+    alert(`Silme basarisiz: ${reason}`);
     return;
   }
 
