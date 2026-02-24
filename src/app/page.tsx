@@ -26,6 +26,7 @@ type FavoriteBeer = {
 
 type HeaderProfile = {
   username: string;
+  display_name?: string | null;
   avatar_path?: string | null;
 };
 
@@ -556,18 +557,20 @@ export default function Home() {
       loadFavorites();
       supabase
         .from("profiles")
-        .select("username, avatar_path")
+        .select("username, display_name, avatar_path")
         .eq("user_id", session.user.id)
         .maybeSingle()
         .then(({ data }) => {
           if (data) {
             setHeaderProfile({
               username: (data as any).username,
+              display_name: (data as any).display_name,
               avatar_path: (data as any).avatar_path,
             });
           } else {
             setHeaderProfile({
               username: usernameFromEmail(session.user.email) || `user-${session.user.id.slice(0, 6)}`,
+              display_name: "",
               avatar_path: "",
             });
           }
@@ -993,7 +996,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               )}
             </div>
             <div className="max-w-[120px] truncate text-xs text-amber-100">
-              @{headerProfile?.username || usernameFromEmail(session?.user?.email) || "kullanici"}
+              {(headerProfile?.display_name || "").trim() ||
+                `@${headerProfile?.username || usernameFromEmail(session?.user?.email) || "kullanici"}`}
             </div>
           </div>
 

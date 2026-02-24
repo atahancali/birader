@@ -10,6 +10,7 @@ import { favoriteBeerName } from "@/lib/beer";
 type ProfileRow = {
   user_id: string;
   username: string;
+  display_name?: string | null;
   bio: string;
   is_public: boolean;
   avatar_path?: string | null;
@@ -26,6 +27,7 @@ type FollowerRow = { follower_id: string };
 type SearchProfile = {
   user_id: string;
   username: string;
+  display_name?: string | null;
   bio: string;
   is_public: boolean;
 };
@@ -45,6 +47,7 @@ type FeedCheckinRow = {
 
 type FeedItem = FeedCheckinRow & {
   username: string;
+  display_name?: string | null;
 };
 
 type FeedWindow = "all" | "24h" | "7d";
@@ -54,6 +57,7 @@ type LeaderScope = "all" | "followed";
 type LeaderboardRow = {
   user_id: string;
   username: string;
+  display_name?: string | null;
   logs: number;
   avgRating: number;
 };
@@ -137,6 +141,11 @@ function topBeers(checkins: CheckinRow[], limit = 12) {
     .map(([name]) => name);
 }
 
+function visibleName(p: { username: string; display_name?: string | null }) {
+  const d = (p.display_name || "").trim();
+  return d || `@${p.username}`;
+}
+
 export default function SocialPanel({
   userId,
   sessionEmail,
@@ -152,7 +161,7 @@ export default function SocialPanel({
   const [dbError, setDbError] = useState<string | null>(null);
 
   const [profile, setProfile] = useState<ProfileRow | null>(null);
-  const [usernameInput, setUsernameInput] = useState("");
+  const [displayNameInput, setDisplayNameInput] = useState("");
   const [bioInput, setBioInput] = useState("");
   const [isPublic, setIsPublic] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -183,7 +192,7 @@ export default function SocialPanel({
   const [searchResults, setSearchResults] = useState<SearchProfile[]>([]);
   const [searchBusy, setSearchBusy] = useState(false);
   const followingIdsRef = useRef<Set<string>>(new Set());
-  const followingNameRef = useRef<Map<string, string>>(new Map());
+  const followingNameRef = useRef<Map<string, { username: string; display_name?: string | null }>>(new Map());
   const leaderboardReloadRef = useRef<(() => Promise<void>) | null>(null);
 
   const fallbackBase = useMemo(() => {
@@ -230,6 +239,7 @@ export default function SocialPanel({
       if (!query) return true;
       return (
         item.username.toLowerCase().includes(query) ||
+        (item.display_name || "").toLowerCase().includes(query) ||
         item.beer_name.toLowerCase().includes(query)
       );
     });
@@ -275,7 +285,7 @@ export default function SocialPanel({
   async function reserveProfile() {
     const { data, error } = await supabase
       .from("profiles")
-      .select("user_id, username, bio, is_public, avatar_path")
+      .select("user_id, username, display_name, bio, is_public, avatar_path")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -291,6 +301,7 @@ export default function SocialPanel({
       const { error: insertError } = await supabase.from("profiles").insert({
         user_id: userId,
         username: candidate,
+        display_name: candidate,
         bio: "",
         is_public: true,
         avatar_path: "",
@@ -301,6 +312,7 @@ export default function SocialPanel({
         return {
           user_id: userId,
           username: candidate,
+          display_name: candidate,
           bio: "",
           is_public: true,
           avatar_path: "",
@@ -345,7 +357,7 @@ export default function SocialPanel({
 
     const { data: profileRows, error: profileErr } = await supabase
       .from("profiles")
-      .select("user_id, username")
+      .select("user_id, username, display_name")
       .in("user_id", ids);
 
     if (profileErr) {
@@ -353,15 +365,16 @@ export default function SocialPanel({
       return;
     }
 
-    const unameById = new Map<string, string>();
-    for (const p of (profileRows as Array<{ user_id: string; username: string }> | null) ?? []) {
-      unameById.set(p.user_id, p.username);
+    const profileById = new Map<string, { username: string; display_name?: string | null }>();
+    for (const p of (profileRows as Array<{ user_id: string; username: string; display_name?: string | null }> | null) ?? []) {
+      profileById.set(p.user_id, { username: p.username, display_name: p.display_name });
     }
 
     setFeedItems(
       rows.map((r) => ({
         ...r,
-        username: unameById.get(r.user_id) ?? "kullanici",
+        username: profileById.get(r.user_id)?.username ?? "kullanici",
+        display_name: profileById.get(r.user_id)?.display_name ?? "",
       }))
     );
     trackEvent({ eventName: "feed_loaded", userId, props: { count: rows.length } });
@@ -418,7 +431,7 @@ export default function SocialPanel({
     const ids = Array.from(agg.keys());
     const { data: profileRows, error: profileErr } = await supabase
       .from("profiles")
-      .select("user_id, username, is_public")
+      .select("user_id, username, display_name, is_public")
       .in("user_id", ids);
 
     if (profileErr) {
@@ -426,19 +439,20 @@ export default function SocialPanel({
       return;
     }
 
-    const visible = new Map<string, string>();
-    for (const p of (profileRows as Array<{ user_id: string; username: string; is_public: boolean }> | null) ?? []) {
+    const visible = new Map<string, { username: string; display_name?: string | null }>();
+    for (const p of (profileRows as Array<{ user_id: string; username: string; display_name?: string | null; is_public: boolean }> | null) ?? []) {
       if (leaderScope === "all" && !p.is_public) continue;
-      visible.set(p.user_id, p.username);
+      visible.set(p.user_id, { username: p.username, display_name: p.display_name });
     }
 
     const result: LeaderboardRow[] = [];
     for (const [uid, stats] of agg.entries()) {
-      const username = visible.get(uid);
-      if (!username) continue;
+      const profileRef = visible.get(uid);
+      if (!profileRef) continue;
       result.push({
         user_id: uid,
-        username,
+        username: profileRef.username,
+        display_name: profileRef.display_name,
         logs: stats.logs,
         avgRating: Math.round((stats.ratingSum / Math.max(1, stats.logs)) * 100) / 100,
       });
@@ -480,7 +494,7 @@ export default function SocialPanel({
 
     const { data: people, error: peopleError } = await supabase
       .from("profiles")
-      .select("user_id, username, bio, is_public")
+      .select("user_id, username, display_name, bio, is_public")
       .in("user_id", ids)
       .order("username", { ascending: true });
 
@@ -509,7 +523,7 @@ export default function SocialPanel({
 
     const { data: followerPeople, error: followerPeopleErr } = await supabase
       .from("profiles")
-      .select("user_id, username, bio, is_public")
+      .select("user_id, username, display_name, bio, is_public")
       .in("user_id", followerIds)
       .order("username", { ascending: true });
 
@@ -532,7 +546,7 @@ export default function SocialPanel({
     }
 
     setProfile(ensured);
-    setUsernameInput(ensured.username);
+    setDisplayNameInput((ensured.display_name || "").trim() || ensured.username);
     setBioInput(ensured.bio || "");
     setIsPublic(ensured.is_public);
     setAvatarPath(ensured.avatar_path || "");
@@ -578,8 +592,8 @@ export default function SocialPanel({
 
   useEffect(() => {
     followingIdsRef.current = followingIds;
-    const nameMap = new Map<string, string>();
-    for (const p of followingProfiles) nameMap.set(p.user_id, p.username);
+    const nameMap = new Map<string, { username: string; display_name?: string | null }>();
+    for (const p of followingProfiles) nameMap.set(p.user_id, { username: p.username, display_name: p.display_name });
     followingNameRef.current = nameMap;
   }, [followingIds, followingProfiles]);
 
@@ -602,9 +616,16 @@ export default function SocialPanel({
         (payload) => {
           const row = payload.new as FeedCheckinRow;
           if (!row?.id || !followingIdsRef.current.has(row.user_id)) return;
-          const username = followingNameRef.current.get(row.user_id) ?? "kullanici";
+          const profileRef = followingNameRef.current.get(row.user_id);
           setFeedItems((prev) => {
-            const next = [{ ...row, username }, ...prev.filter((x) => x.id !== row.id)]
+            const next = [
+              {
+                ...row,
+                username: profileRef?.username ?? "kullanici",
+                display_name: profileRef?.display_name ?? "",
+              },
+              ...prev.filter((x) => x.id !== row.id),
+            ]
               .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
               .slice(0, 40);
             return next;
@@ -618,10 +639,18 @@ export default function SocialPanel({
         (payload) => {
           const row = payload.new as FeedCheckinRow;
           if (!row?.id || !followingIdsRef.current.has(row.user_id)) return;
-          const username = followingNameRef.current.get(row.user_id) ?? "kullanici";
+          const profileRef = followingNameRef.current.get(row.user_id);
           setFeedItems((prev) =>
             prev
-              .map((x) => (x.id === row.id ? { ...row, username } : x))
+              .map((x) =>
+                x.id === row.id
+                  ? {
+                      ...row,
+                      username: profileRef?.username ?? "kullanici",
+                      display_name: profileRef?.display_name ?? "",
+                    }
+                  : x
+              )
               .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
           );
           void leaderboardReloadRef.current?.();
@@ -670,37 +699,31 @@ export default function SocialPanel({
   }, [userId]);
 
   async function saveProfile() {
-    const nextUsername = normalizeUsername(usernameInput);
-    if (!nextUsername) {
-      alert("Gecerli bir kullanici adi gir.");
-      return;
-    }
+    const nextDisplayName = displayNameInput.trim().slice(0, 32);
 
     setSavingProfile(true);
     const { error } = await supabase
       .from("profiles")
-      .update({ username: nextUsername, bio: bioInput.trim(), is_public: isPublic })
+      .update({ display_name: nextDisplayName, bio: bioInput.trim(), is_public: isPublic })
       .eq("user_id", userId);
 
     setSavingProfile(false);
 
     if (error) {
       markDbError(error.message);
-      if (error.message.toLowerCase().includes("duplicate")) {
-        alert("Bu kullanici adi alinmis.");
-      }
       return;
     }
 
     const nextProfile: ProfileRow = {
       user_id: userId,
-      username: nextUsername,
+      username: profile?.username || fallbackBase,
+      display_name: nextDisplayName,
       bio: bioInput.trim(),
       is_public: isPublic,
     };
 
     setProfile(nextProfile);
-    setUsernameInput(nextUsername);
+    setDisplayNameInput(nextDisplayName);
     trackEvent({ eventName: "profile_updated", userId, props: { is_public: isPublic } });
   }
 
@@ -814,7 +837,7 @@ export default function SocialPanel({
     setSearchBusy(true);
     const { data, error } = await supabase
       .from("profiles")
-      .select("user_id, username, bio, is_public")
+      .select("user_id, username, display_name, bio, is_public")
       .neq("user_id", userId)
       .eq("is_public", true)
       .order("username", { ascending: true })
@@ -830,11 +853,14 @@ export default function SocialPanel({
     const scored = rows
       .map((p) => {
         const uname = normalizeUsername(p.username);
+        const dname = normalizeUsername(p.display_name || "");
         const dist = typoDistance(q, uname);
-        const contains = uname.includes(q);
-        const starts = uname.startsWith(q);
+        const dDist = dname ? typoDistance(q, dname) : dist;
+        const contains = uname.includes(q) || dname.includes(q);
+        const starts = uname.startsWith(q) || dname.startsWith(q);
         const threshold = Math.max(1.4, Math.floor(q.length / 3));
-        return { p, dist, contains, starts, pass: contains || dist <= threshold };
+        const scoreDist = Math.min(dist, dDist);
+        return { p, dist: scoreDist, contains, starts, pass: contains || scoreDist <= threshold };
       })
       .filter((x) => x.pass)
       .sort((a, b) => {
@@ -970,10 +996,11 @@ export default function SocialPanel({
                 <div className="min-w-0">
                   <div className="truncate text-sm">
                     <span className="mr-2 opacity-70">#{idx + 1}</span>
-                    <Link href={`/u/${row.username}`} className="underline">
-                      @{row.username}
-                    </Link>
+                    <span>{visibleName(row)}</span>
                   </div>
+                  <Link href={`/u/${row.username}`} className="text-xs underline opacity-70">
+                    @{row.username}
+                  </Link>
                   <div className="text-xs opacity-70">{row.logs} log</div>
                 </div>
                 <div className="text-sm">{row.avgRating.toFixed(2)}⭐</div>
@@ -1032,7 +1059,7 @@ export default function SocialPanel({
               <div key={item.id} className="rounded-xl border border-white/10 bg-black/25 p-3">
                 <div className="flex items-center justify-between gap-3">
                   <Link href={`/u/${item.username}`} className="text-xs underline opacity-80">
-                    @{item.username}
+                    {visibleName(item)}
                   </Link>
                   <div className="text-xs opacity-70">
                     {new Date(item.created_at).toLocaleString("tr-TR")}
@@ -1094,10 +1121,14 @@ export default function SocialPanel({
             </label>
           </div>
           <div className="mt-2 grid gap-2">
+            <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs">
+              Handle (sabit): <span className="font-semibold">@{profile?.username || "kullanici"}</span>
+            </div>
             <input
-              value={usernameInput}
-              onChange={(e) => setUsernameInput(e.target.value)}
-              placeholder="kullanici adi"
+              value={displayNameInput}
+              onChange={(e) => setDisplayNameInput(e.target.value)}
+              maxLength={32}
+              placeholder="gorunen isim"
               className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
             />
             <input
@@ -1218,7 +1249,7 @@ export default function SocialPanel({
                   void searchUsers();
                 }
               }}
-              placeholder="nick ara"
+              placeholder="handle veya isim ara"
               className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
             />
             <button
@@ -1237,8 +1268,9 @@ export default function SocialPanel({
                 <div key={p.user_id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/25 p-2">
                   <div className="min-w-0">
                     <Link href={`/u/${p.username}`} className="truncate text-sm underline">
-                      @{p.username}
+                      {visibleName(p)}
                     </Link>
+                    <div className="truncate text-[11px] opacity-65">@{p.username}</div>
                     {p.bio ? <div className="truncate text-xs opacity-70">{p.bio}</div> : null}
                   </div>
                   <button
@@ -1294,8 +1326,9 @@ export default function SocialPanel({
                 <div key={`${relationView}-${p.user_id}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/25 p-2">
                   <div className="min-w-0">
                     <Link href={`/u/${p.username}`} className="truncate text-sm underline">
-                      @{p.username}
+                      {visibleName(p)}
                     </Link>
+                    <div className="truncate text-[11px] opacity-65">@{p.username}</div>
                     {p.bio ? <div className="truncate text-xs opacity-70">{p.bio}</div> : null}
                   </div>
                   {isFollowersView ? (

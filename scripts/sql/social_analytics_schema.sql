@@ -3,6 +3,7 @@
 create table if not exists public.profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
   username text not null unique,
+  display_name text not null default '',
   bio text not null default '',
   avatar_path text not null default '',
   is_public boolean not null default true,
@@ -11,6 +12,7 @@ create table if not exists public.profiles (
 );
 
 alter table public.profiles add column if not exists avatar_path text not null default '';
+alter table public.profiles add column if not exists display_name text not null default '';
 
 create table if not exists public.follows (
   follower_id uuid not null references auth.users(id) on delete cascade,
@@ -43,6 +45,7 @@ create table if not exists public.analytics_events (
 );
 
 create index if not exists idx_profiles_username on public.profiles (username);
+create index if not exists idx_profiles_display_name on public.profiles (display_name);
 create index if not exists idx_follows_follower on public.follows (follower_id);
 create index if not exists idx_follows_following on public.follows (following_id);
 create index if not exists idx_analytics_events_name_time on public.analytics_events (event_name, created_at desc);
@@ -64,6 +67,7 @@ before update on public.profiles
 for each row execute function public.set_updated_at();
 
 alter table public.profiles enable row level security;
+alter table public.checkins enable row level security;
 alter table public.follows enable row level security;
 alter table public.favorite_beers enable row level security;
 alter table public.analytics_events enable row level security;
@@ -80,6 +84,19 @@ for insert with check (auth.uid() = user_id);
 drop policy if exists profiles_owner_update on public.profiles;
 create policy profiles_owner_update on public.profiles
 for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- checkins: owner can always read; public can read if profile is public
+drop policy if exists checkins_public_read on public.checkins;
+create policy checkins_public_read on public.checkins
+for select using (
+  auth.uid() = user_id
+  or exists (
+    select 1
+    from public.profiles p
+    where p.user_id = checkins.user_id
+      and p.is_public = true
+  )
+);
 
 -- follows: everyone can read, owner manages own following list
 drop policy if exists follows_read_all on public.follows;
@@ -132,8 +149,9 @@ create or replace view public.profile_stats as
 select
   p.user_id,
   p.username,
+  p.display_name,
   count(c.id)::int as total_checkins,
   coalesce(round(avg(c.rating)::numeric, 2), 0) as avg_rating
 from public.profiles p
 left join public.checkins c on c.user_id = p.user_id
-group by p.user_id, p.username;
+group by p.user_id, p.username, p.display_name;

@@ -10,6 +10,7 @@ import { trackEvent } from "@/lib/analytics";
 type ProfileRow = {
   user_id: string;
   username: string;
+  display_name?: string | null;
   bio: string;
   is_public: boolean;
   avatar_path?: string | null;
@@ -47,6 +48,10 @@ export default function PublicProfileView({ username }: { username: string }) {
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const [year, setYear] = useState(currentYear);
   const avg = useMemo(() => avgRating(checkins), [checkins]);
+  const shownName = useMemo(() => {
+    const d = (profile?.display_name || "").trim();
+    return d || `@${profile?.username || ""}`;
+  }, [profile?.display_name, profile?.username]);
 
   function avatarPublicUrl(path?: string | null) {
     const clean = (path || "").trim();
@@ -69,7 +74,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       const normalized = normalizeUsername(username);
       const { data: row, error } = await supabase
         .from("profiles")
-        .select("user_id, username, bio, is_public, avatar_path")
+        .select("user_id, username, display_name, bio, is_public, avatar_path")
         .eq("username", normalized)
         .maybeSingle();
 
@@ -233,7 +238,8 @@ export default function PublicProfileView({ username }: { username: string }) {
           </div>
           <div>
           <div className="text-xs opacity-70">Birader Profil</div>
-          <h1 className="text-2xl font-bold">@{profile.username}</h1>
+          <h1 className="text-2xl font-bold">{shownName}</h1>
+          <div className="text-xs opacity-70">@{profile.username}</div>
           </div>
         </div>
         <Link href="/" className="text-xs underline opacity-80">
