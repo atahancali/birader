@@ -12,12 +12,16 @@ import SocialPanel from "@/components/SocialPanel";
 import { usernameFromEmail, usernameToCandidateEmails } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
+import { TURKEY_CITIES, districtsForCity } from "@/lib/trLocations";
 
 type Checkin = {
   id: string;
   beer_name: string;
   rating: number | null;
   created_at: string;
+  country_code?: string | null;
+  city?: string | null;
+  district?: string | null;
   location_text?: string | null;
   price_try?: number | null;
   note?: string | null;
@@ -37,6 +41,7 @@ type HeaderProfile = {
 };
 
 type HomeSection = "log" | "social" | "heatmap" | "stats";
+type LocationSuggestion = { city: string; district: string; score: number };
 
 type BeerItem = {
   brand: string;
@@ -179,6 +184,24 @@ function sanitizePrice(input: string) {
   const n = Number(normalized);
   if (!Number.isFinite(n) || n < 0) return null;
   return Math.round(n * 100) / 100;
+}
+
+function normalizeTR(input: string) {
+  return input
+    .toLowerCase()
+    .replace(/ı/g, "i")
+    .replace(/İ/g, "i")
+    .replace(/ş/g, "s")
+    .replace(/Ş/g, "s")
+    .replace(/ğ/g, "g")
+    .replace(/Ğ/g, "g")
+    .replace(/ü/g, "u")
+    .replace(/Ü/g, "u")
+    .replace(/ö/g, "o")
+    .replace(/Ö/g, "o")
+    .replace(/ç/g, "c")
+    .replace(/Ç/g, "c")
+    .trim();
 }
 
 function looksLikeEmail(input: string) {
@@ -506,11 +529,12 @@ export default function Home() {
   const [beerQuery, setBeerQuery] = useState("");
   const [beerName, setBeerName] = useState<string>("");
   const [rating, setRating] = useState<number | null>(null);
+  const [city, setCity] = useState<string>(TURKEY_CITIES[39] ?? "Istanbul");
+  const [district, setDistrict] = useState<string>("");
+  const [locationSuggestQuery, setLocationSuggestQuery] = useState("");
   const [locationText, setLocationText] = useState("");
   const [priceText, setPriceText] = useState("");
   const [logNote, setLogNote] = useState("");
-  const [geoPoint, setGeoPoint] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [geoBusy, setGeoBusy] = useState(false);
   const [activeRatingBucket, setActiveRatingBucket] = useState<number | null>(null);
   const [dateISO, setDateISO] = useState(today);
   const [dateOpen, setDateOpen] = useState(false);
@@ -524,6 +548,7 @@ export default function Home() {
 
   const year = useMemo(() => new Date().getFullYear(), []);
   const isBackDate = dateISO !== today;
+  const districtOptions = useMemo(() => districtsForCity(city), [city]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -539,7 +564,7 @@ export default function Home() {
 
     const { data, error } = await supabase
       .from("checkins")
-      .select("id, beer_name, rating, created_at, location_text, price_try, note, latitude, longitude")
+      .select("id, beer_name, rating, created_at, country_code, city, district, location_text, price_try, note, latitude, longitude")
       .gte("created_at", start)
       .lt("created_at", end)
       .order("created_at", { ascending: false });
@@ -702,6 +727,16 @@ export default function Home() {
     if (!isBackDate && batchBeerNames.length) setBatchBeerNames([]);
   }, [batchBeerNames.length, isBackDate]);
 
+  useEffect(() => {
+    if (!districtOptions.length) {
+      setDistrict("");
+      return;
+    }
+    if (!district || !districtOptions.includes(district)) {
+      setDistrict(districtOptions[0]);
+    }
+  }, [district, districtOptions]);
+
   async function syncFavoriteAfterCheckin(beer: string) {
     if (!session?.user?.id || !favoriteOnSave) return;
     const trimmed = favoriteBeerName(beer);
@@ -776,6 +811,55 @@ export default function Home() {
     return checkins.length;
   }, [checkins.length, recentExpandStep]);
 
+  const locationSuggestions = useMemo<LocationSuggestion[]>(() => {
+    const staticPairs = TURKEY_CITIES.flatMap((c) =>
+      districtsForCity(c).map((d) => ({ city: c, district: d, base: 1 }))
+    );
+
+    const personalPairCounts = new Map<string, number>();
+    for (const c of checkins) {
+      const cc = (c.city || "").trim();
+      const dd = (c.district || "").trim();
+      if (!cc || !dd) continue;
+      const key = `${cc}::${dd}`;
+      personalPairCounts.set(key, (personalPairCounts.get(key) || 0) + 1);
+    }
+
+    const merged = new Map<string, LocationSuggestion>();
+    for (const p of staticPairs) {
+      const key = `${p.city}::${p.district}`;
+      merged.set(key, { city: p.city, district: p.district, score: p.base });
+    }
+    for (const [key, count] of personalPairCounts.entries()) {
+      const [c, d] = key.split("::");
+      const prev = merged.get(key);
+      merged.set(key, {
+        city: c,
+        district: d,
+        score: (prev?.score || 0) + count * 4,
+      });
+    }
+
+    const q = normalizeTR(locationSuggestQuery);
+    const rows = Array.from(merged.values());
+    if (!q) return rows.sort((a, b) => b.score - a.score).slice(0, 8);
+
+    return rows
+      .map((r) => {
+        const full = normalizeTR(`${r.city} ${r.district}`);
+        const cityOnly = normalizeTR(r.city);
+        const districtOnly = normalizeTR(r.district);
+        let score = r.score;
+        if (full.startsWith(q)) score += 40;
+        else if (full.includes(q)) score += 20;
+        if (cityOnly.startsWith(q) || districtOnly.startsWith(q)) score += 24;
+        else if (cityOnly.includes(q) || districtOnly.includes(q)) score += 12;
+        return { ...r, score };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+  }, [checkins, locationSuggestQuery]);
+
   function quickLogFromFeed(payload: { beerName: string; rating: number }) {
     const incomingBeer = payload.beerName?.trim();
     if (!incomingBeer) return;
@@ -789,28 +873,6 @@ export default function Home() {
     setRating(nextRating > 0 ? Math.round(clamp(nextRating, 0, 5) * 2) / 2 : null);
     setActiveSection("log");
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  function useCurrentLocation() {
-    if (!navigator.geolocation) {
-      alert("Bu cihaz konum bilgisini desteklemiyor.");
-      return;
-    }
-    setGeoBusy(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setGeoPoint({
-          latitude: Math.round(pos.coords.latitude * 1e6) / 1e6,
-          longitude: Math.round(pos.coords.longitude * 1e6) / 1e6,
-        });
-        setGeoBusy(false);
-      },
-      (err) => {
-        alert(`Konum alinamadi: ${err.message}`);
-        setGeoBusy(false);
-      },
-      { enableHighAccuracy: false, timeout: 10000 }
-    );
   }
 
 async function deleteCheckin(id: string) {
@@ -884,6 +946,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     const normalizedPrice = sanitizePrice(priceText);
     const normalizedLocation = locationText.trim();
     const normalizedNote = logNote.trim();
+    const normalizedCity = city.trim();
+    const normalizedDistrict = district.trim();
 
     const created_at =
       dateISO === today ? new Date().toISOString() : new Date(`${dateISO}T12:00:00.000Z`).toISOString();
@@ -895,11 +959,14 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         beer_name: beer,
         rating: normalizedRating,
         created_at,
+        country_code: "TR",
+        city: normalizedCity,
+        district: normalizedDistrict,
         location_text: normalizedLocation || "",
         price_try: normalizedPrice,
         note: normalizedNote || "",
-        latitude: geoPoint?.latitude ?? null,
-        longitude: geoPoint?.longitude ?? null,
+        latitude: null,
+        longitude: null,
       }));
       const { error } = await supabase.from("checkins").insert(rows);
 
@@ -915,7 +982,6 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         setLocationText("");
         setPriceText("");
         setLogNote("");
-        setGeoPoint(null);
         setDateOpen(false);
         setBatchBeerNames([]);
         await loadCheckins();
@@ -934,11 +1000,14 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           beer_name: beer,
           rating: normalizedRating,
           created_at,
+          country_code: "TR",
+          city: normalizedCity,
+          district: normalizedDistrict,
           location_text: normalizedLocation || "",
           price_try: normalizedPrice,
           note: normalizedNote || "",
-          latitude: geoPoint?.latitude ?? null,
-          longitude: geoPoint?.longitude ?? null,
+          latitude: null,
+          longitude: null,
         })),
         ...prev,
       ];
@@ -950,7 +1019,6 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     setLocationText("");
     setPriceText("");
     setLogNote("");
-    setGeoPoint(null);
     setDateOpen(false);
     setBatchBeerNames([]);
     trackEvent({
@@ -1027,6 +1095,9 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 beer_name,
                 rating: sanitizeRating(rating),
                 created_at,
+                country_code: "TR",
+                city,
+                district,
                 location_text: "",
                 price_try: null,
                 note: "",
@@ -1196,29 +1267,67 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
           <div className="text-xs opacity-80">Opsiyonel detaylar</div>
           <div className="mt-2 grid gap-2">
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+              >
+                {TURKEY_CITIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={district}
+                onChange={(e) => setDistrict(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+              >
+                {districtOptions.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+              <input
+                value={locationSuggestQuery}
+                onChange={(e) => setLocationSuggestQuery(e.target.value)}
+                placeholder="Il/ilce onerisi ara (örn: kadikoy, besiktas)"
+                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+              />
+              <div className="mt-2 flex flex-wrap gap-2">
+                {locationSuggestions.map((s) => (
+                  <button
+                    key={`${s.city}-${s.district}`}
+                    type="button"
+                    onClick={() => {
+                      setCity(s.city);
+                      setDistrict(s.district);
+                      setLocationSuggestQuery(`${s.city} / ${s.district}`);
+                    }}
+                    className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs"
+                  >
+                    {s.city} / {s.district}
+                  </button>
+                ))}
+              </div>
+            </div>
             <input
               value={locationText}
               onChange={(e) => setLocationText(e.target.value)}
-              placeholder="Lokasyon (örn. Kadikoy, Moda)"
+              placeholder="Mekan/konum notu (opsiyonel)"
               className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
             />
-            <div className="grid grid-cols-[1fr_auto] gap-2">
-              <input
-                value={priceText}
-                onChange={(e) => setPriceText(e.target.value)}
-                placeholder="Fiyat (TL)"
-                inputMode="decimal"
-                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
-              />
-              <button
-                type="button"
-                onClick={useCurrentLocation}
-                disabled={geoBusy}
-                className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs"
-              >
-                {geoBusy ? "..." : "Konum al"}
-              </button>
-            </div>
+            <input
+              value={priceText}
+              onChange={(e) => setPriceText(e.target.value)}
+              placeholder="Fiyat (TL)"
+              inputMode="decimal"
+              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+            />
             <textarea
               value={logNote}
               onChange={(e) => setLogNote(e.target.value.slice(0, 220))}
@@ -1227,9 +1336,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
             />
           </div>
-          <div className="mt-2 text-xs opacity-65">
-            {geoPoint ? `Koordinat: ${geoPoint.latitude}, ${geoPoint.longitude}` : "Koordinat eklenmedi."}
-          </div>
+          <div className="mt-2 text-xs opacity-65">Lokasyon: {city}{district ? ` / ${district}` : ""}</div>
         </div>
 
         {isBackDate ? (
@@ -1328,7 +1435,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               <div className="text-xs opacity-70 mt-1">
                 {new Date(c.created_at).toLocaleString("tr-TR")}
               </div>
-              {c.location_text ? <div className="text-xs opacity-80 mt-1">📍 {c.location_text}</div> : null}
+              {c.city ? (
+                <div className="text-xs opacity-80 mt-1">
+                  📍 {c.city}{c.district ? ` / ${c.district}` : ""}{c.location_text ? ` • ${c.location_text}` : ""}
+                </div>
+              ) : c.location_text ? <div className="text-xs opacity-80 mt-1">📍 {c.location_text}</div> : null}
               {c.price_try !== null && c.price_try !== undefined ? (
                 <div className="text-xs opacity-80 mt-1">💸 {Number(c.price_try).toFixed(2)} TL</div>
               ) : null}
@@ -1396,6 +1507,9 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         beer_name,
         rating: normalizedRating,
         created_at,
+        country_code: "TR",
+        city,
+        district,
         location_text: "",
         price_try: null,
         note: "",
@@ -1423,6 +1537,9 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         beer_name,
         rating: normalizedRating,
         created_at,
+        country_code: "TR",
+        city,
+        district,
         location_text: "",
         price_try: null,
         note: "",

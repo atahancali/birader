@@ -21,6 +21,8 @@ type CheckinRow = {
   beer_name: string;
   rating: number | null;
   created_at: string;
+  city?: string | null;
+  district?: string | null;
   location_text?: string | null;
   price_try?: number | null;
   note?: string | null;
@@ -113,7 +115,7 @@ export default function PublicProfileView({ username }: { username: string }) {
           .order("rank", { ascending: true }),
         supabase
           .from("checkins")
-          .select("id, beer_name, rating, created_at, location_text, price_try, note")
+          .select("id, beer_name, rating, created_at, city, district, location_text, price_try, note")
           .eq("user_id", p.user_id)
           .gte("created_at", start)
           .lt("created_at", end)
@@ -311,7 +313,11 @@ export default function PublicProfileView({ username }: { username: string }) {
                 <div className="text-xs">{c.rating === null ? "—" : `${c.rating}⭐`}</div>
               </div>
               <div className="mt-1 text-xs opacity-70">{new Date(c.created_at).toLocaleString("tr-TR")}</div>
-              {c.location_text ? <div className="mt-1 text-xs opacity-80">📍 {c.location_text}</div> : null}
+              {c.city ? (
+                <div className="mt-1 text-xs opacity-80">
+                  📍 {c.city}{c.district ? ` / ${c.district}` : ""}{c.location_text ? ` • ${c.location_text}` : ""}
+                </div>
+              ) : c.location_text ? <div className="mt-1 text-xs opacity-80">📍 {c.location_text}</div> : null}
               {c.price_try !== null && c.price_try !== undefined ? (
                 <div className="mt-1 text-xs opacity-80">💸 {Number(c.price_try).toFixed(2)} TL</div>
               ) : null}

@@ -1,125 +1,187 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 type CheckinGeo = {
   created_at: string;
+  city?: string | null;
+  district?: string | null;
   location_text?: string | null;
-  latitude?: number | null;
-  longitude?: number | null;
 };
 
-type Bubble = {
-  key: string;
-  x: number;
-  y: number;
-  count: number;
-  locationText?: string;
-};
+type CityCount = { city: string; count: number };
 
-function clamp01(n: number) {
-  return Math.max(0, Math.min(1, n));
-}
+type DistrictCount = { district: string; count: number };
+type PairCount = { key: string; city: string; district: string; count: number };
 
 export default function GeoHeatmap({ year, checkins }: { year: number; checkins: CheckinGeo[] }) {
-  const points = useMemo(() => {
-    const map = new Map<string, Bubble>();
-
-    for (const c of checkins) {
-      const y = new Date(c.created_at).getUTCFullYear();
-      if (y !== year) continue;
-      const lat = Number(c.latitude);
-      const lng = Number(c.longitude);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-
-      const latBucket = Math.round(lat * 2) / 2;
-      const lngBucket = Math.round(lng * 2) / 2;
-      const key = `${latBucket}:${lngBucket}`;
-
-      const x = clamp01((lngBucket + 180) / 360);
-      const yNorm = clamp01((90 - latBucket) / 180);
-
-      const prev = map.get(key);
-      if (prev) {
-        prev.count += 1;
-      } else {
-        map.set(key, {
-          key,
-          x,
-          y: yNorm,
-          count: 1,
-          locationText: (c.location_text || "").trim() || undefined,
-        });
-      }
-    }
-
-    return Array.from(map.values()).sort((a, b) => b.count - a.count);
-  }, [checkins, year]);
-
-  const topLocations = useMemo(() => {
+  const [mode, setMode] = useState<"city" | "district">("city");
+  const cityCounts = useMemo<CityCount[]>(() => {
     const map = new Map<string, number>();
     for (const c of checkins) {
       const y = new Date(c.created_at).getUTCFullYear();
       if (y !== year) continue;
-      const lat = Number(c.latitude);
-      const lng = Number(c.longitude);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-      const loc = (c.location_text || "").trim();
-      if (!loc) continue;
-      map.set(loc, (map.get(loc) || 0) + 1);
+      const city = (c.city || "").trim();
+      if (!city) continue;
+      map.set(city, (map.get(city) || 0) + 1);
     }
     return Array.from(map.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8);
+      .map(([city, count]) => ({ city, count }))
+      .sort((a, b) => b.count - a.count || a.city.localeCompare(b.city, "tr"));
   }, [checkins, year]);
 
-  const max = Math.max(1, ...points.map((p) => p.count));
+  const [activeCity, setActiveCity] = useState<string>("");
+
+  const selectedCity = activeCity || cityCounts[0]?.city || "";
+
+  const districtCounts = useMemo<DistrictCount[]>(() => {
+    if (!selectedCity) return [];
+    const map = new Map<string, number>();
+    for (const c of checkins) {
+      const y = new Date(c.created_at).getUTCFullYear();
+      if (y !== year) continue;
+      const city = (c.city || "").trim();
+      if (city !== selectedCity) continue;
+      const district = (c.district || "").trim() || "Belirtilmedi";
+      map.set(district, (map.get(district) || 0) + 1);
+    }
+    return Array.from(map.entries())
+      .map(([district, count]) => ({ district, count }))
+      .sort((a, b) => b.count - a.count || a.district.localeCompare(b.district, "tr"));
+  }, [checkins, selectedCity, year]);
+
+  const pairCounts = useMemo<PairCount[]>(() => {
+    const map = new Map<string, number>();
+    for (const c of checkins) {
+      const y = new Date(c.created_at).getUTCFullYear();
+      if (y !== year) continue;
+      const city = (c.city || "").trim();
+      if (!city) continue;
+      const district = (c.district || "").trim() || "Belirtilmedi";
+      const key = `${city}::${district}`;
+      map.set(key, (map.get(key) || 0) + 1);
+    }
+    return Array.from(map.entries())
+      .map(([key, count]) => {
+        const [city, district] = key.split("::");
+        return { key, city, district, count };
+      })
+      .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key, "tr"));
+  }, [checkins, year]);
+
+  const cityMax = Math.max(1, ...cityCounts.map((x) => x.count));
+  const districtMax = Math.max(1, ...districtCounts.map((x) => x.count));
+  const pairMax = Math.max(1, ...pairCounts.map((x) => x.count));
 
   return (
     <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div>
-          <div className="text-sm opacity-80">Cografi isi haritasi</div>
-          <div className="text-xs opacity-60">Koordinat eklenen loglar ({year})</div>
+          <div className="text-sm opacity-80">Turkiye konum isi haritasi</div>
+          <div className="text-xs opacity-60">Sehir/ilce bazli log yogunlugu ({year})</div>
         </div>
-        <div className="text-xs opacity-70">Nokta: {points.length}</div>
+        <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-black/25 p-1">
+          <button
+            type="button"
+            onClick={() => setMode("city")}
+            className={`rounded-md px-2 py-1 text-[11px] ${mode === "city" ? "bg-white/15" : "bg-black/20"}`}
+          >
+            Sehir
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("district")}
+            className={`rounded-md px-2 py-1 text-[11px] ${mode === "district" ? "bg-white/15" : "bg-black/20"}`}
+          >
+            Ilce
+          </button>
+        </div>
       </div>
 
-      <div className="relative h-48 overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#0c2a3e] via-[#16435f] to-[#0e3046]">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,.08),transparent_35%),radial-gradient(circle_at_75%_60%,rgba(255,255,255,.06),transparent_35%)]" />
+      {!cityCounts.length ? (
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-3 text-xs opacity-70">
+          Sehir verisi yok. Log eklerken sehir/ilce sec.
+        </div>
+      ) : (
+        <>
+          {mode === "city" ? (
+            <>
+              <div className="mb-2 text-xs opacity-70">Sehir: {cityCounts.length}</div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {cityCounts.slice(0, 24).map((row) => {
+                  const intensity = row.count / cityMax;
+                  const active = row.city === selectedCity;
+                  return (
+                    <button
+                      key={row.city}
+                      type="button"
+                      onClick={() => setActiveCity(row.city)}
+                      className={`rounded-xl border px-3 py-2 text-left ${
+                        active
+                          ? "border-amber-300/45 bg-amber-500/15"
+                          : "border-white/10 bg-black/20"
+                      }`}
+                      style={{
+                        boxShadow: active
+                          ? `0 0 0 1px rgba(252,211,77,0.2), inset 0 0 ${8 + intensity * 20}px rgba(245,158,11,0.22)`
+                          : `inset 0 0 ${4 + intensity * 16}px rgba(245,158,11,${0.06 + intensity * 0.2})`,
+                      }}
+                      title={`${row.city} • ${row.count} log`}
+                    >
+                      <div className="truncate text-xs font-semibold">{row.city}</div>
+                      <div className="text-[11px] opacity-70">{row.count} log</div>
+                    </button>
+                  );
+                })}
+              </div>
 
-        {points.map((p) => {
-          const size = 10 + (p.count / max) * 26;
-          const glow = 0.35 + (p.count / max) * 0.55;
-
-          return (
-            <div
-              key={p.key}
-              className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full border border-amber-100/50 bg-amber-300/70"
-              style={{
-                left: `${p.x * 100}%`,
-                top: `${p.y * 100}%`,
-                width: `${size}px`,
-                height: `${size}px`,
-                boxShadow: `0 0 18px rgba(251,191,36,${glow})`,
-              }}
-              title={`${p.locationText || p.key} • ${p.count} log`}
-            />
-          );
-        })}
-      </div>
-
-      <div className="mt-3 text-xs opacity-70">En cok loglanan lokasyonlar</div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        {topLocations.map(([loc, count]) => (
-          <div key={loc} className="rounded-full border border-white/15 bg-black/25 px-3 py-1 text-xs">
-            {loc} • {count}
-          </div>
-        ))}
-        {!topLocations.length ? (
-          <div className="text-xs opacity-60">Lokasyon verisi yok. Log eklerken konum bilgisi gir.</div>
-        ) : null}
-      </div>
+              <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
+                <div className="text-xs opacity-75">{selectedCity} ilce dagilimi</div>
+                <div className="mt-2 space-y-2">
+                  {districtCounts.slice(0, 10).map((d) => (
+                    <div key={d.district}>
+                      <div className="mb-1 flex items-center justify-between text-xs">
+                        <span className="truncate pr-2">{d.district}</span>
+                        <span className="opacity-70">{d.count}</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-white/10">
+                        <div
+                          className="h-2 rounded-full bg-amber-300/80"
+                          style={{ width: `${Math.max(6, (d.count / districtMax) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  {!districtCounts.length ? (
+                    <div className="text-xs opacity-60">Bu sehir icin ilce verisi yok.</div>
+                  ) : null}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="mb-2 text-xs opacity-75">Top il/ilce kombinasyonlari</div>
+              <div className="space-y-2">
+                {pairCounts.slice(0, 18).map((p) => (
+                  <div key={p.key}>
+                    <div className="mb-1 flex items-center justify-between text-xs">
+                      <span className="truncate pr-2">{p.city} / {p.district}</span>
+                      <span className="opacity-70">{p.count}</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-white/10">
+                      <div
+                        className="h-2 rounded-full bg-amber-300/80"
+                        style={{ width: `${Math.max(6, (p.count / pairMax) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+                {!pairCounts.length ? <div className="text-xs opacity-60">Ilce verisi yok.</div> : null}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </section>
   );
 }

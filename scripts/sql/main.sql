@@ -1,26 +1,17 @@
--- Social + analytics base schema for Birader
+-- main.sql
+-- Run this whole file in Supabase SQL Editor.
+-- Idempotent: safe to re-run.
 
+-- 001_social_core
 create table if not exists public.profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
   username text not null unique,
-  display_name text not null default '',
   bio text not null default '',
   avatar_path text not null default '',
   is_public boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
-alter table public.profiles add column if not exists avatar_path text not null default '';
-alter table public.profiles add column if not exists display_name text not null default '';
-alter table public.checkins add column if not exists country_code text not null default 'TR';
-alter table public.checkins add column if not exists city text not null default '';
-alter table public.checkins add column if not exists district text not null default '';
-alter table public.checkins add column if not exists location_text text not null default '';
-alter table public.checkins add column if not exists price_try numeric(10,2);
-alter table public.checkins add column if not exists note text not null default '';
-alter table public.checkins add column if not exists latitude double precision;
-alter table public.checkins add column if not exists longitude double precision;
 
 create table if not exists public.follows (
   follower_id uuid not null references auth.users(id) on delete cascade,
@@ -39,11 +30,6 @@ create table if not exists public.favorite_beers (
   unique (user_id, beer_name)
 );
 
-alter table public.favorite_beers drop constraint if exists favorite_beers_rank_check;
-delete from public.favorite_beers where rank > 3;
-alter table public.favorite_beers
-add constraint favorite_beers_rank_check check (rank between 1 and 3);
-
 create table if not exists public.analytics_events (
   id bigserial primary key,
   event_name text not null,
@@ -53,12 +39,8 @@ create table if not exists public.analytics_events (
 );
 
 create index if not exists idx_profiles_username on public.profiles (username);
-create index if not exists idx_profiles_display_name on public.profiles (display_name);
 create index if not exists idx_follows_follower on public.follows (follower_id);
 create index if not exists idx_follows_following on public.follows (following_id);
-create index if not exists idx_checkins_city_district on public.checkins (city, district);
-create index if not exists idx_checkins_location_text on public.checkins (location_text);
-create index if not exists idx_checkins_geo on public.checkins (latitude, longitude);
 create index if not exists idx_analytics_events_name_time on public.analytics_events (event_name, created_at desc);
 create index if not exists idx_analytics_events_user_time on public.analytics_events (user_id, created_at desc);
 
@@ -78,25 +60,16 @@ before update on public.profiles
 for each row execute function public.set_updated_at();
 
 alter table public.profiles enable row level security;
-alter table public.checkins enable row level security;
 alter table public.follows enable row level security;
 alter table public.favorite_beers enable row level security;
 alter table public.analytics_events enable row level security;
 
--- profiles: everyone can read public profiles, owner can read/write self
-drop policy if exists profiles_public_read on public.profiles;
-create policy profiles_public_read on public.profiles
-for select using (is_public = true or auth.uid() = user_id);
+-- 002_profile_display_name_and_public_checkins
+alter table public.profiles add column if not exists display_name text not null default '';
+create index if not exists idx_profiles_display_name on public.profiles (display_name);
 
-drop policy if exists profiles_owner_insert on public.profiles;
-create policy profiles_owner_insert on public.profiles
-for insert with check (auth.uid() = user_id);
+alter table public.checkins enable row level security;
 
-drop policy if exists profiles_owner_update on public.profiles;
-create policy profiles_owner_update on public.profiles
-for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-
--- checkins: owner can always read; public can read if profile is public
 drop policy if exists checkins_public_read on public.checkins;
 create policy checkins_public_read on public.checkins
 for select using (
@@ -109,7 +82,46 @@ for select using (
   )
 );
 
--- follows: everyone can read, owner manages own following list
+-- 003_checkins_nullable_rating
+alter table public.checkins alter column rating drop not null;
+
+-- 004_checkins_geo_metadata
+alter table public.checkins add column if not exists country_code text not null default 'TR';
+alter table public.checkins add column if not exists city text not null default '';
+alter table public.checkins add column if not exists district text not null default '';
+alter table public.checkins add column if not exists location_text text not null default '';
+alter table public.checkins add column if not exists price_try numeric(10,2);
+alter table public.checkins add column if not exists note text not null default '';
+alter table public.checkins add column if not exists latitude double precision;
+alter table public.checkins add column if not exists longitude double precision;
+
+create index if not exists idx_checkins_city_district on public.checkins (city, district);
+create index if not exists idx_checkins_location_text on public.checkins (location_text);
+create index if not exists idx_checkins_geo on public.checkins (latitude, longitude);
+
+-- refresh checks / constraints
+alter table public.favorite_beers drop constraint if exists favorite_beers_rank_check;
+delete from public.favorite_beers where rank > 3;
+alter table public.favorite_beers
+add constraint favorite_beers_rank_check check (rank between 1 and 3);
+
+update public.profiles
+set display_name = username
+where coalesce(trim(display_name), '') = '';
+
+-- policies
+ drop policy if exists profiles_public_read on public.profiles;
+create policy profiles_public_read on public.profiles
+for select using (is_public = true or auth.uid() = user_id);
+
+drop policy if exists profiles_owner_insert on public.profiles;
+create policy profiles_owner_insert on public.profiles
+for insert with check (auth.uid() = user_id);
+
+drop policy if exists profiles_owner_update on public.profiles;
+create policy profiles_owner_update on public.profiles
+for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
 drop policy if exists follows_read_all on public.follows;
 create policy follows_read_all on public.follows
 for select using (true);
@@ -122,7 +134,6 @@ drop policy if exists follows_owner_delete on public.follows;
 create policy follows_owner_delete on public.follows
 for delete using (auth.uid() = follower_id);
 
--- favorite beers: public read if owner profile is public; owner write
 drop policy if exists favorite_beers_public_read on public.favorite_beers;
 create policy favorite_beers_public_read on public.favorite_beers
 for select using (
@@ -146,7 +157,6 @@ drop policy if exists favorite_beers_owner_delete on public.favorite_beers;
 create policy favorite_beers_owner_delete on public.favorite_beers
 for delete using (auth.uid() = user_id);
 
--- analytics: only authenticated users can insert; no direct read from client
 drop policy if exists analytics_insert_auth on public.analytics_events;
 create policy analytics_insert_auth on public.analytics_events
 for insert with check (auth.uid() is not null);
@@ -155,7 +165,6 @@ revoke all on public.analytics_events from anon;
 revoke all on public.analytics_events from authenticated;
 grant insert on public.analytics_events to authenticated;
 
--- convenience view: public profile summary
 drop view if exists public.profile_stats;
 create view public.profile_stats as
 select
@@ -167,3 +176,11 @@ select
 from public.profiles p
 left join public.checkins c on c.user_id = p.user_id
 group by p.user_id, p.username, p.display_name;
+
+-- Verification
+select
+  to_regclass('public.profiles') as profiles_table,
+  to_regclass('public.follows') as follows_table,
+  to_regclass('public.favorite_beers') as favorite_beers_table,
+  to_regclass('public.analytics_events') as analytics_events_table,
+  to_regclass('public.checkins') as checkins_table;
