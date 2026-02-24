@@ -24,7 +24,7 @@ type FavoriteBeer = {
   rank: number;
 };
 
-type HomeSection = "log" | "social" | "heatmap" | "stats" | "recent";
+type HomeSection = "log" | "social" | "heatmap" | "stats";
 
 type BeerItem = {
   brand: string;
@@ -473,6 +473,7 @@ export default function Home() {
   const [favorites, setFavorites] = useState<FavoriteBeer[]>([]);
   const [replaceFavoriteRank, setReplaceFavoriteRank] = useState<number | null>(null);
   const [activeSection, setActiveSection] = useState<HomeSection>("log");
+  const [recentExpandStep, setRecentExpandStep] = useState(0);
 
   const year = useMemo(() => new Date().getFullYear(), []);
 
@@ -689,6 +690,12 @@ export default function Home() {
   }
 
   const favoriteCandidate = useMemo(() => favoriteBeerName(beerName), [beerName]);
+  const recentVisibleCount = useMemo(() => {
+    if (recentExpandStep <= 0) return 5;
+    if (recentExpandStep === 1) return 10;
+    if (recentExpandStep === 2) return 20;
+    return checkins.length;
+  }, [checkins.length, recentExpandStep]);
 
   function quickLogFromFeed(payload: { beerName: string; rating: number }) {
     const incomingBeer = payload.beerName?.trim();
@@ -1057,6 +1064,42 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       </section>
       ) : null}
 
+      {activeSection === "log" ? (
+      <section className="mt-6">
+        <div className="text-sm text-amber-200 mb-2">Son check-in’ler</div>
+        <div className="space-y-2">
+          {checkins.slice(0, recentVisibleCount).map((c) => (
+            <div key={c.id} className="rounded-3xl border border-white/10 bg-white/5 p-4">
+              <div className="flex items-center justify-between">
+                <div className="font-semibold">{c.beer_name}</div>
+                <div className="text-sm">{c.rating}⭐</div>
+              </div>
+              <div className="text-xs opacity-70 mt-1">
+                {new Date(c.created_at).toLocaleString("tr-TR")}
+              </div>
+            </div>
+          ))}
+          {checkins.length === 0 ? (
+            <div className="text-sm opacity-70">Henüz check-in yok. İlkini gir.</div>
+          ) : null}
+        </div>
+
+        {checkins.length > recentVisibleCount ? (
+          <button
+            type="button"
+            onClick={() => setRecentExpandStep((s) => Math.min(3, s + 1))}
+            className="mt-3 rounded-2xl border border-white/15 bg-white/10 px-4 py-2 text-sm"
+          >
+            {recentExpandStep === 0
+              ? "5 tane daha göster"
+              : recentExpandStep === 1
+                ? "10 tane daha göster"
+                : "Tümünü göster"}
+          </button>
+        ) : null}
+      </section>
+      ) : null}
+
       {activeSection === "social" ? (
       <SocialPanel
         userId={session.user.id}
@@ -1169,36 +1212,13 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       </section>
       ) : null}
 
-      {activeSection === "recent" ? (
-      <section className="mt-6">
-        <div className="text-sm text-amber-200 mb-2">Son check-in’ler</div>
-        <div className="space-y-2">
-          {checkins.map((c) => (
-            <div key={c.id} className="rounded-3xl border border-white/10 bg-white/5 p-4">
-              <div className="flex items-center justify-between">
-                <div className="font-semibold">{c.beer_name}</div>
-                <div className="text-sm">{c.rating}⭐</div>
-              </div>
-              <div className="text-xs opacity-70 mt-1">
-                {new Date(c.created_at).toLocaleString("tr-TR")}
-              </div>
-            </div>
-          ))}
-          {checkins.length === 0 && (
-            <div className="text-sm opacity-70">Henüz check-in yok. İlkini gir.</div>
-          )}
-        </div>
-      </section>
-      ) : null}
-
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/85 backdrop-blur-md">
-        <div className="mx-auto grid max-w-md grid-cols-5 gap-1 p-2">
+        <div className="mx-auto grid max-w-md grid-cols-4 gap-1 p-2">
           {[
             { key: "log", label: "Logla" },
             { key: "social", label: "Sosyal" },
             { key: "heatmap", label: "Harita" },
             { key: "stats", label: "İstat" },
-            { key: "recent", label: "Sonlar" },
           ].map((item) => (
             <button
               key={item.key}

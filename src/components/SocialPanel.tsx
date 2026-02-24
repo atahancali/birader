@@ -12,6 +12,7 @@ type ProfileRow = {
   username: string;
   bio: string;
   is_public: boolean;
+  avatar_path?: string | null;
 };
 
 type FavoriteBeerRow = {
@@ -154,6 +155,8 @@ export default function SocialPanel({
   const [bioInput, setBioInput] = useState("");
   const [isPublic, setIsPublic] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [avatarPath, setAvatarPath] = useState("");
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   const [favorites, setFavorites] = useState<FavoriteBeerRow[]>([]);
   const [checkins, setCheckins] = useState<CheckinRow[]>([]);
@@ -237,10 +240,39 @@ export default function SocialPanel({
     setDbError(message);
   }
 
+  function avatarPublicUrl(path?: string | null) {
+    const clean = (path || "").trim();
+    if (!clean) return "";
+    const { data } = supabase.storage.from("avatars").getPublicUrl(clean);
+    return data.publicUrl;
+  }
+
+  async function fileToJpegBlob(file: File) {
+    const bitmap = await createImageBitmap(file);
+    const maxSide = 512;
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Gorsel islenemedi.");
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close();
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.9)
+    );
+    if (!blob) throw new Error("Gorsel donusturulemedi.");
+    return blob;
+  }
+
   async function reserveProfile() {
     const { data, error } = await supabase
       .from("profiles")
-      .select("user_id, username, bio, is_public")
+      .select("user_id, username, bio, is_public, avatar_path")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -258,6 +290,7 @@ export default function SocialPanel({
         username: candidate,
         bio: "",
         is_public: true,
+        avatar_path: "",
       });
 
       if (!insertError) {
@@ -267,6 +300,7 @@ export default function SocialPanel({
           username: candidate,
           bio: "",
           is_public: true,
+          avatar_path: "",
         } as ProfileRow;
       }
 
@@ -469,6 +503,7 @@ export default function SocialPanel({
     setUsernameInput(ensured.username);
     setBioInput(ensured.bio || "");
     setIsPublic(ensured.is_public);
+    setAvatarPath(ensured.avatar_path || "");
 
     const [favoritesRes, checkinsRes] = await Promise.all([
       supabase
@@ -623,6 +658,51 @@ export default function SocialPanel({
     setProfile(nextProfile);
     setUsernameInput(nextUsername);
     trackEvent({ eventName: "profile_updated", userId, props: { is_public: isPublic } });
+  }
+
+  async function onAvatarFileChange(file?: File) {
+    if (!file) return;
+    const type = (file.type || "").toLowerCase();
+    if (!["image/jpeg", "image/png", "image/webp"].includes(type)) {
+      alert("Sadece JPG, PNG veya WebP yukleyebilirsin.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      alert("Avatar en fazla 2MB olabilir.");
+      return;
+    }
+
+    try {
+      setAvatarUploading(true);
+      const blob = await fileToJpegBlob(file);
+      const uploadPath = `${userId}/avatar.jpg`;
+      const { error: upErr } = await supabase.storage
+        .from("avatars")
+        .upload(uploadPath, blob, { upsert: true, contentType: "image/jpeg" });
+      if (upErr) {
+        markDbError(upErr.message);
+        alert("Avatar yuklenemedi.");
+        return;
+      }
+
+      const { error: dbErr } = await supabase
+        .from("profiles")
+        .update({ avatar_path: uploadPath })
+        .eq("user_id", userId);
+      if (dbErr) {
+        markDbError(dbErr.message);
+        alert("Profil avatari guncellenemedi.");
+        return;
+      }
+
+      setAvatarPath(uploadPath);
+      setProfile((prev) => (prev ? { ...prev, avatar_path: uploadPath } : prev));
+      trackEvent({ eventName: "avatar_uploaded", userId, props: { path: uploadPath } });
+    } catch (e: any) {
+      alert(e?.message || "Avatar islenemedi.");
+    } finally {
+      setAvatarUploading(false);
+    }
   }
 
   async function addFavorite() {
@@ -942,6 +1022,31 @@ export default function SocialPanel({
 
         <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
           <div className="text-xs opacity-70">Profil ayarlari</div>
+          <div className="mt-2 flex items-center gap-3">
+            <div className="h-14 w-14 overflow-hidden rounded-full border border-white/15 bg-black/40">
+              {avatarPath ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={avatarPublicUrl(avatarPath)}
+                  alt="avatar"
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xs opacity-60">
+                  avatar
+                </div>
+              )}
+            </div>
+            <label className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs cursor-pointer">
+              {avatarUploading ? "Yukleniyor..." : "Avatar yukle"}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => void onAvatarFileChange(e.target.files?.[0])}
+              />
+            </label>
+          </div>
           <div className="mt-2 grid gap-2">
             <input
               value={usernameInput}

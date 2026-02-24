@@ -12,6 +12,7 @@ type ProfileRow = {
   username: string;
   bio: string;
   is_public: boolean;
+  avatar_path?: string | null;
 };
 
 type CheckinRow = {
@@ -46,6 +47,13 @@ export default function PublicProfileView({ username }: { username: string }) {
   const year = useMemo(() => new Date().getFullYear(), []);
   const avg = useMemo(() => avgRating(checkins), [checkins]);
 
+  function avatarPublicUrl(path?: string | null) {
+    const clean = (path || "").trim();
+    if (!clean) return "";
+    const { data } = supabase.storage.from("avatars").getPublicUrl(clean);
+    return data.publicUrl;
+  }
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSessionUserId(data.session?.user?.id ?? null);
@@ -60,7 +68,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       const normalized = normalizeUsername(username);
       const { data: row, error } = await supabase
         .from("profiles")
-        .select("user_id, username, bio, is_public")
+        .select("user_id, username, bio, is_public, avatar_path")
         .eq("username", normalized)
         .maybeSingle();
 
@@ -211,9 +219,21 @@ export default function PublicProfileView({ username }: { username: string }) {
   return (
     <main className="min-h-screen max-w-md mx-auto p-4">
       <div className="flex items-center justify-between gap-3">
-        <div>
+        <div className="flex items-center gap-3">
+          <div className="h-12 w-12 overflow-hidden rounded-full border border-white/15 bg-black/30">
+            {profile.avatar_path ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatarPublicUrl(profile.avatar_path)}
+                alt={`${profile.username} avatar`}
+                className="h-full w-full object-cover"
+              />
+            ) : null}
+          </div>
+          <div>
           <div className="text-xs opacity-70">Birader Profil</div>
           <h1 className="text-2xl font-bold">@{profile.username}</h1>
+          </div>
         </div>
         <Link href="/" className="text-xs underline opacity-80">
           Ana sayfa
