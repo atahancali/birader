@@ -82,6 +82,18 @@ for select using (
   )
 );
 
+drop policy if exists checkins_owner_insert on public.checkins;
+create policy checkins_owner_insert on public.checkins
+for insert with check (auth.uid() = user_id);
+
+drop policy if exists checkins_owner_update on public.checkins;
+create policy checkins_owner_update on public.checkins
+for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists checkins_owner_delete on public.checkins;
+create policy checkins_owner_delete on public.checkins
+for delete using (auth.uid() = user_id);
+
 -- 003_checkins_nullable_rating
 alter table public.checkins alter column rating drop not null;
 

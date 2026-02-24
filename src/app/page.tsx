@@ -961,7 +961,8 @@ async function deleteCheckin(id: string) {
       await loadCheckins();
       return;
     }
-    console.error("Supabase delete failed -> local fallback:", error.message);
+    alert(`Silme basarisiz: ${error.message}`);
+    return;
   }
 
   // Local fallback
@@ -995,7 +996,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       await loadCheckins();
       return;
     }
-    console.error("Supabase update failed -> local fallback:", error.message);
+    alert(`Guncelleme basarisiz: ${error.message}`);
+    return;
   }
 
   // Local fallback
