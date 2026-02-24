@@ -543,6 +543,7 @@ export default function Home() {
   const [favorites, setFavorites] = useState<FavoriteBeer[]>([]);
   const [replaceFavoriteRank, setReplaceFavoriteRank] = useState<number | null>(null);
   const [activeSection, setActiveSection] = useState<HomeSection>("log");
+  const [logStep, setLogStep] = useState<1 | 2 | 3 | 4>(1);
   const [recentExpandStep, setRecentExpandStep] = useState(0);
   const [headerProfile, setHeaderProfile] = useState<HeaderProfile | null>(null);
 
@@ -873,6 +874,7 @@ export default function Home() {
     const nextRating = Number(payload.rating || 0);
     setRating(nextRating > 0 ? Math.round(clamp(nextRating, 0, 5) * 2) / 2 : null);
     setActiveSection("log");
+    setLogStep(3);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -981,6 +983,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         });
         setDateISO(today);
         setRating(null);
+        setLogStep(1);
         setLocationText("");
         setPriceText("");
         setLogNote("");
@@ -1018,6 +1021,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
     setDateISO(today);
     setRating(null);
+    setLogStep(1);
     setLocationText("");
     setPriceText("");
     setLogNote("");
@@ -1157,270 +1161,307 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
       {activeSection === "log" ? (
       <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
-        <div className="text-sm text-amber-200 mb-2">Bira logla</div>
-
-        <div className="mb-3">
-          <label className="block text-xs opacity-70 mb-2">Format</label>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setFormat("Fici")}
-              className={`rounded-2xl border px-3 py-3 text-sm ${
-                format === "Fici" ? "border-white/25 bg-white/10" : "border-white/10 bg-black/20"
-              }`}
-            >
-              Fıçı
-            </button>
-            <button
-              type="button"
-              onClick={() => setFormat("Şişe/Kutu")}
-              className={`rounded-2xl border px-3 py-3 text-sm ${
-                format === "Şişe/Kutu" ? "border-white/25 bg-white/10" : "border-white/10 bg-black/20"
-              }`}
-            >
-              Şişe / Kutu
-            </button>
-          </div>
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-sm text-amber-200">Bira logla</div>
+          <div className="text-xs opacity-70">Adım {logStep}/4</div>
         </div>
-
-        <div className="mb-3">
-          <label className="block text-xs opacity-70 mb-2">Bira</label>
-          <ComboboxBeer
-            formatLabel={format === "Fici" ? "Fıçı" : "Şişe/Kutu"}
-            query={beerQuery}
-            setQuery={setBeerQuery}
-            pinned={topBeerLabelsByFormat[format] ?? []}
-            options={beerLabelsForFormat}
-            value={beerName}
-            onChange={setBeerName}
-          />
-        </div>
-
-        <div className="mb-3">
-          <label className="block text-xs opacity-70 mb-2">Tarih</label>
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setDateOpen((v) => !v)}
-              className="w-full rounded-2xl bg-black/20 border border-white/10 px-3 py-3 outline-none text-left"
-            >
-              <div className="flex items-center justify-between">
-                <span>{dateISO}</span>
-                <span className="text-white/55">📅</span>
-              </div>
-            </button>
-
-            {dateOpen ? (
-              <div className="absolute z-20 mt-2 w-full rounded-2xl border border-white/10 bg-black/80 p-3 shadow-xl backdrop-blur-md">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={dateISO}
-                    onChange={(e) => setDateISO(e.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none"
-                  />
-                  <button
-                    type="button"
-                    className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm hover:border-white/20"
-                    onClick={() => {
-                      setDateISO(today);
-                      setDateOpen(false);
-                    }}
-                    title="Bugün"
-                  >
-                    Bugün
-                  </button>
-                </div>
-                <div className="mt-2 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setDateOpen(false)}
-                    className="text-xs opacity-70 hover:opacity-100"
-                  >
-                    Kapat
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="mt-1 text-xs opacity-60">Önerilen: bugün. Geçmiş için takvimi aç.</div>
-          </div>
-        </div>
-
-        <div className="mb-3">
-          <label className="block text-xs opacity-70 mb-2">Puan</label>
-          <button
-            type="button"
-            onClick={() => setRating((r) => (r === null ? 3.5 : null))}
-            className={`mb-2 rounded-xl border px-3 py-1.5 text-xs ${
-              rating === null ? "border-white/30 bg-white/15" : "border-white/10 bg-black/20"
-            }`}
-          >
-            {rating === null ? "Puansız log (açık)" : "Puansız log"}
-          </button>
-          <StarRatingHalf value={rating} onChange={setRating} />
-          <div className="mt-1 text-xs opacity-60">
-            {rating === null
-              ? "Bu log puansız kaydedilecek."
-              : "Hover → yarım/yıldız seç • Tıkla → set • Aynı puana tıkla → puansız"}
-          </div>
-        </div>
-
-        <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
-          <div className="text-xs opacity-80">Opsiyonel detaylar</div>
-          <div className="mt-2 grid gap-2">
-            <div className="grid grid-cols-2 gap-2">
-              <select
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+        <div className="mb-4 grid grid-cols-4 gap-2">
+          {["Format", "Bira", "Detay", "Onay"].map((label, idx) => {
+            const step = (idx + 1) as 1 | 2 | 3 | 4;
+            const active = step === logStep;
+            const done = step < logStep;
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={() => setLogStep(step)}
+                className={`rounded-xl border px-2 py-2 text-[11px] ${
+                  active
+                    ? "border-amber-300/35 bg-amber-500/15"
+                    : done
+                      ? "border-white/20 bg-white/10"
+                      : "border-white/10 bg-black/20"
+                }`}
               >
-                {TURKEY_CITIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={district}
-                onChange={(e) => setDistrict(e.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
-              >
-                {districtOptions.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-              <input
-                value={locationSuggestQuery}
-                onChange={(e) => setLocationSuggestQuery(e.target.value)}
-                placeholder="Il/ilce onerisi ara (örn: kadikoy, besiktas)"
-                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
-              />
-              <div className="mt-2 flex flex-wrap gap-2">
-                {locationSuggestions.map((s) => (
-                  <button
-                    key={`${s.city}-${s.district}`}
-                    type="button"
-                    onClick={() => {
-                      setCity(s.city);
-                      setDistrict(s.district);
-                      setLocationSuggestQuery(`${s.city} / ${s.district}`);
-                    }}
-                    className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs"
-                  >
-                    {s.city} / {s.district}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <input
-              value={locationText}
-              onChange={(e) => setLocationText(e.target.value)}
-              placeholder="Mekan/konum notu (opsiyonel)"
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
-            />
-            <input
-              value={priceText}
-              onChange={(e) => setPriceText(e.target.value)}
-              placeholder="Fiyat (TL)"
-              inputMode="decimal"
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
-            />
-            <textarea
-              value={logNote}
-              onChange={(e) => setLogNote(e.target.value.slice(0, 220))}
-              placeholder="Yorum (konum/fiyat/atmosfer notu)"
-              rows={3}
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
-            />
-          </div>
-          <div className="mt-2 text-xs opacity-65">Lokasyon: {city}{district ? ` / ${district}` : ""}</div>
+                {label}
+              </button>
+            );
+          })}
         </div>
 
-        {isBackDate ? (
-          <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-xs opacity-80">Eski tarih için çoklu log</div>
+        {logStep === 1 ? (
+          <div>
+            <div className="mb-2 text-xs opacity-70">Sunum tarzını seç</div>
+            <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => {
-                  const n = (beerName || "").trim();
-                  if (!n) return;
-                  setBatchBeerNames((prev) => (prev.includes(n) ? prev : [...prev, n]));
-                }}
-                className="rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs"
+                onClick={() => setFormat("Fici")}
+                className={`rounded-3xl border p-4 text-left ${
+                  format === "Fici" ? "border-amber-300/35 bg-amber-500/10" : "border-white/10 bg-black/20"
+                }`}
               >
-                Listeye ekle
+                <div className="text-lg font-semibold">Fıçı</div>
+                <div className="mt-1 text-xs opacity-70">Bar / draft deneyimi</div>
               </button>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {batchBeerNames.map((b) => (
-                <button
-                  key={b}
-                  type="button"
-                  onClick={() => setBatchBeerNames((prev) => prev.filter((x) => x !== b))}
-                  className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs"
-                  title="Listeden çıkar"
-                >
-                  {b} ×
-                </button>
-              ))}
-              {!batchBeerNames.length ? <div className="text-xs opacity-60">Henüz listede bira yok.</div> : null}
+              <button
+                type="button"
+                onClick={() => setFormat("Şişe/Kutu")}
+                className={`rounded-3xl border p-4 text-left ${
+                  format === "Şişe/Kutu" ? "border-amber-300/35 bg-amber-500/10" : "border-white/10 bg-black/20"
+                }`}
+              >
+                <div className="text-lg font-semibold">Şişe / Kutu</div>
+                <div className="mt-1 text-xs opacity-70">Market / paket seçimleri</div>
+              </button>
             </div>
           </div>
         ) : null}
 
-        <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
-          <label className="flex items-center gap-2 text-xs opacity-85">
-            <input
-              type="checkbox"
-              checked={favoriteOnSave}
-              onChange={(e) => setFavoriteOnSave(e.target.checked)}
+        {logStep === 2 ? (
+          <div>
+            <div className="mb-2 text-xs opacity-70">Biranı seç</div>
+            <ComboboxBeer
+              formatLabel={format === "Fici" ? "Fıçı" : "Şişe/Kutu"}
+              query={beerQuery}
+              setQuery={setBeerQuery}
+              pinned={topBeerLabelsByFormat[format] ?? []}
+              options={beerLabelsForFormat}
+              value={beerName}
+              onChange={setBeerName}
             />
-            Bu logdaki birayi favorilere ekle
-          </label>
+          </div>
+        ) : null}
 
-          {favoriteOnSave ? (
-            <div className="mt-2 text-xs opacity-70">
-              {favorites.some((f) => f.beer_name === favoriteCandidate)
-                ? "Bu bira zaten favorilerinde."
-                : favorites.length < 3
-                  ? `Favori listene eklenecek (${favorites.length}/3).`
-                  : "Favori listesi dolu (3/3). Asagidan degisecek favoriyi sec."}
+        {logStep === 3 ? (
+          <div>
+            <div className="mb-3">
+              <label className="block text-xs opacity-70 mb-2">Tarih</label>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setDateOpen((v) => !v)}
+                  className="w-full rounded-2xl bg-black/20 border border-white/10 px-3 py-3 outline-none text-left"
+                >
+                  <div className="flex items-center justify-between">
+                    <span>{dateISO}</span>
+                    <span className="text-white/55">Takvim</span>
+                  </div>
+                </button>
+                {dateOpen ? (
+                  <div className="absolute z-20 mt-2 w-full rounded-2xl border border-white/10 bg-black/80 p-3 shadow-xl backdrop-blur-md">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="date"
+                        value={dateISO}
+                        onChange={(e) => setDateISO(e.target.value)}
+                        className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none"
+                      />
+                      <button
+                        type="button"
+                        className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm hover:border-white/20"
+                        onClick={() => {
+                          setDateISO(today);
+                          setDateOpen(false);
+                        }}
+                      >
+                        Bugün
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
-          ) : null}
 
-          {favoriteOnSave &&
-          favorites.length >= 3 &&
-          !favorites.some((f) => f.beer_name === favoriteCandidate) ? (
-            <div className="mt-2">
-              <label className="mb-1 block text-xs opacity-70">Degisecek favori</label>
-              <select
-                value={replaceFavoriteRank ?? ""}
-                onChange={(e) => setReplaceFavoriteRank(Number(e.target.value))}
-                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+            <div className="mb-3">
+              <label className="block text-xs opacity-70 mb-2">Puan</label>
+              <button
+                type="button"
+                onClick={() => setRating((r) => (r === null ? 3.5 : null))}
+                className={`mb-2 rounded-xl border px-3 py-1.5 text-xs ${
+                  rating === null ? "border-white/30 bg-white/15" : "border-white/10 bg-black/20"
+                }`}
               >
-                {favorites.map((f) => (
-                  <option key={f.rank} value={f.rank}>
-                    #{f.rank} {f.beer_name}
-                  </option>
-                ))}
-              </select>
+                {rating === null ? "Puansız log (açık)" : "Puansız log"}
+              </button>
+              <StarRatingHalf value={rating} onChange={setRating} />
             </div>
-          ) : null}
-        </div>
 
-        <button
-          onClick={addCheckin}
-          disabled={!(isBackDate ? batchBeerNames.length > 0 || !!beerName : !!beerName)}
-          className="mt-2 w-full rounded-2xl bg-white text-black py-3 font-semibold active:scale-[0.99] disabled:opacity-50"
-        >
-          {isBackDate && batchBeerNames.length > 0 ? `${batchBeerNames.length} birayı kaydet` : "Kaydet"}
-        </button>
+            <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="text-xs opacity-80">Opsiyonel detaylar</div>
+              <div className="mt-2 grid gap-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+                  >
+                    {TURKEY_CITIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={district}
+                    onChange={(e) => setDistrict(e.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+                  >
+                    {districtOptions.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+                  <input
+                    value={locationSuggestQuery}
+                    onChange={(e) => setLocationSuggestQuery(e.target.value)}
+                    placeholder="Il/ilce onerisi ara (örn: kadikoy, besiktas)"
+                    className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+                  />
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {locationSuggestions.map((s) => (
+                      <button
+                        key={`${s.city}-${s.district}`}
+                        type="button"
+                        onClick={() => {
+                          setCity(s.city);
+                          setDistrict(s.district);
+                          setLocationSuggestQuery(`${s.city} / ${s.district}`);
+                        }}
+                        className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs"
+                      >
+                        {s.city} / {s.district}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <input
+                  value={locationText}
+                  onChange={(e) => setLocationText(e.target.value)}
+                  placeholder="Mekan/konum notu (opsiyonel)"
+                  className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+                />
+                <input
+                  value={priceText}
+                  onChange={(e) => setPriceText(e.target.value)}
+                  placeholder="Fiyat (TL)"
+                  inputMode="decimal"
+                  className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+                />
+                <textarea
+                  value={logNote}
+                  onChange={(e) => setLogNote(e.target.value.slice(0, 220))}
+                  placeholder="Yorum (konum/fiyat/atmosfer notu)"
+                  rows={3}
+                  className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+                />
+              </div>
+            </div>
+
+            {isBackDate ? (
+              <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs opacity-80">Eski tarih için çoklu log</div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const n = (beerName || "").trim();
+                      if (!n) return;
+                      setBatchBeerNames((prev) => (prev.includes(n) ? prev : [...prev, n]));
+                    }}
+                    className="rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs"
+                  >
+                    Listeye ekle
+                  </button>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {batchBeerNames.map((b) => (
+                    <button
+                      key={b}
+                      type="button"
+                      onClick={() => setBatchBeerNames((prev) => prev.filter((x) => x !== b))}
+                      className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs"
+                    >
+                      {b} ×
+                    </button>
+                  ))}
+                  {!batchBeerNames.length ? <div className="text-xs opacity-60">Henüz listede bira yok.</div> : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {logStep === 4 ? (
+          <div>
+            <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="text-xs opacity-70">Log özeti</div>
+              <div className="mt-1 text-sm font-semibold">{beerName || "Bira seçilmedi"}</div>
+              <div className="mt-1 text-xs opacity-75">Format: {format}</div>
+              <div className="text-xs opacity-75">Tarih: {dateISO}</div>
+              <div className="text-xs opacity-75">Puan: {rating === null ? "Puansız" : `${rating}⭐`}</div>
+              <div className="text-xs opacity-75">Konum: {city}{district ? ` / ${district}` : ""}</div>
+            </div>
+
+            <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
+              <label className="flex items-center gap-2 text-xs opacity-85">
+                <input
+                  type="checkbox"
+                  checked={favoriteOnSave}
+                  onChange={(e) => setFavoriteOnSave(e.target.checked)}
+                />
+                Bu logdaki birayi favorilere ekle
+              </label>
+              {favoriteOnSave &&
+              favorites.length >= 3 &&
+              !favorites.some((f) => f.beer_name === favoriteCandidate) ? (
+                <div className="mt-2">
+                  <label className="mb-1 block text-xs opacity-70">Degisecek favori</label>
+                  <select
+                    value={replaceFavoriteRank ?? ""}
+                    onChange={(e) => setReplaceFavoriteRank(Number(e.target.value))}
+                    className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+                  >
+                    {favorites.map((f) => (
+                      <option key={f.rank} value={f.rank}>
+                        #{f.rank} {f.beer_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+            </div>
+
+            <button
+              onClick={addCheckin}
+              disabled={!(isBackDate ? batchBeerNames.length > 0 || !!beerName : !!beerName)}
+              className="w-full rounded-2xl bg-white text-black py-3 font-semibold active:scale-[0.99] disabled:opacity-50"
+            >
+              {isBackDate && batchBeerNames.length > 0 ? `${batchBeerNames.length} birayı kaydet` : "Kaydet"}
+            </button>
+          </div>
+        ) : null}
+
+        <div className="mt-4 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setLogStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3 | 4) : s))}
+            disabled={logStep === 1}
+            className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs disabled:opacity-40"
+          >
+            Geri
+          </button>
+          <button
+            type="button"
+            onClick={() => setLogStep((s) => (s < 4 ? ((s + 1) as 1 | 2 | 3 | 4) : s))}
+            disabled={logStep === 4 || (logStep === 2 && !beerName)}
+            className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs disabled:opacity-40"
+          >
+            {logStep === 4 ? "Son" : "Ileri"}
+          </button>
+        </div>
       </section>
       ) : null}
 
