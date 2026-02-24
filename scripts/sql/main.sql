@@ -38,11 +38,21 @@ create table if not exists public.analytics_events (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.product_suggestions (
+  id bigserial primary key,
+  user_id uuid null references auth.users(id) on delete set null,
+  category text not null default 'general',
+  message text not null,
+  status text not null default 'new',
+  created_at timestamptz not null default now()
+);
+
 create index if not exists idx_profiles_username on public.profiles (username);
 create index if not exists idx_follows_follower on public.follows (follower_id);
 create index if not exists idx_follows_following on public.follows (following_id);
 create index if not exists idx_analytics_events_name_time on public.analytics_events (event_name, created_at desc);
 create index if not exists idx_analytics_events_user_time on public.analytics_events (user_id, created_at desc);
+create index if not exists idx_product_suggestions_created_at on public.product_suggestions (created_at desc);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -63,6 +73,7 @@ alter table public.profiles enable row level security;
 alter table public.follows enable row level security;
 alter table public.favorite_beers enable row level security;
 alter table public.analytics_events enable row level security;
+alter table public.product_suggestions enable row level security;
 
 -- 002_profile_display_name_and_public_checkins
 alter table public.profiles add column if not exists display_name text not null default '';
@@ -194,9 +205,16 @@ drop policy if exists analytics_insert_auth on public.analytics_events;
 create policy analytics_insert_auth on public.analytics_events
 for insert with check (auth.uid() is not null);
 
+drop policy if exists product_suggestions_insert_auth on public.product_suggestions;
+create policy product_suggestions_insert_auth on public.product_suggestions
+for insert with check (auth.uid() = user_id);
+
 revoke all on public.analytics_events from anon;
 revoke all on public.analytics_events from authenticated;
 grant insert on public.analytics_events to authenticated;
+revoke all on public.product_suggestions from anon;
+revoke all on public.product_suggestions from authenticated;
+grant insert on public.product_suggestions to authenticated;
 
 drop view if exists public.profile_stats;
 create view public.profile_stats as
@@ -216,4 +234,5 @@ select
   to_regclass('public.follows') as follows_table,
   to_regclass('public.favorite_beers') as favorite_beers_table,
   to_regclass('public.analytics_events') as analytics_events_table,
-  to_regclass('public.checkins') as checkins_table;
+  to_regclass('public.checkins') as checkins_table,
+  to_regclass('public.product_suggestions') as product_suggestions_table;

@@ -52,6 +52,15 @@ create table if not exists public.analytics_events (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.product_suggestions (
+  id bigserial primary key,
+  user_id uuid null references auth.users(id) on delete set null,
+  category text not null default 'general',
+  message text not null,
+  status text not null default 'new',
+  created_at timestamptz not null default now()
+);
+
 create index if not exists idx_profiles_username on public.profiles (username);
 create index if not exists idx_profiles_display_name on public.profiles (display_name);
 create index if not exists idx_follows_follower on public.follows (follower_id);
@@ -61,6 +70,7 @@ create index if not exists idx_checkins_location_text on public.checkins (locati
 create index if not exists idx_checkins_geo on public.checkins (latitude, longitude);
 create index if not exists idx_analytics_events_name_time on public.analytics_events (event_name, created_at desc);
 create index if not exists idx_analytics_events_user_time on public.analytics_events (user_id, created_at desc);
+create index if not exists idx_product_suggestions_created_at on public.product_suggestions (created_at desc);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -82,6 +92,7 @@ alter table public.checkins enable row level security;
 alter table public.follows enable row level security;
 alter table public.favorite_beers enable row level security;
 alter table public.analytics_events enable row level security;
+alter table public.product_suggestions enable row level security;
 
 -- profiles: everyone can read public profiles, owner can read/write self
 drop policy if exists profiles_public_read on public.profiles;
@@ -184,9 +195,16 @@ drop policy if exists analytics_insert_auth on public.analytics_events;
 create policy analytics_insert_auth on public.analytics_events
 for insert with check (auth.uid() is not null);
 
+drop policy if exists product_suggestions_insert_auth on public.product_suggestions;
+create policy product_suggestions_insert_auth on public.product_suggestions
+for insert with check (auth.uid() = user_id);
+
 revoke all on public.analytics_events from anon;
 revoke all on public.analytics_events from authenticated;
 grant insert on public.analytics_events to authenticated;
+revoke all on public.product_suggestions from anon;
+revoke all on public.product_suggestions from authenticated;
+grant insert on public.product_suggestions to authenticated;
 
 -- convenience view: public profile summary
 drop view if exists public.profile_stats;

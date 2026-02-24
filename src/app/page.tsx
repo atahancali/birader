@@ -604,6 +604,10 @@ export default function Home() {
   const [replaceFavoriteRank, setReplaceFavoriteRank] = useState<number | null>(null);
   const [activeSection, setActiveSection] = useState<HomeSection>("log");
   const [logStep, setLogStep] = useState<1 | 2 | 3 | 4>(1);
+  const [suggestionOpen, setSuggestionOpen] = useState(false);
+  const [suggestionCategory, setSuggestionCategory] = useState("general");
+  const [suggestionMessage, setSuggestionMessage] = useState("");
+  const [suggestionBusy, setSuggestionBusy] = useState(false);
   const [recentExpandStep, setRecentExpandStep] = useState(0);
   const [headerProfile, setHeaderProfile] = useState<HeaderProfile | null>(null);
 
@@ -946,6 +950,30 @@ export default function Home() {
     setActiveSection("log");
     setLogStep(3);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function submitSuggestion() {
+    const text = suggestionMessage.trim();
+    if (!text || !session?.user?.id) return;
+    setSuggestionBusy(true);
+    const { error } = await supabase.from("product_suggestions").insert({
+      user_id: session.user.id,
+      category: suggestionCategory,
+      message: text,
+    });
+    setSuggestionBusy(false);
+    if (error) {
+      alert(`Oneri gonderilemedi: ${error.message}`);
+      return;
+    }
+    trackEvent({
+      eventName: "suggestion_submitted",
+      userId: session.user.id,
+      props: { category: suggestionCategory, length: text.length },
+    });
+    setSuggestionMessage("");
+    setSuggestionCategory("general");
+    setSuggestionOpen(false);
   }
 
 async function deleteCheckin(id: string) {
@@ -1752,6 +1780,64 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           })}
         </div>
       </section>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={() => setSuggestionOpen(true)}
+        className="fixed bottom-20 right-4 z-40 rounded-full border border-amber-300/35 bg-amber-500/20 px-4 py-2 text-xs font-semibold text-amber-100 shadow-[0_0_20px_rgba(245,158,11,0.25)]"
+      >
+        Oneri
+      </button>
+
+      {suggestionOpen ? (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/70" onClick={() => setSuggestionOpen(false)} />
+          <div className="absolute left-1/2 top-1/2 w-[92%] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/10 bg-black p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">Oneri gonder</div>
+                <div className="text-xs opacity-70">Yazdiklarin ekibe dusecek.</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSuggestionOpen(false)}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs"
+              >
+                Kapat
+              </button>
+            </div>
+
+            <div className="mt-3 grid gap-2">
+              <select
+                value={suggestionCategory}
+                onChange={(e) => setSuggestionCategory(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+              >
+                <option value="general">Genel</option>
+                <option value="bug">Bug</option>
+                <option value="ux">UX/UI</option>
+                <option value="feature">Yeni Ozellik</option>
+              </select>
+              <textarea
+                value={suggestionMessage}
+                onChange={(e) => setSuggestionMessage(e.target.value.slice(0, 600))}
+                placeholder="Ne ekleyelim, neyi duzeltelim?"
+                rows={5}
+                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+              />
+              <div className="text-right text-[11px] opacity-60">{suggestionMessage.length}/600</div>
+              <button
+                type="button"
+                onClick={() => void submitSuggestion()}
+                disabled={suggestionBusy || !suggestionMessage.trim()}
+                className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm disabled:opacity-40"
+              >
+                {suggestionBusy ? "Gonderiliyor..." : "Gonder"}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/85 backdrop-blur-md">
