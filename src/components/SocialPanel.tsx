@@ -21,6 +21,7 @@ type FavoriteBeerRow = {
 };
 
 type FollowRow = { following_id: string };
+type FollowerRow = { follower_id: string };
 
 type SearchProfile = {
   user_id: string;
@@ -166,6 +167,8 @@ export default function SocialPanel({
 
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const [followingProfiles, setFollowingProfiles] = useState<SearchProfile[]>([]);
+  const [followerProfiles, setFollowerProfiles] = useState<SearchProfile[]>([]);
+  const [relationView, setRelationView] = useState<"following" | "followers">("following");
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [feedBusy, setFeedBusy] = useState(false);
   const [feedWindow, setFeedWindow] = useState<FeedWindow>("7d");
@@ -487,6 +490,35 @@ export default function SocialPanel({
     }
 
     setFollowingProfiles((people as SearchProfile[] | null) ?? []);
+
+    const { data: followerRows, error: followerErr } = await supabase
+      .from("follows")
+      .select("follower_id")
+      .eq("following_id", userId);
+
+    if (followerErr) {
+      markDbError(followerErr.message);
+      return;
+    }
+
+    const followerIds = (followerRows as FollowerRow[] | null)?.map((r) => r.follower_id) ?? [];
+    if (!followerIds.length) {
+      setFollowerProfiles([]);
+      return;
+    }
+
+    const { data: followerPeople, error: followerPeopleErr } = await supabase
+      .from("profiles")
+      .select("user_id, username, bio, is_public")
+      .in("user_id", followerIds)
+      .order("username", { ascending: true });
+
+    if (followerPeopleErr) {
+      markDbError(followerPeopleErr.message);
+      return;
+    }
+
+    setFollowerProfiles((followerPeople as SearchProfile[] | null) ?? []);
   }
 
   async function loadAll() {
@@ -617,6 +649,18 @@ export default function SocialPanel({
           void loadFollowing();
         }
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "follows",
+          filter: `following_id=eq.${userId}`,
+        },
+        () => {
+          void loadFollowing();
+        }
+      )
       .subscribe();
 
     return () => {
@@ -680,8 +724,9 @@ export default function SocialPanel({
         .from("avatars")
         .upload(uploadPath, blob, { upsert: true, contentType: "image/jpeg" });
       if (upErr) {
+        console.error("avatar upload error:", upErr.message);
         markDbError(upErr.message);
-        alert("Avatar yuklenemedi.");
+        alert(`Avatar yuklenemedi: ${upErr.message}`);
         return;
       }
 
@@ -690,8 +735,9 @@ export default function SocialPanel({
         .update({ avatar_path: uploadPath })
         .eq("user_id", userId);
       if (dbErr) {
+        console.error("avatar profile update error:", dbErr.message);
         markDbError(dbErr.message);
-        alert("Profil avatari guncellenemedi.");
+        alert(`Profil avatari guncellenemedi: ${dbErr.message}`);
         return;
       }
 
@@ -1212,27 +1258,72 @@ export default function SocialPanel({
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-          <div className="text-xs opacity-70">Takip ettiklerin</div>
-          <div className="mt-2 space-y-2">
-            {followingProfiles.map((p) => (
-              <div key={p.user_id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/25 p-2">
-                <div className="min-w-0">
-                  <Link href={`/u/${p.username}`} className="truncate text-sm underline">
-                    @{p.username}
-                  </Link>
-                  {p.bio ? <div className="truncate text-xs opacity-70">{p.bio}</div> : null}
+          <div className="text-xs opacity-70">Baglantilar</div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setRelationView("following")}
+              className={`rounded-xl border px-3 py-2 text-left text-sm ${
+                relationView === "following"
+                  ? "border-white/25 bg-white/12"
+                  : "border-white/10 bg-black/20"
+              }`}
+            >
+              <div className="text-xs opacity-70">Takip edilen</div>
+              <div className="text-lg font-semibold">{followingProfiles.length}</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRelationView("followers")}
+              className={`rounded-xl border px-3 py-2 text-left text-sm ${
+                relationView === "followers"
+                  ? "border-white/25 bg-white/12"
+                  : "border-white/10 bg-black/20"
+              }`}
+            >
+              <div className="text-xs opacity-70">Takipci</div>
+              <div className="text-lg font-semibold">{followerProfiles.length}</div>
+            </button>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {(relationView === "following" ? followingProfiles : followerProfiles).map((p) => {
+              const isFollowing = followingIds.has(p.user_id);
+              const isFollowersView = relationView === "followers";
+              return (
+                <div key={`${relationView}-${p.user_id}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/25 p-2">
+                  <div className="min-w-0">
+                    <Link href={`/u/${p.username}`} className="truncate text-sm underline">
+                      @{p.username}
+                    </Link>
+                    {p.bio ? <div className="truncate text-xs opacity-70">{p.bio}</div> : null}
+                  </div>
+                  {isFollowersView ? (
+                    <button
+                      type="button"
+                      onClick={() => void (isFollowing ? unfollow(p) : follow(p))}
+                      className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+                    >
+                      {isFollowing ? "Takiptesin" : "Takip et"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void unfollow(p)}
+                      className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+                    >
+                      Cikar
+                    </button>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void unfollow(p)}
-                  className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
-                >
-                  Cikar
-                </button>
+              );
+            })}
+            {(relationView === "following" ? followingProfiles.length : followerProfiles.length) === 0 ? (
+              <div className="text-xs opacity-60">
+                {relationView === "following"
+                  ? "Henuz kimseyi takip etmiyorsun."
+                  : "Henuz takipcin yok."}
               </div>
-            ))}
-            {!followingProfiles.length ? (
-              <div className="text-xs opacity-60">Henuz kimseyi takip etmiyorsun.</div>
             ) : null}
           </div>
         </div>
