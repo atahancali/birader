@@ -75,6 +75,7 @@ const BEER_CATALOG: BeerItem[] = [
   { brand: "Leffe Blonde", format: "Fici", ml: 500 },
   { brand: "Stella Artois", format: "Fici", ml: 500 },
   { brand: "Guinness", format: "Fici", ml: 500 },
+  { brand: "Bud", format: "Fici", ml: 500 },
   { brand: "Hoegaarden", format: "Fici", ml: 500 },
   { brand: "1664 Blanc", format: "Fici", ml: 500 },
   { brand: "Paulaner Hefe Weissbier", format: "Fici", ml: 500 },
