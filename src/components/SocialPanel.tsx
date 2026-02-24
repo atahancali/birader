@@ -50,6 +50,40 @@ type FeedItem = FeedCheckinRow & {
   display_name?: string | null;
 };
 
+type FeedComment = {
+  id: number;
+  checkin_id: string;
+  user_id: string;
+  body: string;
+  created_at: string;
+  username: string;
+  display_name?: string | null;
+};
+
+type ShareInviteRow = {
+  id: number;
+  source_checkin_id: string;
+  inviter_id: string;
+  invited_user_id: string;
+  status: "pending" | "accepted" | "declined";
+  created_at: string;
+  responded_at?: string | null;
+  accepted_checkin_id?: string | null;
+};
+
+type PendingInviteView = ShareInviteRow & {
+  source_beer_name: string;
+  source_created_at: string;
+  inviter_username: string;
+  inviter_display_name?: string | null;
+};
+
+type OwnCheckinLite = {
+  id: string;
+  beer_name: string;
+  created_at: string;
+};
+
 type FeedWindow = "all" | "24h" | "7d";
 type LeaderWindow = "7d" | "30d" | "90d" | "365d";
 type LeaderScope = "all" | "followed";
@@ -183,6 +217,15 @@ export default function SocialPanel({
   const [feedWindow, setFeedWindow] = useState<FeedWindow>("7d");
   const [feedMinRating, setFeedMinRating] = useState<number>(0);
   const [feedQuery, setFeedQuery] = useState("");
+  const [feedCommentsByCheckin, setFeedCommentsByCheckin] = useState<Record<string, FeedComment[]>>({});
+  const [commentDraftByCheckin, setCommentDraftByCheckin] = useState<Record<string, string>>({});
+  const [commentSendingFor, setCommentSendingFor] = useState<string>("");
+  const [pendingInvites, setPendingInvites] = useState<PendingInviteView[]>([]);
+  const [inviteBusyId, setInviteBusyId] = useState<number>(0);
+  const [ownRecentCheckins, setOwnRecentCheckins] = useState<OwnCheckinLite[]>([]);
+  const [inviteSourceCheckinId, setInviteSourceCheckinId] = useState("");
+  const [inviteTargetUserId, setInviteTargetUserId] = useState("");
+  const [inviteCreating, setInviteCreating] = useState(false);
   const [leaderWindow, setLeaderWindow] = useState<LeaderWindow>("7d");
   const [leaderScope, setLeaderScope] = useState<LeaderScope>("all");
   const [leaderRows, setLeaderRows] = useState<LeaderboardRow[]>([]);
@@ -194,6 +237,7 @@ export default function SocialPanel({
   const followingIdsRef = useRef<Set<string>>(new Set());
   const followingNameRef = useRef<Map<string, { username: string; display_name?: string | null }>>(new Map());
   const leaderboardReloadRef = useRef<(() => Promise<void>) | null>(null);
+  const feedIdsRef = useRef<string[]>([]);
 
   const fallbackBase = useMemo(() => {
     const fromEmail = usernameFromEmail(sessionEmail);
@@ -340,6 +384,7 @@ export default function SocialPanel({
   async function loadFeed(ids: string[]) {
     if (!ids.length) {
       setFeedItems([]);
+      setFeedCommentsByCheckin({});
       return;
     }
 
@@ -385,7 +430,159 @@ export default function SocialPanel({
         display_name: profileById.get(r.user_id)?.display_name ?? "",
       }))
     );
+    await loadCommentsForCheckins(rows.map((r) => String(r.id)));
     trackEvent({ eventName: "feed_loaded", userId, props: { count: rows.length } });
+  }
+
+  async function loadCommentsForCheckins(checkinIds: string[]) {
+    const ids = Array.from(new Set(checkinIds.filter(Boolean)));
+    if (!ids.length) {
+      setFeedCommentsByCheckin({});
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("checkin_comments")
+      .select("id, checkin_id, user_id, body, created_at")
+      .in("checkin_id", ids)
+      .order("created_at", { ascending: true })
+      .limit(500);
+
+    if (error) {
+      markDbError(error.message);
+      return;
+    }
+
+    const commentRows = (data as Array<Omit<FeedComment, "username" | "display_name">> | null) ?? [];
+    const userIds = Array.from(new Set(commentRows.map((x) => x.user_id)));
+    let profileByUserId = new Map<string, { username: string; display_name?: string | null }>();
+
+    if (userIds.length) {
+      const { data: profileRows, error: profileErr } = await supabase
+        .from("profiles")
+        .select("user_id, username, display_name")
+        .in("user_id", userIds);
+
+      if (profileErr) {
+        markDbError(profileErr.message);
+        return;
+      }
+
+      profileByUserId = new Map(
+        ((profileRows as Array<{ user_id: string; username: string; display_name?: string | null }> | null) ?? []).map(
+          (p) => [p.user_id, { username: p.username, display_name: p.display_name }]
+        )
+      );
+    }
+
+    const grouped: Record<string, FeedComment[]> = {};
+    for (const id of ids) grouped[id] = [];
+    for (const c of commentRows) {
+      const ref = profileByUserId.get(c.user_id);
+      const enriched: FeedComment = {
+        ...c,
+        username: ref?.username ?? "kullanici",
+        display_name: ref?.display_name ?? "",
+      };
+      if (!grouped[c.checkin_id]) grouped[c.checkin_id] = [];
+      grouped[c.checkin_id].push(enriched);
+    }
+
+    setFeedCommentsByCheckin((prev) => {
+      const next = { ...prev };
+      for (const id of ids) next[id] = grouped[id] ?? [];
+      return next;
+    });
+  }
+
+  async function loadPendingInvites() {
+    const { data, error } = await supabase
+      .from("checkin_share_invites")
+      .select("id, source_checkin_id, inviter_id, invited_user_id, status, created_at, responded_at, accepted_checkin_id")
+      .eq("invited_user_id", userId)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (error) {
+      markDbError(error.message);
+      return;
+    }
+
+    const invites = (data as ShareInviteRow[] | null) ?? [];
+    if (!invites.length) {
+      setPendingInvites([]);
+      return;
+    }
+
+    const sourceIds = Array.from(new Set(invites.map((x) => x.source_checkin_id)));
+    const inviterIds = Array.from(new Set(invites.map((x) => x.inviter_id)));
+
+    const [{ data: sourceRows, error: sourceErr }, { data: inviterRows, error: inviterErr }] = await Promise.all([
+      supabase
+        .from("checkins")
+        .select("id, beer_name, created_at")
+        .in("id", sourceIds)
+        .limit(200),
+      supabase
+        .from("profiles")
+        .select("user_id, username, display_name")
+        .in("user_id", inviterIds),
+    ]);
+
+    if (sourceErr) {
+      markDbError(sourceErr.message);
+      return;
+    }
+    if (inviterErr) {
+      markDbError(inviterErr.message);
+      return;
+    }
+
+    const sourceById = new Map<string, { beer_name: string; created_at: string }>();
+    for (const row of (sourceRows as Array<{ id: string; beer_name: string; created_at: string }> | null) ?? []) {
+      sourceById.set(String(row.id), { beer_name: row.beer_name, created_at: row.created_at });
+    }
+
+    const inviterById = new Map<string, { username: string; display_name?: string | null }>();
+    for (const row of
+      (inviterRows as Array<{ user_id: string; username: string; display_name?: string | null }> | null) ?? []) {
+      inviterById.set(row.user_id, { username: row.username, display_name: row.display_name });
+    }
+
+    const viewRows: PendingInviteView[] = [];
+    for (const inv of invites) {
+      const src = sourceById.get(inv.source_checkin_id);
+      if (!src) continue;
+      const inviter = inviterById.get(inv.inviter_id);
+      viewRows.push({
+        ...inv,
+        source_beer_name: src.beer_name,
+        source_created_at: src.created_at,
+        inviter_username: inviter?.username ?? "kullanici",
+        inviter_display_name: inviter?.display_name ?? "",
+      });
+    }
+
+    setPendingInvites(viewRows);
+  }
+
+  async function loadOwnRecentCheckins() {
+    const { data, error } = await supabase
+      .from("checkins")
+      .select("id, beer_name, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(15);
+
+    if (error) {
+      markDbError(error.message);
+      return;
+    }
+
+    const rows = (data as OwnCheckinLite[] | null) ?? [];
+    setOwnRecentCheckins(rows);
+    if (!inviteSourceCheckinId && rows.length > 0) setInviteSourceCheckinId(String(rows[0].id));
   }
 
   async function loadLeaderboard() {
@@ -586,6 +783,7 @@ export default function SocialPanel({
     }
 
     await loadFollowing();
+    await Promise.all([loadOwnRecentCheckins(), loadPendingInvites()]);
     setLoading(false);
   }
 
@@ -599,12 +797,18 @@ export default function SocialPanel({
     const nameMap = new Map<string, { username: string; display_name?: string | null }>();
     for (const p of followingProfiles) nameMap.set(p.user_id, { username: p.username, display_name: p.display_name });
     followingNameRef.current = nameMap;
+    const hasCurrentTarget = followingProfiles.some((p) => p.user_id === inviteTargetUserId);
+    if (!hasCurrentTarget) setInviteTargetUserId(followingProfiles[0]?.user_id || "");
   }, [followingIds, followingProfiles]);
 
   useEffect(() => {
     leaderboardReloadRef.current = loadLeaderboard;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   });
+
+  useEffect(() => {
+    feedIdsRef.current = feedItems.map((x) => String(x.id));
+  }, [feedItems]);
 
   useEffect(() => {
     void loadLeaderboard();
@@ -692,6 +896,27 @@ export default function SocialPanel({
         },
         () => {
           void loadFollowing();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "checkin_comments" },
+        () => {
+          const ids = feedIdsRef.current;
+          if (!ids.length) return;
+          void loadCommentsForCheckins(ids);
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "checkin_share_invites",
+          filter: `invited_user_id=eq.${userId}`,
+        },
+        () => {
+          void loadPendingInvites();
         }
       )
       .subscribe();
@@ -923,6 +1148,109 @@ export default function SocialPanel({
     trackEvent({ eventName: "follow_removed", userId, props: { target_user_id: target.user_id } });
   }
 
+  async function addComment(checkinId: string) {
+    const body = (commentDraftByCheckin[checkinId] || "").trim();
+    if (!body) return;
+    if (body.length > 240) {
+      alert("Yorum en fazla 240 karakter olabilir.");
+      return;
+    }
+
+    setCommentSendingFor(checkinId);
+    const { error } = await supabase.from("checkin_comments").insert({
+      checkin_id: checkinId,
+      user_id: userId,
+      body,
+    });
+    setCommentSendingFor("");
+
+    if (error) {
+      markDbError(error.message);
+      alert(error.message);
+      return;
+    }
+
+    setCommentDraftByCheckin((prev) => ({ ...prev, [checkinId]: "" }));
+    await loadCommentsForCheckins([checkinId]);
+    trackEvent({ eventName: "checkin_comment_added", userId, props: { checkin_id: checkinId } });
+  }
+
+  async function createShareInvite() {
+    if (!inviteSourceCheckinId || !inviteTargetUserId) return;
+    if (inviteTargetUserId === userId) {
+      alert("Kendine davet gonderemezsin.");
+      return;
+    }
+
+    setInviteCreating(true);
+    const { error } = await supabase.from("checkin_share_invites").upsert(
+      {
+        source_checkin_id: inviteSourceCheckinId,
+        inviter_id: userId,
+        invited_user_id: inviteTargetUserId,
+        status: "pending",
+        responded_at: null,
+        accepted_checkin_id: null,
+      },
+      { onConflict: "source_checkin_id,invited_user_id" }
+    );
+    setInviteCreating(false);
+
+    if (error) {
+      markDbError(error.message);
+      alert(error.message);
+      return;
+    }
+
+    trackEvent({
+      eventName: "checkin_share_invite_created",
+      userId,
+      props: { source_checkin_id: inviteSourceCheckinId, invited_user_id: inviteTargetUserId },
+    });
+    alert("Davet gonderildi.");
+  }
+
+  async function acceptInvite(inviteId: number) {
+    setInviteBusyId(inviteId);
+    const { data, error } = await supabase.rpc("accept_checkin_share_invite", { p_invite_id: inviteId });
+    setInviteBusyId(0);
+
+    if (error) {
+      markDbError(error.message);
+      alert(error.message);
+      return;
+    }
+
+    if (data !== true) {
+      alert("Davet kabul edilemedi.");
+      return;
+    }
+
+    setPendingInvites((prev) => prev.filter((x) => x.id !== inviteId));
+    await loadOwnRecentCheckins();
+    trackEvent({ eventName: "checkin_share_invite_accepted", userId, props: { invite_id: inviteId } });
+  }
+
+  async function declineInvite(inviteId: number) {
+    setInviteBusyId(inviteId);
+    const { error } = await supabase
+      .from("checkin_share_invites")
+      .update({ status: "declined", responded_at: new Date().toISOString() })
+      .eq("id", inviteId)
+      .eq("invited_user_id", userId)
+      .eq("status", "pending");
+    setInviteBusyId(0);
+
+    if (error) {
+      markDbError(error.message);
+      alert(error.message);
+      return;
+    }
+
+    setPendingInvites((prev) => prev.filter((x) => x.id !== inviteId));
+    trackEvent({ eventName: "checkin_share_invite_declined", userId, props: { invite_id: inviteId } });
+  }
+
   if (loading) {
     return (
       <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
@@ -952,6 +1280,90 @@ export default function SocialPanel({
       ) : null}
 
       <div className="mt-4 grid gap-3">
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+          <div className="text-xs opacity-70">Birlikte icildi davetleri</div>
+          <div className="mt-2 space-y-2">
+            {pendingInvites.map((inv) => (
+              <div key={inv.id} className="rounded-xl border border-white/10 bg-black/25 p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <Link href={`/u/${inv.inviter_username}`} className="truncate text-xs underline opacity-80">
+                      {visibleName({ username: inv.inviter_username, display_name: inv.inviter_display_name })}
+                    </Link>
+                    <div className="truncate text-sm font-semibold">{inv.source_beer_name}</div>
+                    <div className="text-[11px] opacity-65">
+                      {new Date(inv.source_created_at).toLocaleString("tr-TR")}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={inviteBusyId === inv.id}
+                      onClick={() => void declineInvite(inv.id)}
+                      className="rounded-lg border border-white/15 bg-black/20 px-2 py-1 text-xs"
+                    >
+                      Ret
+                    </button>
+                    <button
+                      type="button"
+                      disabled={inviteBusyId === inv.id}
+                      onClick={() => void acceptInvite(inv.id)}
+                      className="rounded-lg border border-emerald-300/30 bg-emerald-500/10 px-2 py-1 text-xs"
+                    >
+                      Kabul et
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {!pendingInvites.length ? (
+              <div className="text-xs opacity-60">Bekleyen davet yok.</div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+          <div className="text-xs opacity-70">Kendi loguna kisi ekle</div>
+          <div className="mt-2 grid gap-2 md:grid-cols-3">
+            <select
+              value={inviteSourceCheckinId}
+              onChange={(e) => setInviteSourceCheckinId(e.target.value)}
+              className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
+            >
+              {ownRecentCheckins.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.beer_name} - {new Date(c.created_at).toLocaleString("tr-TR")}
+                </option>
+              ))}
+            </select>
+            <select
+              value={inviteTargetUserId}
+              onChange={(e) => setInviteTargetUserId(e.target.value)}
+              className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
+            >
+              {followingProfiles.map((p) => (
+                <option key={p.user_id} value={p.user_id}>
+                  {visibleName(p)}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={!inviteSourceCheckinId || !inviteTargetUserId || inviteCreating}
+              onClick={() => void createShareInvite()}
+              className="rounded-lg border border-white/15 bg-white/10 px-2 py-2 text-xs disabled:opacity-50"
+            >
+              {inviteCreating ? "Gonderiliyor..." : "Davet gonder"}
+            </button>
+          </div>
+          {!ownRecentCheckins.length ? (
+            <div className="mt-2 text-xs opacity-60">Davet icin once en az bir logun olmasi gerekiyor.</div>
+          ) : null}
+          {!followingProfiles.length ? (
+            <div className="mt-2 text-xs opacity-60">Davet icin once birini takip etmen gerekiyor.</div>
+          ) : null}
+        </div>
+
         <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
           <div className="flex items-center justify-between gap-3">
             <div className="text-xs opacity-70">Leaderboard</div>
@@ -1094,6 +1506,44 @@ export default function SocialPanel({
                   >
                     Bunu da logla
                   </button>
+                </div>
+
+                <div className="mt-2 rounded-lg border border-white/10 bg-black/20 p-2">
+                  <div className="text-[11px] opacity-70">
+                    Yorumlar ({feedCommentsByCheckin[item.id]?.length || 0})
+                  </div>
+                  <div className="mt-1 max-h-28 space-y-1 overflow-auto">
+                    {(feedCommentsByCheckin[item.id] || []).map((c) => (
+                      <div key={c.id} className="rounded-md border border-white/10 bg-black/25 px-2 py-1 text-[11px]">
+                        <Link href={`/u/${c.username}`} className="mr-1 underline opacity-80">
+                          {visibleName(c)}
+                        </Link>
+                        <span className="opacity-90">{c.body}</span>
+                      </div>
+                    ))}
+                    {!(feedCommentsByCheckin[item.id] || []).length ? (
+                      <div className="text-[11px] opacity-55">Henuz yorum yok.</div>
+                    ) : null}
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      value={commentDraftByCheckin[item.id] || ""}
+                      onChange={(e) =>
+                        setCommentDraftByCheckin((prev) => ({ ...prev, [item.id]: e.target.value }))
+                      }
+                      placeholder="Yorum yaz..."
+                      maxLength={240}
+                      className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
+                    />
+                    <button
+                      type="button"
+                      disabled={commentSendingFor === item.id}
+                      onClick={() => void addComment(item.id)}
+                      className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+                    >
+                      {commentSendingFor === item.id ? "..." : "Gonder"}
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
