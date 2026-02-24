@@ -690,6 +690,20 @@ export default function Home() {
 
   const favoriteCandidate = useMemo(() => favoriteBeerName(beerName), [beerName]);
 
+  function quickLogFromFeed(payload: { beerName: string; rating: number }) {
+    const incomingBeer = payload.beerName?.trim();
+    if (!incomingBeer) return;
+
+    if (incomingBeer.includes("— Fici —")) setFormat("Fici");
+    else if (incomingBeer.includes("— Şişe/Kutu —")) setFormat("Şişe/Kutu");
+
+    setBeerName(incomingBeer);
+    setBeerQuery(incomingBeer);
+    setRating(Math.round(clamp(Number(payload.rating || 0), 0, 5) * 2) / 2);
+    setActiveSection("log");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
 async function deleteCheckin(id: string) {
   // Session varsa Supabase dene
   if (session?.user?.id) {
@@ -1048,6 +1062,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         userId={session.user.id}
         sessionEmail={session.user.email}
         allBeerOptions={allBeerLabels}
+        onQuickLog={quickLogFromFeed}
       />
       ) : null}
 

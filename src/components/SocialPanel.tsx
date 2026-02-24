@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { normalizeUsername, usernameFromEmail } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
@@ -32,6 +32,20 @@ type CheckinRow = {
   beer_name: string;
   rating: number;
 };
+
+type FeedCheckinRow = {
+  id: string;
+  user_id: string;
+  beer_name: string;
+  rating: number;
+  created_at: string;
+};
+
+type FeedItem = FeedCheckinRow & {
+  username: string;
+};
+
+type FeedWindow = "all" | "24h" | "7d";
 
 const KEYBOARD_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
 
@@ -116,10 +130,12 @@ export default function SocialPanel({
   userId,
   sessionEmail,
   allBeerOptions,
+  onQuickLog,
 }: {
   userId: string;
   sessionEmail?: string | null;
   allBeerOptions: string[];
+  onQuickLog?: (payload: { beerName: string; rating: number }) => void;
 }) {
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
@@ -138,10 +154,17 @@ export default function SocialPanel({
 
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const [followingProfiles, setFollowingProfiles] = useState<SearchProfile[]>([]);
+  const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
+  const [feedBusy, setFeedBusy] = useState(false);
+  const [feedWindow, setFeedWindow] = useState<FeedWindow>("7d");
+  const [feedMinRating, setFeedMinRating] = useState<number>(0);
+  const [feedQuery, setFeedQuery] = useState("");
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchProfile[]>([]);
   const [searchBusy, setSearchBusy] = useState(false);
+  const followingIdsRef = useRef<Set<string>>(new Set());
+  const followingNameRef = useRef<Map<string, string>>(new Map());
 
   const fallbackBase = useMemo(() => {
     const fromEmail = usernameFromEmail(sessionEmail);
@@ -173,6 +196,24 @@ export default function SocialPanel({
     if (!q) return pool.slice(0, 30);
     return pool.filter((name) => name.toLowerCase().includes(q)).slice(0, 30);
   }, [favoriteNames, favoriteOptionPool, favoriteQuery]);
+  const filteredFeedItems = useMemo(() => {
+    const query = feedQuery.trim().toLowerCase();
+    const now = Date.now();
+    const windowMs = feedWindow === "24h" ? 24 * 60 * 60 * 1000 : feedWindow === "7d" ? 7 * 24 * 60 * 60 * 1000 : 0;
+
+    return feedItems.filter((item) => {
+      if (feedMinRating > 0 && Number(item.rating || 0) < feedMinRating) return false;
+      if (windowMs > 0) {
+        const ts = new Date(item.created_at).getTime();
+        if (!Number.isFinite(ts) || now - ts > windowMs) return false;
+      }
+      if (!query) return true;
+      return (
+        item.username.toLowerCase().includes(query) ||
+        item.beer_name.toLowerCase().includes(query)
+      );
+    });
+  }, [feedItems, feedMinRating, feedQuery, feedWindow]);
 
   function markDbError(message: string) {
     if (message.toLowerCase().includes("does not exist")) {
@@ -225,6 +266,56 @@ export default function SocialPanel({
     return null;
   }
 
+  async function loadFeed(ids: string[]) {
+    if (!ids.length) {
+      setFeedItems([]);
+      return;
+    }
+
+    setFeedBusy(true);
+    const { data: checkinRows, error: checkinErr } = await supabase
+      .from("checkins")
+      .select("id, user_id, beer_name, rating, created_at")
+      .in("user_id", ids)
+      .order("created_at", { ascending: false })
+      .limit(40);
+    setFeedBusy(false);
+
+    if (checkinErr) {
+      markDbError(checkinErr.message);
+      return;
+    }
+
+    const rows = (checkinRows as FeedCheckinRow[] | null) ?? [];
+    if (!rows.length) {
+      setFeedItems([]);
+      return;
+    }
+
+    const { data: profileRows, error: profileErr } = await supabase
+      .from("profiles")
+      .select("user_id, username")
+      .in("user_id", ids);
+
+    if (profileErr) {
+      markDbError(profileErr.message);
+      return;
+    }
+
+    const unameById = new Map<string, string>();
+    for (const p of (profileRows as Array<{ user_id: string; username: string }> | null) ?? []) {
+      unameById.set(p.user_id, p.username);
+    }
+
+    setFeedItems(
+      rows.map((r) => ({
+        ...r,
+        username: unameById.get(r.user_id) ?? "kullanici",
+      }))
+    );
+    trackEvent({ eventName: "feed_loaded", userId, props: { count: rows.length } });
+  }
+
   async function loadFollowing() {
     const { data: rows, error } = await supabase
       .from("follows")
@@ -238,6 +329,7 @@ export default function SocialPanel({
 
     const ids = (rows as FollowRow[] | null)?.map((r) => r.following_id) ?? [];
     setFollowingIds(new Set(ids));
+    await loadFeed(ids);
 
     if (!ids.length) {
       setFollowingProfiles([]);
@@ -309,6 +401,74 @@ export default function SocialPanel({
 
   useEffect(() => {
     void loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  useEffect(() => {
+    followingIdsRef.current = followingIds;
+    const nameMap = new Map<string, string>();
+    for (const p of followingProfiles) nameMap.set(p.user_id, p.username);
+    followingNameRef.current = nameMap;
+  }, [followingIds, followingProfiles]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`social-feed-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "checkins" },
+        (payload) => {
+          const row = payload.new as FeedCheckinRow;
+          if (!row?.id || !followingIdsRef.current.has(row.user_id)) return;
+          const username = followingNameRef.current.get(row.user_id) ?? "kullanici";
+          setFeedItems((prev) => {
+            const next = [{ ...row, username }, ...prev.filter((x) => x.id !== row.id)]
+              .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+              .slice(0, 40);
+            return next;
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "checkins" },
+        (payload) => {
+          const row = payload.new as FeedCheckinRow;
+          if (!row?.id || !followingIdsRef.current.has(row.user_id)) return;
+          const username = followingNameRef.current.get(row.user_id) ?? "kullanici";
+          setFeedItems((prev) =>
+            prev
+              .map((x) => (x.id === row.id ? { ...row, username } : x))
+              .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+          );
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "checkins" },
+        (payload) => {
+          const oldRow = payload.old as { id?: string; user_id?: string };
+          if (!oldRow?.id || !oldRow.user_id || !followingIdsRef.current.has(oldRow.user_id)) return;
+          setFeedItems((prev) => prev.filter((x) => x.id !== oldRow.id));
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "follows",
+          filter: `follower_id=eq.${userId}`,
+        },
+        () => {
+          void loadFollowing();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
@@ -518,6 +678,86 @@ export default function SocialPanel({
       ) : null}
 
       <div className="mt-4 grid gap-3">
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs opacity-70">Takip akisi</div>
+            <button
+              type="button"
+              onClick={() => void loadFollowing()}
+              className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+            >
+              Yenile
+            </button>
+          </div>
+
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <select
+              value={feedWindow}
+              onChange={(e) => setFeedWindow(e.target.value as FeedWindow)}
+              className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
+            >
+              <option value="all">Tum zaman</option>
+              <option value="24h">Son 24s</option>
+              <option value="7d">Son 7g</option>
+            </select>
+            <select
+              value={feedMinRating}
+              onChange={(e) => setFeedMinRating(Number(e.target.value))}
+              className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
+            >
+              <option value={0}>Her puan</option>
+              <option value={2.5}>2.5⭐+</option>
+              <option value={3}>3⭐+</option>
+              <option value={3.5}>3.5⭐+</option>
+              <option value={4}>4⭐+</option>
+            </select>
+            <input
+              value={feedQuery}
+              onChange={(e) => setFeedQuery(e.target.value)}
+              placeholder="@kisi / bira"
+              className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
+            />
+          </div>
+
+          <div className="mt-2 space-y-2">
+            {filteredFeedItems.map((item) => (
+              <div key={item.id} className="rounded-xl border border-white/10 bg-black/25 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <Link href={`/u/${item.username}`} className="text-xs underline opacity-80">
+                    @{item.username}
+                  </Link>
+                  <div className="text-xs opacity-70">
+                    {new Date(item.created_at).toLocaleString("tr-TR")}
+                  </div>
+                </div>
+                <div className="mt-1 text-sm font-semibold">{item.beer_name}</div>
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <div className="text-xs opacity-80">{item.rating}⭐</div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onQuickLog?.({ beerName: item.beer_name, rating: Number(item.rating || 0) });
+                      trackEvent({
+                        eventName: "feed_quicklog_click",
+                        userId,
+                        props: { source_user_id: item.user_id, beer_name: item.beer_name },
+                      });
+                    }}
+                    className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+                  >
+                    Bunu da logla
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {feedBusy ? <div className="text-xs opacity-60">Akis yukleniyor...</div> : null}
+            {!feedBusy && !filteredFeedItems.length ? (
+              <div className="text-xs opacity-60">Takip akisinda gosterilecek log yok.</div>
+            ) : null}
+          </div>
+        </div>
+
         <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
           <div className="text-xs opacity-70">Profil ayarlari</div>
           <div className="mt-2 grid gap-2">
