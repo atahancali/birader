@@ -208,6 +208,30 @@ function looksLikeEmail(input: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.trim().toLowerCase());
 }
 
+const COMMON_EMAIL_DOMAINS = [
+  "gmail.com",
+  "hotmail.com",
+  "outlook.com",
+  "yahoo.com",
+  "icloud.com",
+] as const;
+
+function emailDomainSuggestions(rawInput: string) {
+  const value = rawInput.trim().toLowerCase();
+  if (!value) return [] as string[];
+
+  if (!value.includes("@")) {
+    return COMMON_EMAIL_DOMAINS.map((d) => `${value}@${d}`);
+  }
+
+  const [localPart, rawDomain = ""] = value.split("@");
+  if (!localPart) return [] as string[];
+
+  return COMMON_EMAIL_DOMAINS
+    .filter((d) => d.startsWith(rawDomain))
+    .map((d) => `${localPart}@${d}`);
+}
+
 function StarIcon({ fillRatio, id }: { fillRatio: 0 | 0.5 | 1; id: string }) {
   const pct = fillRatio === 1 ? 100 : fillRatio === 0.5 ? 50 : 0;
   return (
@@ -457,6 +481,13 @@ export default function Home() {
   const [authIdentifier, setAuthIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
+  const authEmailSuggestions = useMemo(
+    () =>
+      authMode === "signup"
+        ? emailDomainSuggestions(authIdentifier).slice(0, 4)
+        : ([] as string[]),
+    [authIdentifier, authMode]
+  );
 
   async function authWithUsernamePassword() {
     const identifier = authIdentifier.trim().toLowerCase();
@@ -479,7 +510,10 @@ export default function Home() {
         }
 
         const signupEmail = emailCandidates[0];
-        const { error } = await supabase.auth.signUp({ email: signupEmail, password: p });
+        const { data: signupData, error } = await supabase.auth.signUp({
+          email: signupEmail,
+          password: p,
+        });
         if (error) {
           const msg = (error.message || "").toLowerCase();
           if (msg.includes("rate limit")) {
@@ -487,6 +521,14 @@ export default function Home() {
           } else {
             alert(error.message || "Kayıt başarısız.");
           }
+          return;
+        }
+
+        if (signupData.session) {
+          trackEvent({
+            eventName: "auth_success",
+            props: { mode: "signup", email: signupEmail, auto_login: true },
+          });
           return;
         }
 
@@ -1096,7 +1138,22 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               className="w-full rounded-2xl bg-black/20 border border-white/10 px-3 py-3 outline-none"
               autoCapitalize="none"
               autoCorrect="off"
+              autoComplete={authMode === "signup" ? "email" : "username"}
             />
+            {authMode === "signup" && authEmailSuggestions.length ? (
+              <div className="flex flex-wrap gap-2">
+                {authEmailSuggestions.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setAuthIdentifier(s)}
+                    className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] opacity-85"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <input
               value={password}
               onChange={(e) => setPassword(e.target.value)}
