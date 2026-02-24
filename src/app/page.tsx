@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import DayModal from "@/components/DayModal";
@@ -878,6 +879,10 @@ export default function Home() {
     const { data } = supabase.storage.from("avatars").getPublicUrl(p);
     return data.publicUrl;
   }, [headerProfile?.avatar_path]);
+  const headerProfileHref = useMemo(() => {
+    const uname = (headerProfile?.username || usernameFromEmail(session?.user?.email) || "").trim();
+    return uname ? `/u/${uname}` : "/";
+  }, [headerProfile?.username, session?.user?.email]);
   const recentVisibleCount = useMemo(() => {
     if (recentExpandStep <= 0) return 5;
     if (recentExpandStep === 1) return 10;
@@ -1255,7 +1260,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <div className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-2 py-1.5">
+          <Link
+            href={headerProfileHref}
+            className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-2 py-1.5"
+          >
             <div className="h-8 w-8 overflow-hidden rounded-full border border-white/20 bg-black/40">
               {headerAvatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -1270,7 +1278,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               {(headerProfile?.display_name || "").trim() ||
                 `@${headerProfile?.username || usernameFromEmail(session?.user?.email) || "kullanici"}`}
             </div>
-          </div>
+          </Link>
 
           <button
             onClick={logout}
