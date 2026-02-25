@@ -1075,32 +1075,45 @@ export default function Home() {
     const trimmed = favoriteBeerName(beer);
     if (!trimmed) return;
 
-    const alreadyFavorite = favorites.some((f) => f.beer_name === trimmed);
-    if (alreadyFavorite) return;
+    const { data: currentRows, error: currentErr } = await supabase
+      .from("favorite_beers")
+      .select("beer_name, rank")
+      .eq("user_id", session.user.id)
+      .order("rank", { ascending: true });
+    if (currentErr) {
+      alert(currentErr.message);
+      return;
+    }
+    const current = ((currentRows as FavoriteBeer[] | null) ?? []).map((f) => ({
+      ...f,
+      beer_name: favoriteBeerName(f.beer_name),
+    }));
+    if (current.some((f) => f.beer_name === trimmed)) {
+      setFavorites(current);
+      return;
+    }
 
-    if (favorites.length < 3) {
-      const used = new Set(favorites.map((f) => Number(f.rank)));
+    if (current.length < 3) {
+      const used = new Set(current.map((f) => Number(f.rank)));
       let rank = 1;
       while (used.has(rank) && rank <= 3) rank += 1;
 
-      const { error } = await supabase.from("favorite_beers").upsert(
-        {
-          user_id: session.user.id,
-          beer_name: trimmed,
-          rank,
-        },
-        { onConflict: "user_id,beer_name", ignoreDuplicates: true }
-      );
+      const { error } = await supabase.from("favorite_beers").insert({
+        user_id: session.user.id,
+        beer_name: trimmed,
+        rank,
+      });
 
       if (error) {
+        if (error.code === "23505" || error.message.toLowerCase().includes("duplicate")) {
+          await loadFavorites();
+          return;
+        }
         alert(error.message);
         return;
       }
 
-      setFavorites((prev) => {
-        if (prev.some((f) => f.beer_name === trimmed)) return prev;
-        return [...prev, { beer_name: trimmed, rank }].sort((a, b) => a.rank - b.rank);
-      });
+      await loadFavorites();
       trackEvent({
         eventName: "favorite_added",
         userId: session.user.id,
@@ -1109,8 +1122,8 @@ export default function Home() {
       return;
     }
 
-    const rankToReplace = replaceFavoriteRank ?? Number(favorites[0]?.rank ?? 1);
-    const target = favorites.find((f) => Number(f.rank) === rankToReplace);
+    const rankToReplace = replaceFavoriteRank ?? Number(current[0]?.rank ?? 1);
+    const target = current.find((f) => Number(f.rank) === rankToReplace);
     if (!target) return;
 
     const { error } = await supabase
@@ -1120,15 +1133,15 @@ export default function Home() {
       .eq("rank", rankToReplace);
 
     if (error) {
+      if (error.code === "23505" || error.message.toLowerCase().includes("duplicate")) {
+        await loadFavorites();
+        return;
+      }
       alert(error.message);
       return;
     }
 
-    setFavorites((prev) =>
-      prev
-        .map((f) => (Number(f.rank) === rankToReplace ? { ...f, beer_name: trimmed } : f))
-        .sort((a, b) => a.rank - b.rank)
-    );
+    await loadFavorites();
     trackEvent({
       eventName: "favorite_replaced",
       userId: session.user.id,

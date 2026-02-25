@@ -1206,13 +1206,30 @@ export default function SocialPanel({
   async function addFavorite() {
     const beer = favoriteBeerName(addingFavorite.trim());
     if (!beer) return;
-    if (favoriteNames.has(beer)) return;
-    if (favorites.length >= 3) {
+    const { data: rows, error: readErr } = await supabase
+      .from("favorite_beers")
+      .select("beer_name, rank")
+      .eq("user_id", userId)
+      .order("rank", { ascending: true });
+    if (readErr) {
+      markDbError(readErr.message);
+      return;
+    }
+    const current = ((rows as FavoriteBeerRow[] | null) ?? []).map((f) => ({
+      ...f,
+      beer_name: favoriteBeerName(f.beer_name),
+    }));
+    if (current.some((f) => f.beer_name === beer)) {
+      setFavorites(current);
+      return;
+    }
+    if (current.length >= 3) {
       alert("En fazla 3 favori ekleyebilirsin.");
+      setFavorites(current);
       return;
     }
 
-    const usedRanks = new Set(favorites.map((f) => Number(f.rank)));
+    const usedRanks = new Set(current.map((f) => Number(f.rank)));
     let rank = 1;
     while (usedRanks.has(rank) && rank <= 3) rank += 1;
 
@@ -1223,11 +1240,27 @@ export default function SocialPanel({
     });
 
     if (error) {
+      if (error.code === "23505" || error.message.toLowerCase().includes("duplicate")) {
+        const { data: refreshRows } = await supabase
+          .from("favorite_beers")
+          .select("beer_name, rank")
+          .eq("user_id", userId)
+          .order("rank", { ascending: true });
+        const refreshed = ((refreshRows as FavoriteBeerRow[] | null) ?? []).map((f) => ({
+          ...f,
+          beer_name: favoriteBeerName(f.beer_name),
+        }));
+        setFavorites(refreshed);
+        return;
+      }
       markDbError(error.message);
       return;
     }
 
-    setFavorites((prev) => [...prev, { beer_name: beer, rank }].sort((a, b) => a.rank - b.rank));
+    setFavorites((prev) => {
+      if (prev.some((f) => f.beer_name === beer)) return prev;
+      return [...prev, { beer_name: beer, rank }].sort((a, b) => a.rank - b.rank);
+    });
     setAddingFavorite("");
     setFavoriteQuery("");
     setFavoriteOpen(false);
