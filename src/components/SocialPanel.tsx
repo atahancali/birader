@@ -235,6 +235,7 @@ export default function SocialPanel({
   const [followerProfiles, setFollowerProfiles] = useState<SearchProfile[]>([]);
   const [relationView, setRelationView] = useState<"following" | "followers">("following");
   const [relationsOpen, setRelationsOpen] = useState(false);
+  const [relationHighlightUserId, setRelationHighlightUserId] = useState("");
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [feedBusy, setFeedBusy] = useState(false);
   const [feedWindow, setFeedWindow] = useState<FeedWindow>("7d");
@@ -1473,7 +1474,13 @@ export default function SocialPanel({
     setNotifActionBusyId(item.id);
     if (!item.is_read) await markNotificationRead(item.id);
     if (item.type === "follow") {
-      window.location.href = `/u/${item.actor_username}`;
+      setRelationView("followers");
+      setRelationsOpen(true);
+      const targetUserId = String(item.actor_id || "");
+      if (targetUserId) {
+        setRelationHighlightUserId(targetUserId);
+        setTimeout(() => setRelationHighlightUserId(""), 2600);
+      }
       setNotifActionBusyId(0);
       return;
     }
@@ -1631,7 +1638,14 @@ export default function SocialPanel({
                 const isFollowing = followingIds.has(p.user_id);
                 const isFollowersView = relationView === "followers";
                 return (
-                  <div key={`${relationView}-top-${p.user_id}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/25 p-2">
+                  <div
+                    key={`${relationView}-top-${p.user_id}`}
+                    className={`flex items-center justify-between gap-3 rounded-xl border p-2 ${
+                      relationHighlightUserId === p.user_id
+                        ? "border-amber-300/45 bg-amber-500/10 shadow-[0_0_0_1px_rgba(252,211,77,0.18)]"
+                        : "border-white/10 bg-black/25"
+                    }`}
+                  >
                     <div className="min-w-0">
                       <Link href={`/u/${p.username}`} className="truncate text-sm underline">
                         {visibleName(p)}
