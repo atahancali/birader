@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { normalizeUsername, usernameFromEmail } from "@/lib/identity";
@@ -213,6 +214,7 @@ export default function SocialPanel({
   allBeerOptions: string[];
   onQuickLog?: (payload: { beerName: string; rating: number }) => void;
 }) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
 
@@ -252,6 +254,7 @@ export default function SocialPanel({
   const [notifPanelOpen, setNotifPanelOpen] = useState(true);
   const [notifActionBusyId, setNotifActionBusyId] = useState<number>(0);
   const [highlightCheckinId, setHighlightCheckinId] = useState("");
+  const [highlightCommentId, setHighlightCommentId] = useState<number>(0);
   const [pendingInvites, setPendingInvites] = useState<PendingInviteView[]>([]);
   const [inviteBusyId, setInviteBusyId] = useState<number>(0);
   const [ownRecentCheckins, setOwnRecentCheckins] = useState<OwnCheckinLite[]>([]);
@@ -1474,12 +1477,17 @@ export default function SocialPanel({
     setNotifActionBusyId(item.id);
     if (!item.is_read) await markNotificationRead(item.id);
     if (item.type === "follow") {
-      setRelationView("followers");
-      setRelationsOpen(true);
-      const targetUserId = String(item.actor_id || "");
-      if (targetUserId) {
-        setRelationHighlightUserId(targetUserId);
-        setTimeout(() => setRelationHighlightUserId(""), 2600);
+      const actorUsername = String(item.actor_username || "");
+      if (actorUsername && actorUsername !== "kullanici") {
+        router.push(`/u/${encodeURIComponent(actorUsername)}`);
+      } else {
+        setRelationView("followers");
+        setRelationsOpen(true);
+        const targetUserId = String(item.actor_id || "");
+        if (targetUserId) {
+          setRelationHighlightUserId(targetUserId);
+          setTimeout(() => setRelationHighlightUserId(""), 2600);
+        }
       }
       setNotifActionBusyId(0);
       return;
@@ -1488,10 +1496,20 @@ export default function SocialPanel({
     const checkinId = String(payload.checkin_id || item.ref_id || "");
     if (checkinId) {
       setFeedWindow("all");
+      setFeedMinRating(0);
       setFeedQuery("");
       await ensureFeedCheckinLoaded(checkinId);
+      await loadCommentsForCheckins([checkinId]);
       setHighlightCheckinId(checkinId);
       setTimeout(() => setHighlightCheckinId(""), 2600);
+      const commentId = Number(payload.comment_id || 0);
+      if (commentId > 0) {
+        setHighlightCommentId(commentId);
+        setTimeout(() => setHighlightCommentId(0), 2600);
+        setTimeout(() => {
+          document.getElementById(`comment-${commentId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 120);
+      }
     }
     setNotifActionBusyId(0);
   }
@@ -1764,26 +1782,38 @@ export default function SocialPanel({
           {notifPanelOpen ? (
             <div className="mt-2 space-y-2">
               {notifications.map((n) => (
-                <button
+                <div
                   key={n.id}
-                  type="button"
-                  disabled={notifActionBusyId === n.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => void openNotification(n)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      void openNotification(n);
+                    }
+                  }}
                   className={`w-full rounded-xl border p-2 text-left ${
                     n.is_read
                       ? "border-white/10 bg-black/20"
                       : "border-amber-300/40 bg-amber-400/10 shadow-[0_0_0_1px_rgba(252,211,77,0.15)]"
-                  }`}
+                  } ${notifActionBusyId === n.id ? "pointer-events-none opacity-70" : ""}`}
                 >
                   <div className="text-xs">
-                    <span className="underline">{visibleName({ username: n.actor_username, display_name: n.actor_display_name })}</span>
+                    <Link
+                      href={`/u/${encodeURIComponent(n.actor_username)}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="underline"
+                    >
+                      {visibleName({ username: n.actor_username, display_name: n.actor_display_name })}
+                    </Link>
                     {n.type === "comment" ? " loguna yorum yazdi." : null}
                     {n.type === "mention" ? " seni yorumda etiketledi." : null}
                     {n.type === "comment_like" ? " yorumunu begendi." : null}
                     {n.type === "follow" ? " seni takip etmeye basladi." : null}
                   </div>
                   <div className="mt-1 text-[11px] opacity-65">{new Date(n.created_at).toLocaleString("tr-TR")}</div>
-                </button>
+                </div>
               ))}
               {notifBusy ? <div className="text-xs opacity-60">Bildirimler yukleniyor...</div> : null}
               {!notifBusy && !notifications.length ? (
@@ -2034,7 +2064,15 @@ export default function SocialPanel({
                   </div>
                   <div className="mt-1 max-h-28 space-y-1 overflow-auto">
                     {(feedCommentsByCheckin[item.id] || []).map((c) => (
-                      <div key={c.id} className="rounded-md border border-white/10 bg-black/25 px-2 py-1 text-[11px]">
+                      <div
+                        id={`comment-${c.id}`}
+                        key={c.id}
+                        className={`rounded-md border px-2 py-1 text-[11px] ${
+                          highlightCommentId === c.id
+                            ? "border-amber-300/45 bg-amber-500/15 shadow-[0_0_0_1px_rgba(252,211,77,0.2)]"
+                            : "border-white/10 bg-black/25"
+                        }`}
+                      >
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <Link href={`/u/${c.username}`} className="mr-1 underline opacity-80">
