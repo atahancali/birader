@@ -69,7 +69,7 @@ type NotificationRow = {
   id: number;
   user_id: string;
   actor_id: string | null;
-  type: "comment" | "mention" | "comment_like";
+  type: "comment" | "mention" | "comment_like" | "follow";
   ref_id: string;
   payload?: Record<string, any> | null;
   is_read: boolean;
@@ -234,6 +234,7 @@ export default function SocialPanel({
   const [followingProfiles, setFollowingProfiles] = useState<SearchProfile[]>([]);
   const [followerProfiles, setFollowerProfiles] = useState<SearchProfile[]>([]);
   const [relationView, setRelationView] = useState<"following" | "followers">("following");
+  const [relationsOpen, setRelationsOpen] = useState(false);
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [feedBusy, setFeedBusy] = useState(false);
   const [feedWindow, setFeedWindow] = useState<FeedWindow>("7d");
@@ -318,6 +319,7 @@ export default function SocialPanel({
       );
     });
   }, [feedItems, feedMinRating, feedQuery, feedWindow]);
+  const followerIds = useMemo(() => new Set(followerProfiles.map((p) => p.user_id)), [followerProfiles]);
   const unreadNotifCount = useMemo(() => notifications.filter((n) => !n.is_read).length, [notifications]);
 
   function markDbError(message: string) {
@@ -1305,6 +1307,15 @@ export default function SocialPanel({
       return next;
     });
 
+    const { error: notifErr } = await supabase.from("notifications").insert({
+      user_id: target.user_id,
+      actor_id: userId,
+      type: "follow",
+      ref_id: String(target.user_id),
+      payload: { follower_user_id: userId },
+    });
+    if (notifErr) markDbError(notifErr.message);
+
     await loadFollowing();
     trackEvent({ eventName: "follow_created", userId, props: { target_user_id: target.user_id } });
   }
@@ -1461,6 +1472,11 @@ export default function SocialPanel({
   async function openNotification(item: NotificationView) {
     setNotifActionBusyId(item.id);
     if (!item.is_read) await markNotificationRead(item.id);
+    if (item.type === "follow") {
+      window.location.href = `/u/${item.actor_username}`;
+      setNotifActionBusyId(0);
+      return;
+    }
     const payload = (item.payload || {}) as Record<string, any>;
     const checkinId = String(payload.checkin_id || item.ref_id || "");
     if (checkinId) {
@@ -1578,6 +1594,82 @@ export default function SocialPanel({
       ) : null}
 
       <div className="mt-4 grid gap-3">
+        <div className="sticky top-2 z-20 rounded-2xl border border-white/10 bg-black/80 p-3 backdrop-blur">
+          <div className="text-xs opacity-70">Baglantilar</div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setRelationView("following");
+                setRelationsOpen((v) => !v || relationView !== "following");
+              }}
+              className={`rounded-xl border px-3 py-2 text-left text-sm ${
+                relationView === "following" ? "border-amber-300/35 bg-amber-500/10" : "border-white/10 bg-black/20"
+              }`}
+            >
+              <div className="text-xs opacity-70">Takip edilen</div>
+              <div className="text-lg font-semibold">{followingProfiles.length}</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRelationView("followers");
+                setRelationsOpen((v) => !v || relationView !== "followers");
+              }}
+              className={`rounded-xl border px-3 py-2 text-left text-sm ${
+                relationView === "followers" ? "border-amber-300/35 bg-amber-500/10" : "border-white/10 bg-black/20"
+              }`}
+            >
+              <div className="text-xs opacity-70">Takipci</div>
+              <div className="text-lg font-semibold">{followerProfiles.length}</div>
+            </button>
+          </div>
+
+          {relationsOpen ? (
+            <div className="mt-3 space-y-2">
+              {(relationView === "following" ? followingProfiles : followerProfiles).map((p) => {
+                const isFollowing = followingIds.has(p.user_id);
+                const isFollowersView = relationView === "followers";
+                return (
+                  <div key={`${relationView}-top-${p.user_id}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/25 p-2">
+                    <div className="min-w-0">
+                      <Link href={`/u/${p.username}`} className="truncate text-sm underline">
+                        {visibleName(p)}
+                      </Link>
+                      <div className="truncate text-[11px] opacity-65">@{p.username}</div>
+                      {followerIds.has(p.user_id) ? (
+                        <div className="text-[11px] text-amber-200/85">Seni takip ediyor</div>
+                      ) : null}
+                    </div>
+                    {isFollowersView ? (
+                      <button
+                        type="button"
+                        onClick={() => void (isFollowing ? unfollow(p) : follow(p))}
+                        className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+                      >
+                        {isFollowing ? "Takiptesin" : "Takip et"}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void unfollow(p)}
+                        className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+                      >
+                        Cikar
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              {(relationView === "following" ? followingProfiles.length : followerProfiles.length) === 0 ? (
+                <div className="text-xs opacity-60">
+                  {relationView === "following" ? "Henuz kimseyi takip etmiyorsun." : "Henuz takipcin yok."}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
         <div className="rounded-2xl border border-amber-300/20 bg-amber-500/5 p-3">
           <div className="flex items-center justify-between gap-3">
             <div className="text-xs text-amber-200/90">
@@ -1619,6 +1711,7 @@ export default function SocialPanel({
                     {n.type === "comment" ? " loguna yorum yazdi." : null}
                     {n.type === "mention" ? " seni yorumda etiketledi." : null}
                     {n.type === "comment_like" ? " yorumunu begendi." : null}
+                    {n.type === "follow" ? " seni takip etmeye basladi." : null}
                   </div>
                   <div className="mt-1 text-[11px] opacity-65">{new Date(n.created_at).toLocaleString("tr-TR")}</div>
                 </button>
@@ -1930,72 +2023,6 @@ export default function SocialPanel({
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-          <div className="text-xs opacity-70">Profil ayarlari</div>
-          <div className="mt-2 flex items-center gap-3">
-            <div className="h-14 w-14 overflow-hidden rounded-full border border-white/15 bg-black/40">
-              {avatarPath ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={avatarPublicUrl(avatarPath)}
-                  alt="avatar"
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-xs opacity-60">
-                  avatar
-                </div>
-              )}
-            </div>
-            <label className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs cursor-pointer">
-              {avatarUploading ? "Yukleniyor..." : "Avatar yukle"}
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={(e) => void onAvatarFileChange(e.target.files?.[0])}
-              />
-            </label>
-          </div>
-          <div className="mt-2 grid gap-2">
-            <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs">
-              Handle (sabit): <span className="font-semibold">@{profile?.username || "kullanici"}</span>
-            </div>
-            <input
-              value={displayNameInput}
-              onChange={(e) => setDisplayNameInput(e.target.value)}
-              maxLength={32}
-              placeholder="gorunen isim"
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
-            />
-            <input
-              value={bioInput}
-              onChange={(e) => setBioInput(e.target.value)}
-              placeholder="kisa bio (opsiyonel)"
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
-            />
-            <label className="flex items-center gap-2 text-xs opacity-80">
-              <input
-                type="checkbox"
-                checked={isPublic}
-                onChange={(e) => setIsPublic(e.target.checked)}
-              />
-              Profil herkese acik
-            </label>
-            <button
-              type="button"
-              onClick={saveProfile}
-              disabled={savingProfile}
-              className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm"
-            >
-              {savingProfile ? "Kaydediliyor..." : "Profili kaydet"}
-            </button>
-          </div>
-          <div className="mt-2 text-xs opacity-65">
-            Ortalama puan: {avg.toFixed(2)} • Toplam log: {checkins.length}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
           <div className="text-xs opacity-70">Favoriler (en fazla 3)</div>
           <div className="mt-2 flex flex-wrap gap-2">
             {favorites.map((f) => (
@@ -2107,6 +2134,9 @@ export default function SocialPanel({
                       {visibleName(p)}
                     </Link>
                     <div className="truncate text-[11px] opacity-65">@{p.username}</div>
+                    {followerIds.has(p.user_id) ? (
+                      <div className="text-[11px] text-amber-200/85">Seni takip ediyor</div>
+                    ) : null}
                     {p.bio ? <div className="truncate text-xs opacity-70">{p.bio}</div> : null}
                   </div>
                   <button
@@ -2125,77 +2155,6 @@ export default function SocialPanel({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-          <div className="text-xs opacity-70">Baglantilar</div>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setRelationView("following")}
-              className={`rounded-xl border px-3 py-2 text-left text-sm ${
-                relationView === "following"
-                  ? "border-white/25 bg-white/12"
-                  : "border-white/10 bg-black/20"
-              }`}
-            >
-              <div className="text-xs opacity-70">Takip edilen</div>
-              <div className="text-lg font-semibold">{followingProfiles.length}</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setRelationView("followers")}
-              className={`rounded-xl border px-3 py-2 text-left text-sm ${
-                relationView === "followers"
-                  ? "border-white/25 bg-white/12"
-                  : "border-white/10 bg-black/20"
-              }`}
-            >
-              <div className="text-xs opacity-70">Takipci</div>
-              <div className="text-lg font-semibold">{followerProfiles.length}</div>
-            </button>
-          </div>
-
-          <div className="mt-3 space-y-2">
-            {(relationView === "following" ? followingProfiles : followerProfiles).map((p) => {
-              const isFollowing = followingIds.has(p.user_id);
-              const isFollowersView = relationView === "followers";
-              return (
-                <div key={`${relationView}-${p.user_id}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/25 p-2">
-                  <div className="min-w-0">
-                    <Link href={`/u/${p.username}`} className="truncate text-sm underline">
-                      {visibleName(p)}
-                    </Link>
-                    <div className="truncate text-[11px] opacity-65">@{p.username}</div>
-                    {p.bio ? <div className="truncate text-xs opacity-70">{p.bio}</div> : null}
-                  </div>
-                  {isFollowersView ? (
-                    <button
-                      type="button"
-                      onClick={() => void (isFollowing ? unfollow(p) : follow(p))}
-                      className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
-                    >
-                      {isFollowing ? "Takiptesin" : "Takip et"}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => void unfollow(p)}
-                      className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
-                    >
-                      Cikar
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-            {(relationView === "following" ? followingProfiles.length : followerProfiles.length) === 0 ? (
-              <div className="text-xs opacity-60">
-                {relationView === "following"
-                  ? "Henuz kimseyi takip etmiyorsun."
-                  : "Henuz takipcin yok."}
-              </div>
-            ) : null}
-          </div>
-        </div>
       </div>
     </section>
   );

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import DayModal from "@/components/DayModal";
 import MonthZoom from "@/components/MonthZoom";
@@ -45,6 +45,8 @@ type HomeSection = "log" | "social" | "heatmap" | "stats";
 type LocationSuggestion = { city: string; district: string; score: number };
 const MAX_BULK_BACKDATE_COUNT = 10;
 const ONBOARDING_SEEN_KEY = "birader:onboarding:v1";
+const PENDING_COMPLIANCE_KEY = "birader:pending-compliance:v1";
+const LOG_SUBMIT_COOLDOWN_MS = 10_000;
 
 type BeerItem = {
   brand: string;
@@ -212,6 +214,17 @@ function normalizeTR(input: string) {
 
 function looksLikeEmail(input: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.trim().toLowerCase());
+}
+
+function ageFromBirthDate(isoDate: string) {
+  if (!isoDate) return 0;
+  const birth = new Date(`${isoDate}T00:00:00`);
+  if (Number.isNaN(birth.getTime())) return 0;
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const m = today.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age -= 1;
+  return age;
 }
 
 const COMMON_EMAIL_DOMAINS = [
@@ -487,6 +500,11 @@ export default function Home() {
   const [authIdentifier, setAuthIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
+  const [signupBirthDate, setSignupBirthDate] = useState("");
+  const [signupTermsAccepted, setSignupTermsAccepted] = useState(false);
+  const [signupPrivacyAccepted, setSignupPrivacyAccepted] = useState(false);
+  const [signupCommercialAccepted, setSignupCommercialAccepted] = useState(false);
+  const [signupMarketingOptIn, setSignupMarketingOptIn] = useState(false);
   const authEmailSuggestions = useMemo(
     () =>
       authMode === "signup"
@@ -494,6 +512,36 @@ export default function Home() {
         : ([] as string[]),
     [authIdentifier, authMode]
   );
+
+  async function upsertComplianceProfile(userId: string, email: string, payload: {
+    birthDate: string;
+    termsAccepted: boolean;
+    privacyAccepted: boolean;
+    commercialAccepted: boolean;
+    marketingOptIn: boolean;
+  }) {
+    const username = usernameFromEmail(email) || `user-${userId.slice(0, 6)}`;
+    const now = new Date().toISOString();
+    const age = ageFromBirthDate(payload.birthDate);
+    const { error } = await supabase.from("profiles").upsert(
+      {
+        user_id: userId,
+        username,
+        display_name: username,
+        birth_date: payload.birthDate || null,
+        age_verified_at: age >= 18 ? now : null,
+        terms_accepted_at: payload.termsAccepted ? now : null,
+        privacy_accepted_at: payload.privacyAccepted ? now : null,
+        commercial_consent_at: payload.commercialAccepted ? now : null,
+        marketing_opt_in: payload.marketingOptIn,
+      },
+      { onConflict: "user_id" }
+    );
+    if (error) {
+      console.error("compliance profile upsert error", error.message);
+      throw error;
+    }
+  }
 
   async function authWithUsernamePassword() {
     const identifier = authIdentifier.trim().toLowerCase();
@@ -514,8 +562,34 @@ export default function Home() {
           alert("Kayıt için e-posta girmen gerekiyor.");
           return;
         }
+        if (!signupBirthDate) {
+          alert("Dogum tarihi zorunlu.");
+          return;
+        }
+        const age = ageFromBirthDate(signupBirthDate);
+        if (age < 18) {
+          alert("Birader 18+ kullanicilar icindir.");
+          return;
+        }
+        if (!signupTermsAccepted || !signupPrivacyAccepted || !signupCommercialAccepted) {
+          alert("Devam etmek icin yasal ve ticari onay kutularini isaretle.");
+          return;
+        }
 
         const signupEmail = emailCandidates[0];
+        const compliancePayload = {
+          birthDate: signupBirthDate,
+          termsAccepted: signupTermsAccepted,
+          privacyAccepted: signupPrivacyAccepted,
+          commercialAccepted: signupCommercialAccepted,
+          marketingOptIn: signupMarketingOptIn,
+        };
+        try {
+          localStorage.setItem(
+            PENDING_COMPLIANCE_KEY,
+            JSON.stringify({ email: signupEmail, ...compliancePayload })
+          );
+        } catch {}
         const { data: signupData, error } = await supabase.auth.signUp({
           email: signupEmail,
           password: p,
@@ -531,6 +605,10 @@ export default function Home() {
         }
 
         if (signupData.session) {
+          try {
+            await upsertComplianceProfile(signupData.session.user.id, signupEmail, compliancePayload);
+            localStorage.removeItem(PENDING_COMPLIANCE_KEY);
+          } catch {}
           trackEvent({
             eventName: "auth_success",
             props: { mode: "signup", email: signupEmail, auto_login: true },
@@ -550,6 +628,13 @@ export default function Home() {
             alert(e2.message);
           }
         } else {
+          const { data: s } = await supabase.auth.getSession();
+          if (s.session) {
+            try {
+              await upsertComplianceProfile(s.session.user.id, signupEmail, compliancePayload);
+              localStorage.removeItem(PENDING_COMPLIANCE_KEY);
+            } catch {}
+          }
           trackEvent({
             eventName: "auth_success",
             props: { mode: "signup", email: signupEmail },
@@ -619,6 +704,8 @@ export default function Home() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [recentExpandStep, setRecentExpandStep] = useState(0);
   const [headerProfile, setHeaderProfile] = useState<HeaderProfile | null>(null);
+  const [isLogMutating, setIsLogMutating] = useState(false);
+  const lastLogAttemptAtRef = useRef(0);
 
   const year = useMemo(() => new Date().getFullYear(), []);
   const isBackDate = dateISO !== today;
@@ -628,11 +715,57 @@ export default function Home() {
     [customDistrict, district]
   );
 
+  function beginLogMutation() {
+    if (isLogMutating) {
+      alert("Log islemi suruyor, lutfen bekle.");
+      return false;
+    }
+    const now = Date.now();
+    const elapsed = now - lastLogAttemptAtRef.current;
+    if (elapsed < LOG_SUBMIT_COOLDOWN_MS) {
+      const remain = Math.ceil((LOG_SUBMIT_COOLDOWN_MS - elapsed) / 1000);
+      alert(`Cok hizli log atiyorsun. ${remain} sn bekle.`);
+      return false;
+    }
+    lastLogAttemptAtRef.current = now;
+    setIsLogMutating(true);
+    return true;
+  }
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    async function flushPendingCompliance() {
+      if (!session?.user?.id || !session?.user?.email) return;
+      try {
+        const raw = localStorage.getItem(PENDING_COMPLIANCE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as {
+          email?: string;
+          birthDate?: string;
+          termsAccepted?: boolean;
+          privacyAccepted?: boolean;
+          commercialAccepted?: boolean;
+          marketingOptIn?: boolean;
+        };
+        if (!parsed?.email || parsed.email !== session.user.email) return;
+        await upsertComplianceProfile(session.user.id, session.user.email, {
+          birthDate: parsed.birthDate || "",
+          termsAccepted: Boolean(parsed.termsAccepted),
+          privacyAccepted: Boolean(parsed.privacyAccepted),
+          commercialAccepted: Boolean(parsed.commercialAccepted),
+          marketingOptIn: Boolean(parsed.marketingOptIn),
+        });
+        localStorage.removeItem(PENDING_COMPLIANCE_KEY);
+      } catch {}
+    }
+    void flushPendingCompliance();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.id, session?.user?.email]);
 
   async function loadCheckins() {
     if (!session?.user?.id) return;
@@ -766,6 +899,107 @@ export default function Home() {
 
     return { total, max, buckets };
   }, [checkins, ratingSteps]);
+
+  const behaviorStats = useMemo(() => {
+    const dayKeys = new Set<string>();
+    const weekdayCounts = Array.from({ length: 7 }, () => 0);
+    const hourBuckets = { night: 0, day: 0 };
+    const cityCounts = new Map<string, number>();
+    const locationCounts = new Map<string, number>();
+
+    for (const c of checkins) {
+      const d = new Date(c.created_at);
+      if (!Number.isNaN(d.getTime())) {
+        const key = d.toISOString().slice(0, 10);
+        dayKeys.add(key);
+        weekdayCounts[d.getDay()] += 1;
+        const h = d.getHours();
+        if (h >= 22 || h < 4) hourBuckets.night += 1;
+        else hourBuckets.day += 1;
+      }
+      const city = (c.city || "").trim();
+      if (city) cityCounts.set(city, (cityCounts.get(city) || 0) + 1);
+      const loc = `${(c.city || "").trim()}::${(c.district || "").trim()}`;
+      if (loc !== "::") locationCounts.set(loc, (locationCounts.get(loc) || 0) + 1);
+    }
+
+    const keysSorted = Array.from(dayKeys).sort();
+    const msDay = 24 * 60 * 60 * 1000;
+    let currentStreak = 0;
+    if (keysSorted.length) {
+      let cursor = new Date();
+      while (true) {
+        const key = cursor.toISOString().slice(0, 10);
+        if (!dayKeys.has(key)) break;
+        currentStreak += 1;
+        cursor = new Date(cursor.getTime() - msDay);
+      }
+    }
+
+    let maxStreak = 0;
+    let run = 0;
+    let prevTs = 0;
+    for (const key of keysSorted) {
+      const ts = new Date(`${key}T00:00:00Z`).getTime();
+      if (prevTs && ts - prevTs === msDay) run += 1;
+      else run = 1;
+      if (run > maxStreak) maxStreak = run;
+      prevTs = ts;
+    }
+
+    const saturdayLogs = weekdayCounts[6];
+    const weekendLogs = weekdayCounts[0] + weekdayCounts[6];
+    const totalLogs = checkins.length;
+    const uniqueCities = cityCounts.size;
+    const topLocationCount = Math.max(0, ...Array.from(locationCounts.values()));
+    const topLocationShare = totalLogs ? topLocationCount / totalLogs : 0;
+    const saturdayShare = totalLogs ? saturdayLogs / totalLogs : 0;
+    const weekendShare = totalLogs ? weekendLogs / totalLogs : 0;
+    const nightShare = totalLogs ? hourBuckets.night / totalLogs : 0;
+
+    const weekdayLabels = ["Pazar", "Pzt", "Sal", "Car", "Per", "Cum", "Cmt"];
+    let dominantWeekday = "—";
+    let dominantWeekdayCount = 0;
+    weekdayCounts.forEach((n, i) => {
+      if (n > dominantWeekdayCount) {
+        dominantWeekdayCount = n;
+        dominantWeekday = weekdayLabels[i] || "—";
+      }
+    });
+
+    const badges: Array<{ key: string; title: string; detail: string }> = [];
+    if (saturdayLogs >= 5 && saturdayShare >= 0.4) {
+      badges.push({ key: "sat", title: "Cumartesi Icicisi", detail: `${saturdayLogs} Cumartesi logu` });
+    }
+    if (currentStreak >= 7) {
+      badges.push({ key: "streak7", title: "Her Guncu", detail: `${currentStreak} gun aktif streak` });
+    }
+    if (weekendLogs >= 8 && weekendShare >= 0.6) {
+      badges.push({ key: "weekend", title: "Hafta Sonu Ruhu", detail: `%${Math.round(weekendShare * 100)} hafta sonu` });
+    }
+    if (hourBuckets.night >= 8 && nightShare >= 0.35) {
+      badges.push({ key: "night", title: "Gece Kusu", detail: `${hourBuckets.night} gece logu` });
+    }
+    if (uniqueCities >= 5) {
+      badges.push({ key: "explorer", title: "Sehir Kasifi", detail: `${uniqueCities} farkli sehir` });
+    }
+    if (topLocationCount >= 8 && topLocationShare >= 0.5) {
+      badges.push({ key: "local", title: "Mahalle Muhtari", detail: `%${Math.round(topLocationShare * 100)} ayni bolge` });
+    }
+
+    return {
+      currentStreak,
+      maxStreak,
+      uniqueDays: dayKeys.size,
+      dominantWeekday,
+      dominantWeekdayCount,
+      saturdayLogs,
+      weekendShare,
+      nightShare,
+      uniqueCities,
+      badges,
+    };
+  }, [checkins]);
 
   const highlightedBucketInfo = useMemo(() => {
     const idx = ratingDistribution.buckets.findIndex((b) => b.count === ratingDistribution.max);
@@ -1109,62 +1343,16 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       alert("Ilce sec veya Diger icin ilce adini yaz.");
       return;
     }
+    if (!beginLogMutation()) return;
 
-    const created_at =
-      dateISO === today ? new Date().toISOString() : new Date(`${dateISO}T12:00:00.000Z`).toISOString();
+    try {
+      const created_at =
+        dateISO === today ? new Date().toISOString() : new Date(`${dateISO}T12:00:00.000Z`).toISOString();
 
-    // 1) session varsa supabase dene
-    if (session?.user?.id) {
-      const rows = targets.map((beer) => ({
-        user_id: session.user.id,
-        beer_name: beer,
-        rating: normalizedRating,
-        created_at,
-        country_code: "TR",
-        city: normalizedCity,
-        district: normalizedDistrict,
-        location_text: normalizedLocation || "",
-        price_try: normalizedPrice,
-        note: normalizedNote || "",
-        latitude: null,
-        longitude: null,
-      }));
-      const { error } = await supabase.from("checkins").insert(rows);
-
-      if (!error) {
-        const favoriteTargets = Array.from(
-          new Set(targets.map((beer) => favoriteBeerName(beer)).filter((beer): beer is string => Boolean(beer)))
-        );
-        for (const beer of favoriteTargets) await syncFavoriteAfterCheckin(beer);
-        trackEvent({
-          eventName: "checkin_added",
-          userId: session.user.id,
-          props: { rating: normalizedRating, beer_count: targets.length, date: dateISO },
-        });
-        setDateISO(today);
-        setRating(null);
-        setLogStep(1);
-        setCustomDistrict("");
-        setLocationText("");
-        setPriceText("");
-        setLogNote("");
-        setDateOpen(false);
-        setBatchBeerNames([]);
-        setBatchCountInput("1");
-        setBatchConfirmed(false);
-        await loadCheckins();
-        return;
-      }
-
-      // supabase patladıysa local fallback
-      console.error("Supabase insert failed -> local fallback:", error.message);
-    }
-
-  // 2) local fallback
-  setCheckins((prev) => {
-    const next: Checkin[] = [
-        ...targets.map((beer) => ({
-          id: uuid(),
+      // 1) session varsa supabase dene
+      if (session?.user?.id) {
+        const rows = targets.map((beer) => ({
+          user_id: session.user.id,
           beer_name: beer,
           rating: normalizedRating,
           created_at,
@@ -1176,28 +1364,79 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           note: normalizedNote || "",
           latitude: null,
           longitude: null,
-        })),
-        ...prev,
-      ];
-      return next;
-    });
+        }));
+        const { error } = await supabase.from("checkins").insert(rows);
 
-    setDateISO(today);
-    setRating(null);
-    setLogStep(1);
-    setCustomDistrict("");
-    setLocationText("");
-    setPriceText("");
-    setLogNote("");
-    setDateOpen(false);
-    setBatchBeerNames([]);
-    setBatchCountInput("1");
-    setBatchConfirmed(false);
-    trackEvent({
-      eventName: "checkin_added_local",
-      userId: session?.user?.id ?? null,
-      props: { rating: normalizedRating, beer_count: targets.length, date: dateISO },
-    });
+        if (!error) {
+          const favoriteTargets = Array.from(
+            new Set(targets.map((beer) => favoriteBeerName(beer)).filter((beer): beer is string => Boolean(beer)))
+          );
+          for (const beer of favoriteTargets) await syncFavoriteAfterCheckin(beer);
+          trackEvent({
+            eventName: "checkin_added",
+            userId: session.user.id,
+            props: { rating: normalizedRating, beer_count: targets.length, date: dateISO },
+          });
+          setDateISO(today);
+          setRating(null);
+          setLogStep(1);
+          setCustomDistrict("");
+          setLocationText("");
+          setPriceText("");
+          setLogNote("");
+          setDateOpen(false);
+          setBatchBeerNames([]);
+          setBatchCountInput("1");
+          setBatchConfirmed(false);
+          await loadCheckins();
+          return;
+        }
+
+        // supabase patladıysa local fallback
+        console.error("Supabase insert failed -> local fallback:", error.message);
+      }
+
+      // 2) local fallback
+      setCheckins((prev) => {
+        const next: Checkin[] = [
+          ...targets.map((beer) => ({
+            id: uuid(),
+            beer_name: beer,
+            rating: normalizedRating,
+            created_at,
+            country_code: "TR",
+            city: normalizedCity,
+            district: normalizedDistrict,
+            location_text: normalizedLocation || "",
+            price_try: normalizedPrice,
+            note: normalizedNote || "",
+            latitude: null,
+            longitude: null,
+          })),
+          ...prev,
+        ];
+        return next;
+      });
+
+      setDateISO(today);
+      setRating(null);
+      setLogStep(1);
+      setCustomDistrict("");
+      setLocationText("");
+      setPriceText("");
+      setLogNote("");
+      setDateOpen(false);
+      setBatchBeerNames([]);
+      setBatchCountInput("1");
+      setBatchConfirmed(false);
+      trackEvent({
+        eventName: "checkin_added_local",
+        userId: session?.user?.id ?? null,
+        props: { rating: normalizedRating, beer_count: targets.length, date: dateISO },
+      });
+    } finally {
+      setIsLogMutating(false);
+    }
   }
 
   if (!session) {
@@ -1244,6 +1483,48 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 ))}
               </div>
             ) : null}
+            {authMode === "signup" ? (
+              <>
+                <input
+                  value={signupBirthDate}
+                  onChange={(e) => setSignupBirthDate(e.target.value)}
+                  type="date"
+                  className="w-full rounded-2xl bg-black/20 border border-white/10 px-3 py-3 outline-none"
+                />
+                <label className="flex items-start gap-2 text-xs opacity-80">
+                  <input
+                    type="checkbox"
+                    checked={signupTermsAccepted}
+                    onChange={(e) => setSignupTermsAccepted(e.target.checked)}
+                  />
+                  Kullanim kosullarini kabul ediyorum (zorunlu).
+                </label>
+                <label className="flex items-start gap-2 text-xs opacity-80">
+                  <input
+                    type="checkbox"
+                    checked={signupPrivacyAccepted}
+                    onChange={(e) => setSignupPrivacyAccepted(e.target.checked)}
+                  />
+                  KVKK / gizlilik aydinlatmasini kabul ediyorum (zorunlu).
+                </label>
+                <label className="flex items-start gap-2 text-xs opacity-80">
+                  <input
+                    type="checkbox"
+                    checked={signupCommercialAccepted}
+                    onChange={(e) => setSignupCommercialAccepted(e.target.checked)}
+                  />
+                  Ticari elektronik ileti onay metnini okudum (zorunlu).
+                </label>
+                <label className="flex items-start gap-2 text-xs opacity-75">
+                  <input
+                    type="checkbox"
+                    checked={signupMarketingOptIn}
+                    onChange={(e) => setSignupMarketingOptIn(e.target.checked)}
+                  />
+                  Kampanya/duyuru iletisi almak istiyorum (opsiyonel).
+                </label>
+              </>
+            ) : null}
             <input
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -1286,24 +1567,29 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               alert("Bugunden sonraki tarihe log atilamaz.");
               return;
             }
+            if (!beginLogMutation()) return;
             const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
-            setCheckins((prev) => [
-              {
-                id: uuid(),
-                beer_name,
-                rating: sanitizeRating(rating),
-                created_at,
-                country_code: "TR",
-                city,
-                district: resolvedDistrict,
-                location_text: "",
-                price_try: null,
-                note: "",
-                latitude: null,
-                longitude: null,
-              },
-              ...prev,
-          ]);
+            try {
+              setCheckins((prev) => [
+                {
+                  id: uuid(),
+                  beer_name,
+                  rating: sanitizeRating(rating),
+                  created_at,
+                  country_code: "TR",
+                  city,
+                  district: resolvedDistrict,
+                  location_text: "",
+                  price_try: null,
+                  note: "",
+                  latitude: null,
+                  longitude: null,
+                },
+                ...prev,
+              ]);
+            } finally {
+              setIsLogMutating(false);
+            }
         }}
   onDelete={deleteCheckin}
   onUpdate={updateCheckin}
@@ -1690,6 +1976,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             <button
               onClick={addCheckin}
               disabled={
+                isLogMutating ||
                 !(isBackDate ? batchBeerNames.length > 0 || !!beerName : !!beerName) ||
                 (isBackDate && batchBeerNames.length > 1 && !batchConfirmed)
               }
@@ -1808,57 +2095,66 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           alert("Bugunden sonraki tarihe log atilamaz.");
           return;
         }
+        if (!beginLogMutation()) return;
         const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
         const normalizedRating = sanitizeRating(rating);
+        try {
+          if (session?.user?.id) {
+            const { error } = await supabase.from("checkins").insert({
+              user_id: session.user.id,
+              beer_name,
+              rating: normalizedRating,
+              created_at,
+              country_code: "TR",
+              city,
+              district: resolvedDistrict,
+              location_text: "",
+              price_try: null,
+              note: "",
+              latitude: null,
+              longitude: null,
+            });
 
-    if (session?.user?.id) {
-      const { error } = await supabase.from("checkins").insert({
-        user_id: session.user.id,
-        beer_name,
-        rating: normalizedRating,
-        created_at,
-        country_code: "TR",
-        city,
-        district: resolvedDistrict,
-        location_text: "",
-        price_try: null,
-        note: "",
-        latitude: null,
-        longitude: null,
-      });
+            if (error) {
+              alert(error.message);
+              return;
+            }
 
-      if (error) {
-        alert(error.message);
-        return;
-      }
+            trackEvent({
+              eventName: "checkin_added",
+              userId: session.user.id,
+              props: { rating: normalizedRating, beer_name },
+            });
+            await loadCheckins();
+            return;
+          }
 
-      trackEvent({
-        eventName: "checkin_added",
-        userId: session.user.id,
-        props: { rating: normalizedRating, beer_name },
-      });
-      await loadCheckins();
-      return;
-    }
-
-    setCheckins((prev) => [
-      {
-        id: uuid(),
-        beer_name,
-        rating: normalizedRating,
-        created_at,
-        country_code: "TR",
-        city,
-        district: resolvedDistrict,
-        location_text: "",
-        price_try: null,
-        note: "",
-        latitude: null,
-        longitude: null,
-      },
-      ...prev,
-    ]);
-  }}
+          setCheckins((prev) => [
+            {
+              id: uuid(),
+              beer_name,
+              rating: normalizedRating,
+              created_at,
+              country_code: "TR",
+              city,
+              district: resolvedDistrict,
+              location_text: "",
+              price_try: null,
+              note: "",
+              latitude: null,
+              longitude: null,
+            },
+            ...prev,
+          ]);
+          trackEvent({
+            eventName: "checkin_added_local",
+            userId: session?.user?.id ?? null,
+            props: { rating: normalizedRating, beer_name },
+          });
+        } finally {
+          setIsLogMutating(false);
+        }
+      }}
   onDelete={deleteCheckin}
   onUpdate={updateCheckin}
 />
@@ -1908,6 +2204,46 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               </button>
             );
           })}
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-3">
+          <div className="text-sm text-amber-200">Streak ve davranis analizi</div>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+              Aktif streak: <span className="font-semibold">{behaviorStats.currentStreak} gun</span>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+              En iyi streak: <span className="font-semibold">{behaviorStats.maxStreak} gun</span>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+              Aktif gun: <span className="font-semibold">{behaviorStats.uniqueDays}</span>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+              Favori gun: <span className="font-semibold">{behaviorStats.dominantWeekday}</span>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+              Gece orani: <span className="font-semibold">%{Math.round(behaviorStats.nightShare * 100)}</span>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+              Sehir cesidi: <span className="font-semibold">{behaviorStats.uniqueCities}</span>
+            </div>
+          </div>
+
+          <div className="mt-3 text-xs opacity-70">Rozetler (beta)</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {behaviorStats.badges.map((b) => (
+              <div
+                key={b.key}
+                className="rounded-full border border-amber-300/35 bg-amber-500/15 px-3 py-1 text-xs text-amber-100"
+                title={b.detail}
+              >
+                {b.title}
+              </div>
+            ))}
+            {behaviorStats.badges.length === 0 ? (
+              <div className="text-xs opacity-60">Henuz rozet yok. Log arttikca acilacak.</div>
+            ) : null}
+          </div>
         </div>
       </section>
       ) : null}

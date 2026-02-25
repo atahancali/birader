@@ -379,7 +379,7 @@ create table if not exists public.notifications (
   payload jsonb not null default '{}'::jsonb,
   is_read boolean not null default false,
   created_at timestamptz not null default now(),
-  constraint notifications_type_check check (type in ('comment', 'mention', 'comment_like'))
+  constraint notifications_type_check check (type in ('comment', 'mention', 'comment_like', 'follow'))
 );
 
 create index if not exists idx_checkin_comment_likes_user_time on public.checkin_comment_likes (user_id, created_at desc);
@@ -428,6 +428,20 @@ drop policy if exists notifications_update_own on public.notifications;
 create policy notifications_update_own on public.notifications
 for update using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
+
+alter table public.notifications drop constraint if exists notifications_type_check;
+alter table public.notifications
+add constraint notifications_type_check check (type in ('comment', 'mention', 'comment_like', 'follow'));
+
+alter table public.profiles add column if not exists birth_date date;
+alter table public.profiles add column if not exists age_verified_at timestamptz;
+alter table public.profiles add column if not exists terms_accepted_at timestamptz;
+alter table public.profiles add column if not exists privacy_accepted_at timestamptz;
+alter table public.profiles add column if not exists commercial_consent_at timestamptz;
+alter table public.profiles add column if not exists marketing_opt_in boolean not null default false;
+
+create index if not exists idx_profiles_birth_date on public.profiles (birth_date);
+create index if not exists idx_profiles_marketing_opt_in on public.profiles (marketing_opt_in);
 
 -- convenience view: public profile summary
 drop view if exists public.profile_stats;

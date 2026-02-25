@@ -48,12 +48,20 @@ export default function PublicProfileView({ username }: { username: string }) {
   const [followers, setFollowers] = useState(0);
   const [following, setFollowing] = useState(0);
   const [isFollowing, setIsFollowing] = useState(false);
+  const [followsMe, setFollowsMe] = useState(false);
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [editDisplayName, setEditDisplayName] = useState("");
+  const [editBio, setEditBio] = useState("");
+  const [editIsPublic, setEditIsPublic] = useState(true);
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const [year, setYear] = useState(currentYear);
   const avg = useMemo(() => avgRating(checkins), [checkins]);
+  const isOwnProfile = sessionUserId === profile?.user_id;
   const shownName = useMemo(() => {
     const d = (profile?.display_name || "").trim();
     return d || `@${profile?.username || ""}`;
@@ -64,6 +72,26 @@ export default function PublicProfileView({ username }: { username: string }) {
     if (!clean) return "";
     const { data } = supabase.storage.from("avatars").getPublicUrl(clean);
     return data.publicUrl;
+  }
+
+  async function fileToJpegBlob(file: File) {
+    const bitmap = await createImageBitmap(file);
+    const maxSide = 512;
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Gorsel islenemedi.");
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.9)
+    );
+    if (!blob) throw new Error("Gorsel donusturulemedi.");
+    return blob;
   }
 
   useEffect(() => {
@@ -104,6 +132,9 @@ export default function PublicProfileView({ username }: { username: string }) {
       }
 
       setProfile(p);
+      setEditDisplayName((p.display_name || "").trim() || p.username);
+      setEditBio(p.bio || "");
+      setEditIsPublic(p.is_public);
 
       const start = `${year}-01-01T00:00:00.000Z`;
       const end = `${year + 1}-01-01T00:00:00.000Z`;
@@ -142,13 +173,25 @@ export default function PublicProfileView({ username }: { username: string }) {
       setFollowing(followingRes.count ?? 0);
 
       if (sessionUserId && sessionUserId !== p.user_id) {
-        const { data: followRow } = await supabase
-          .from("follows")
-          .select("follower_id")
-          .eq("follower_id", sessionUserId)
-          .eq("following_id", p.user_id)
-          .maybeSingle();
+        const [{ data: followRow }, { data: followsMeRow }] = await Promise.all([
+          supabase
+            .from("follows")
+            .select("follower_id")
+            .eq("follower_id", sessionUserId)
+            .eq("following_id", p.user_id)
+            .maybeSingle(),
+          supabase
+            .from("follows")
+            .select("follower_id")
+            .eq("follower_id", p.user_id)
+            .eq("following_id", sessionUserId)
+            .maybeSingle(),
+        ]);
         setIsFollowing(Boolean(followRow));
+        setFollowsMe(Boolean(followsMeRow));
+      } else {
+        setIsFollowing(false);
+        setFollowsMe(false);
       }
 
       trackEvent({
@@ -207,6 +250,73 @@ export default function PublicProfileView({ username }: { username: string }) {
     });
   }
 
+  async function saveOwnProfile() {
+    if (!profile || !isOwnProfile || !sessionUserId) return;
+    setSavingProfile(true);
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        display_name: editDisplayName.trim().slice(0, 32),
+        bio: editBio.trim(),
+        is_public: editIsPublic,
+      })
+      .eq("user_id", sessionUserId);
+    setSavingProfile(false);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    setProfile((prev) =>
+      prev
+        ? {
+            ...prev,
+            display_name: editDisplayName.trim().slice(0, 32),
+            bio: editBio.trim(),
+            is_public: editIsPublic,
+          }
+        : prev
+    );
+    setEditOpen(false);
+  }
+
+  async function onAvatarFileChange(file?: File) {
+    if (!file || !sessionUserId || !isOwnProfile) return;
+    const type = (file.type || "").toLowerCase();
+    if (!["image/jpeg", "image/png", "image/webp"].includes(type)) {
+      alert("Sadece JPG, PNG veya WebP yukleyebilirsin.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      alert("Avatar en fazla 2MB olabilir.");
+      return;
+    }
+    try {
+      setAvatarUploading(true);
+      const blob = await fileToJpegBlob(file);
+      const uploadPath = `${sessionUserId}/avatar.jpg`;
+      const { error: upErr } = await supabase.storage
+        .from("avatars")
+        .upload(uploadPath, blob, { upsert: true, contentType: "image/jpeg" });
+      if (upErr) {
+        alert(upErr.message);
+        return;
+      }
+      const { error: dbErr } = await supabase
+        .from("profiles")
+        .update({ avatar_path: uploadPath })
+        .eq("user_id", sessionUserId);
+      if (dbErr) {
+        alert(dbErr.message);
+        return;
+      }
+      setProfile((prev) => (prev ? { ...prev, avatar_path: uploadPath } : prev));
+    } catch (e: any) {
+      alert(e?.message || "Avatar islenemedi.");
+    } finally {
+      setAvatarUploading(false);
+    }
+  }
+
   if (loading) {
     return (
       <main className="min-h-screen max-w-md mx-auto p-4">
@@ -248,12 +358,77 @@ export default function PublicProfileView({ username }: { username: string }) {
           <div className="text-xs opacity-70">@{profile.username}</div>
           </div>
         </div>
-        <Link href="/" className="text-xs underline opacity-80">
-          Ana sayfa
-        </Link>
+        <div className="flex items-center gap-2">
+          {isOwnProfile ? (
+            <button
+              type="button"
+              onClick={() => setEditOpen((v) => !v)}
+              className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+            >
+              {editOpen ? "Kapat" : "Edit profile"}
+            </button>
+          ) : null}
+          <Link href="/" className="text-xs underline opacity-80">
+            Ana sayfa
+          </Link>
+        </div>
       </div>
 
       {profile.bio ? <p className="mt-2 text-sm opacity-80">{profile.bio}</p> : null}
+
+      {isOwnProfile && editOpen ? (
+        <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
+          <div className="text-sm opacity-80">Profil ayarlari</div>
+          <div className="mt-2 flex items-center gap-3">
+            <div className="h-14 w-14 overflow-hidden rounded-full border border-white/15 bg-black/30">
+              {profile.avatar_path ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={avatarPublicUrl(profile.avatar_path)} alt="avatar" className="h-full w-full object-cover" />
+              ) : null}
+            </div>
+            <label className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs cursor-pointer">
+              {avatarUploading ? "Yukleniyor..." : "Avatar yukle"}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => void onAvatarFileChange(e.target.files?.[0])}
+              />
+            </label>
+          </div>
+          <div className="mt-2 grid gap-2">
+            <input
+              value={editDisplayName}
+              onChange={(e) => setEditDisplayName(e.target.value)}
+              maxLength={32}
+              placeholder="gorunen isim"
+              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+            />
+            <input
+              value={editBio}
+              onChange={(e) => setEditBio(e.target.value)}
+              placeholder="kisa bio (opsiyonel)"
+              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+            />
+            <label className="flex items-center gap-2 text-xs opacity-80">
+              <input
+                type="checkbox"
+                checked={editIsPublic}
+                onChange={(e) => setEditIsPublic(e.target.checked)}
+              />
+              Profil herkese acik
+            </label>
+            <button
+              type="button"
+              onClick={() => void saveOwnProfile()}
+              disabled={savingProfile}
+              className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm"
+            >
+              {savingProfile ? "Kaydediliyor..." : "Profili kaydet"}
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
         <div className="grid grid-cols-2 gap-2 text-sm">
@@ -264,13 +439,16 @@ export default function PublicProfileView({ username }: { username: string }) {
         </div>
 
         {sessionUserId && sessionUserId !== profile.user_id ? (
-          <button
-            type="button"
-            onClick={() => void toggleFollow()}
-            className="mt-3 w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm"
-          >
-            {isFollowing ? "Takibi birak" : "Takip et"}
-          </button>
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => void toggleFollow()}
+              className="w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm"
+            >
+              {isFollowing ? "Takibi birak" : "Takip et"}
+            </button>
+            {followsMe ? <div className="mt-2 text-xs text-amber-200/85">Seni takip ediyor</div> : null}
+          </div>
         ) : null}
       </section>
 
