@@ -240,7 +240,7 @@ export default function SocialPanel({
   const [relationHighlightUserId, setRelationHighlightUserId] = useState("");
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [feedBusy, setFeedBusy] = useState(false);
-  const [feedWindow, setFeedWindow] = useState<FeedWindow>("7d");
+  const [feedWindow, setFeedWindow] = useState<FeedWindow>("24h");
   const [feedMinRating, setFeedMinRating] = useState<number>(0);
   const [feedQuery, setFeedQuery] = useState("");
   const [feedCommentsByCheckin, setFeedCommentsByCheckin] = useState<Record<string, FeedComment[]>>({});
@@ -1998,9 +1998,9 @@ export default function SocialPanel({
               onChange={(e) => setFeedWindow(e.target.value as FeedWindow)}
               className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
             >
-              <option value="all">Tum zaman</option>
               <option value="24h">Son 24s</option>
               <option value="7d">Son 7g</option>
+              <option value="all">Tum zaman</option>
             </select>
             <select
               value={feedMinRating}

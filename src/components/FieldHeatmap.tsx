@@ -1,6 +1,6 @@
 "use client";
 
-type CheckinLite = { created_at: string };
+type CheckinLite = { created_at: string; rating?: number | null };
 
 const DOW_TR = ["Pzt","Sal","Çar","Per","Cum","Cmt","Paz"];
 
@@ -39,17 +39,26 @@ export default function FieldHeatmap({
   checkins,
   onSelectDay,
   readOnly = false,
+  cellMetric = "color",
 }: {
   year: number;
   checkins: CheckinLite[];
   onSelectDay: (isoDay: string) => void;
   readOnly?: boolean;
+  cellMetric?: "color" | "count" | "avgRating";
 }) {
-  // count per day
-  const counts: Record<string, number> = {};
+  // per-day stats
+  const dayStats: Record<string, { count: number; ratingSum: number; ratingCount: number }> = {};
   for (const c of checkins) {
     const day = c.created_at?.slice(0, 10) || isoLocal(new Date(c.created_at));
-    counts[day] = (counts[day] || 0) + 1;
+    const stat = dayStats[day] || { count: 0, ratingSum: 0, ratingCount: 0 };
+    stat.count += 1;
+    const rating = Number(c.rating);
+    if (Number.isFinite(rating) && rating > 0) {
+      stat.ratingSum += rating;
+      stat.ratingCount += 1;
+    }
+    dayStats[day] = stat;
   }
 
   // Build all days of year
@@ -73,6 +82,8 @@ export default function FieldHeatmap({
     grid[row][col] = iso;
   }
 
+  const cellSize = cellMetric === "color" ? 18 : 26;
+
   return (
     <div className="mt-6">
       <div className="flex items-end justify-between">
@@ -80,7 +91,9 @@ export default function FieldHeatmap({
           <div className="text-sm opacity-80">Isı haritası</div>
           <div className="text-xl font-bold">{year}</div>
         </div>
-        <div className="text-xs opacity-60">Günlük bira sayısı</div>
+        <div className="text-xs opacity-60">
+          {cellMetric === "avgRating" ? "Günlük ortalama puan" : "Günlük bira sayısı"}
+        </div>
       </div>
 
       {/* horizontal scroll "field" */}
@@ -90,7 +103,7 @@ export default function FieldHeatmap({
           <div className="grid grid-cols-[40px_1fr] gap-3">
             <div className="pt-1">
               {DOW_TR.map((d) => (
-                <div key={d} className="h-5 text-[11px] opacity-60 flex items-center">
+                <div key={d} className="text-[11px] opacity-60 flex items-center" style={{ height: `${cellSize + 2}px` }}>
                   {d}
                 </div>
               ))}
@@ -100,26 +113,45 @@ export default function FieldHeatmap({
               {/* actual grid */}
               <div
                 className="grid min-w-max"
-                style={{ gridTemplateColumns: `repeat(${maxWeek + 1}, 18px)` }}
+                style={{ gridTemplateColumns: `repeat(${maxWeek + 1}, ${cellSize}px)` }}
               >
                 {Array.from({ length: maxWeek + 1 }).map((_, col) => (
                   <div key={col} className="grid grid-rows-7 gap-1">
                     {Array.from({ length: 7 }).map((_, row) => {
                       const iso = grid[row][col];
-                      const count = iso ? (counts[iso] || 0) : 0;
+                      const stat = iso ? dayStats[iso] : undefined;
+                      const count = stat?.count || 0;
+                      const avgRating =
+                        stat && stat.ratingCount > 0 ? Math.round((stat.ratingSum / stat.ratingCount) * 10) / 10 : null;
+                      const textValue =
+                        cellMetric === "count"
+                          ? String(count)
+                          : cellMetric === "avgRating"
+                          ? avgRating === null
+                            ? "-"
+                            : avgRating.toFixed(1)
+                          : "";
 
                       return (
                         <button
                           key={`${row}-${col}`}
                           disabled={!iso}
                           onClick={() => !readOnly && iso && onSelectDay(iso)}
-                          title={iso ? `${iso} • ${count} bira` : ""}
+                          title={
+                            iso
+                              ? `${iso} • ${count} bira${avgRating === null ? "" : ` • ${avgRating.toFixed(1)}⭐ ort.`}`
+                              : ""
+                          }
                           className={[
-                            "h-5 w-[18px] rounded border border-white/10",
+                            "rounded border border-white/10 text-[10px] font-semibold",
                             iso ? colorByCount(count) : "bg-transparent border-transparent",
+                            iso && count > 0 && cellMetric !== "color" ? "text-white/90" : "text-white/0",
                             iso && !readOnly ? "active:scale-[0.98]" : "",
                           ].join(" ")}
-                        />
+                          style={{ height: `${cellSize}px`, width: `${cellSize}px` }}
+                        >
+                          {iso && count > 0 && cellMetric !== "color" ? textValue : ""}
+                        </button>
                       );
                     })}
                   </div>

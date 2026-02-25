@@ -63,6 +63,7 @@ export default function PublicProfileView({ username }: { username: string }) {
   const [favoriteQuery, setFavoriteQuery] = useState("");
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [heatmapMode, setHeatmapMode] = useState<"football" | "grid">("football");
+  const [gridCellMetric, setGridCellMetric] = useState<"color" | "count" | "avgRating">("color");
 
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const [year, setYear] = useState(currentYear);
@@ -651,6 +652,17 @@ export default function PublicProfileView({ username }: { username: string }) {
               <option value="football">Saha</option>
               <option value="grid">Grid</option>
             </select>
+            {heatmapMode === "grid" ? (
+              <select
+                value={gridCellMetric}
+                onChange={(e) => setGridCellMetric(e.target.value as "color" | "count" | "avgRating")}
+                className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
+              >
+                <option value="color">Renk</option>
+                <option value="count">Sayi</option>
+                <option value="avgRating">Ortalama ⭐</option>
+              </select>
+            ) : null}
             <select
               value={year}
               onChange={(e) => setYear(Number(e.target.value))}
@@ -672,6 +684,7 @@ export default function PublicProfileView({ username }: { username: string }) {
             checkins={checkins}
             onSelectDay={(d) => isOwnProfile && setSelectedDay(d)}
             readOnly={!isOwnProfile}
+            cellMetric={gridCellMetric}
           />
         )}
       </section>
