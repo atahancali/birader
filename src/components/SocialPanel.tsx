@@ -418,18 +418,11 @@ export default function SocialPanel({
     return null;
   }
 
-  async function loadFeed(ids: string[]) {
-    if (!ids.length) {
-      setFeedItems([]);
-      setFeedCommentsByCheckin({});
-      return;
-    }
-
+  async function loadFeed() {
     setFeedBusy(true);
     const { data: checkinRows, error: checkinErr } = await supabase
       .from("checkins")
       .select("id, user_id, beer_name, rating, created_at")
-      .in("user_id", ids)
       .order("created_at", { ascending: false })
       .limit(40);
     setFeedBusy(false);
@@ -448,10 +441,11 @@ export default function SocialPanel({
       return;
     }
 
+    const ownerIds = Array.from(new Set(rows.map((r) => r.user_id)));
     const { data: profileRows, error: profileErr } = await supabase
       .from("profiles")
       .select("user_id, username, display_name")
-      .in("user_id", ids);
+      .in("user_id", ownerIds);
 
     if (profileErr) {
       markDbError(profileErr.message);
@@ -848,7 +842,7 @@ export default function SocialPanel({
 
     const ids = (rows as FollowRow[] | null)?.map((r) => r.following_id) ?? [];
     setFollowingIds(new Set(ids));
-    await loadFeed(Array.from(new Set([userId, ...ids])));
+    await loadFeed();
 
     if (!ids.length) {
       setFollowingProfiles([]);
@@ -983,10 +977,20 @@ export default function SocialPanel({
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "checkins" },
-        (payload) => {
+        async (payload) => {
           const row = payload.new as FeedCheckinRow;
-          if (!row?.id || (row.user_id !== userId && !followingIdsRef.current.has(row.user_id))) return;
-          const profileRef = followingNameRef.current.get(row.user_id);
+          if (!row?.id) return;
+          let profileRef = followingNameRef.current.get(row.user_id);
+          if (!profileRef) {
+            const { data: p } = await supabase
+              .from("profiles")
+              .select("username, display_name")
+              .eq("user_id", row.user_id)
+              .maybeSingle();
+            if (p) {
+              profileRef = { username: (p as any).username, display_name: (p as any).display_name };
+            }
+          }
           setFeedItems((prev) => {
             const next = [
               {
@@ -1006,10 +1010,20 @@ export default function SocialPanel({
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "checkins" },
-        (payload) => {
+        async (payload) => {
           const row = payload.new as FeedCheckinRow;
-          if (!row?.id || (row.user_id !== userId && !followingIdsRef.current.has(row.user_id))) return;
-          const profileRef = followingNameRef.current.get(row.user_id);
+          if (!row?.id) return;
+          let profileRef = followingNameRef.current.get(row.user_id);
+          if (!profileRef) {
+            const { data: p } = await supabase
+              .from("profiles")
+              .select("username, display_name")
+              .eq("user_id", row.user_id)
+              .maybeSingle();
+            if (p) {
+              profileRef = { username: (p as any).username, display_name: (p as any).display_name };
+            }
+          }
           setFeedItems((prev) =>
             prev
               .map((x) =>
@@ -1031,13 +1045,7 @@ export default function SocialPanel({
         { event: "DELETE", schema: "public", table: "checkins" },
         (payload) => {
           const oldRow = payload.old as { id?: string; user_id?: string };
-          if (
-            !oldRow?.id ||
-            !oldRow.user_id ||
-            (oldRow.user_id !== userId && !followingIdsRef.current.has(oldRow.user_id))
-          ) {
-            return;
-          }
+          if (!oldRow?.id) return;
           setFeedItems((prev) => prev.filter((x) => x.id !== oldRow.id));
           void leaderboardReloadRef.current?.();
         }
@@ -2124,7 +2132,7 @@ export default function SocialPanel({
 
             {feedBusy ? <div className="text-xs opacity-60">Akis yukleniyor...</div> : null}
             {!feedBusy && !filteredFeedItems.length ? (
-              <div className="text-xs opacity-60">Takip akisinda gosterilecek log yok.</div>
+              <div className="text-xs opacity-60">Akista gosterilecek log yok.</div>
             ) : null}
           </div>
         </div>
