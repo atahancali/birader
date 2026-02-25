@@ -107,6 +107,7 @@ type OwnCheckinLite = {
 };
 
 type FeedWindow = "all" | "24h" | "7d";
+type FeedScope = "all" | "following";
 type LeaderWindow = "7d" | "30d" | "90d" | "365d";
 type LeaderScope = "all" | "followed";
 
@@ -241,6 +242,7 @@ export default function SocialPanel({
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [feedBusy, setFeedBusy] = useState(false);
   const [feedWindow, setFeedWindow] = useState<FeedWindow>("24h");
+  const [feedScope, setFeedScope] = useState<FeedScope>("all");
   const [feedMinRating, setFeedMinRating] = useState<number>(0);
   const [feedQuery, setFeedQuery] = useState("");
   const [feedCommentsByCheckin, setFeedCommentsByCheckin] = useState<Record<string, FeedComment[]>>({});
@@ -310,6 +312,7 @@ export default function SocialPanel({
     const windowMs = feedWindow === "24h" ? 24 * 60 * 60 * 1000 : feedWindow === "7d" ? 7 * 24 * 60 * 60 * 1000 : 0;
 
     return feedItems.filter((item) => {
+      if (feedScope === "following" && item.user_id !== userId && !followingIds.has(item.user_id)) return false;
       if (feedMinRating > 0 && Number(item.rating || 0) < feedMinRating) return false;
       if (windowMs > 0) {
         const ts = new Date(item.created_at).getTime();
@@ -322,7 +325,7 @@ export default function SocialPanel({
         item.beer_name.toLowerCase().includes(query)
       );
     });
-  }, [feedItems, feedMinRating, feedQuery, feedWindow]);
+  }, [feedItems, feedMinRating, feedQuery, feedScope, feedWindow, followingIds, userId]);
   const followerIds = useMemo(() => new Set(followerProfiles.map((p) => p.user_id)), [followerProfiles]);
   const unreadNotifCount = useMemo(() => notifications.filter((n) => !n.is_read).length, [notifications]);
 
@@ -1990,7 +1993,7 @@ export default function SocialPanel({
 
         <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-xs opacity-70">Takip akisi</div>
+            <div className="text-xs opacity-70">Sosyal akis</div>
             <button
               type="button"
               onClick={() => void loadFollowing()}
@@ -2000,7 +2003,15 @@ export default function SocialPanel({
             </button>
           </div>
 
-          <div className="mt-2 grid grid-cols-3 gap-2">
+          <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+            <select
+              value={feedScope}
+              onChange={(e) => setFeedScope(e.target.value as FeedScope)}
+              className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
+            >
+              <option value="all">Tum akış</option>
+              <option value="following">Takip ettiklerim</option>
+            </select>
             <select
               value={feedWindow}
               onChange={(e) => setFeedWindow(e.target.value as FeedWindow)}
