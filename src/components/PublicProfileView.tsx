@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import FootballHeatmap from "@/components/FootballHeatmap";
+import FieldHeatmap from "@/components/FieldHeatmap";
+import DayModal from "@/components/DayModal";
 import { supabase } from "@/lib/supabase";
 import { normalizeUsername } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
@@ -59,6 +61,8 @@ export default function PublicProfileView({ username }: { username: string }) {
   const [editIsPublic, setEditIsPublic] = useState(true);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [favoriteQuery, setFavoriteQuery] = useState("");
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [heatmapMode, setHeatmapMode] = useState<"football" | "grid">("football");
 
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const [year, setYear] = useState(currentYear);
@@ -89,6 +93,17 @@ export default function PublicProfileView({ username }: { username: string }) {
     const d = (profile?.display_name || "").trim();
     return d || `@${profile?.username || ""}`;
   }, [profile?.display_name, profile?.username]);
+  const dayCheckins = useMemo(() => {
+    if (!selectedDay) return [];
+    return checkins.filter((c) => {
+      const iso = new Date(c.created_at).toISOString().slice(0, 10);
+      return iso === selectedDay;
+    });
+  }, [checkins, selectedDay]);
+  const beerOptions = useMemo(
+    () => Array.from(new Set(checkins.map((c) => c.beer_name).filter(Boolean))).sort((a, b) => a.localeCompare(b, "tr")),
+    [checkins]
+  );
 
   function avatarPublicUrl(path?: string | null) {
     const clean = (path || "").trim();
@@ -378,6 +393,57 @@ export default function PublicProfileView({ username }: { username: string }) {
     setFavorites((prev) => prev.filter((f) => Number(f.rank) !== rank));
   }
 
+  async function addCheckinOnDay(payload: { day: string; beer_name: string; rating: number | null }) {
+    if (!sessionUserId || !isOwnProfile) return;
+    const created_at = new Date(`${payload.day}T12:00:00.000Z`).toISOString();
+    const { error } = await supabase.from("checkins").insert({
+      user_id: sessionUserId,
+      beer_name: payload.beer_name.trim(),
+      rating: payload.rating,
+      created_at,
+    });
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    const start = `${year}-01-01T00:00:00.000Z`;
+    const end = `${year + 1}-01-01T00:00:00.000Z`;
+    const { data } = await supabase
+      .from("checkins")
+      .select("id, beer_name, rating, created_at, city, district, location_text, price_try, note")
+      .eq("user_id", sessionUserId)
+      .gte("created_at", start)
+      .lt("created_at", end)
+      .order("created_at", { ascending: false });
+    setCheckins((data as CheckinRow[] | null) ?? []);
+  }
+
+  async function deleteCheckinOnDay(id: string) {
+    if (!sessionUserId || !isOwnProfile) return;
+    const { error } = await supabase.from("checkins").delete().eq("id", id).eq("user_id", sessionUserId);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    setCheckins((prev) => prev.filter((c) => c.id !== id));
+  }
+
+  async function updateCheckinOnDay(payload: { id: string; beer_name: string; rating: number | null }) {
+    if (!sessionUserId || !isOwnProfile) return;
+    const { error } = await supabase
+      .from("checkins")
+      .update({ beer_name: payload.beer_name.trim(), rating: payload.rating })
+      .eq("id", payload.id)
+      .eq("user_id", sessionUserId);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    setCheckins((prev) =>
+      prev.map((c) => (c.id === payload.id ? { ...c, beer_name: payload.beer_name.trim(), rating: payload.rating } : c))
+    );
+  }
+
   if (loading) {
     return (
       <main className="min-h-screen max-w-md mx-auto p-4">
@@ -576,19 +642,38 @@ export default function PublicProfileView({ username }: { username: string }) {
       <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="text-sm opacity-80">Isi haritasi ({year})</div>
-          <select
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-            className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
-          >
-            {[currentYear, currentYear - 1, currentYear - 2].map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <select
+              value={heatmapMode}
+              onChange={(e) => setHeatmapMode(e.target.value as "football" | "grid")}
+              className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
+            >
+              <option value="football">Saha</option>
+              <option value="grid">Grid</option>
+            </select>
+            <select
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
+            >
+              {[currentYear, currentYear - 1, currentYear - 2].map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        <FootballHeatmap year={year} checkins={checkins} onSelectDay={() => {}} />
+        {heatmapMode === "football" ? (
+          <FootballHeatmap year={year} checkins={checkins} onSelectDay={(d) => isOwnProfile && setSelectedDay(d)} />
+        ) : (
+          <FieldHeatmap
+            year={year}
+            checkins={checkins}
+            onSelectDay={(d) => isOwnProfile && setSelectedDay(d)}
+            readOnly={!isOwnProfile}
+          />
+        )}
       </section>
 
       <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
@@ -615,6 +700,19 @@ export default function PublicProfileView({ username }: { username: string }) {
           {!checkins.length ? <div className="text-xs opacity-60">Bu yil check-in yok.</div> : null}
         </div>
       </section>
+
+      {isOwnProfile ? (
+        <DayModal
+          open={selectedDay !== null}
+          day={selectedDay ?? ""}
+          checkins={dayCheckins}
+          beerOptions={beerOptions}
+          onClose={() => setSelectedDay(null)}
+          onAdd={addCheckinOnDay}
+          onDelete={deleteCheckinOnDay}
+          onUpdate={updateCheckinOnDay}
+        />
+      ) : null}
     </main>
   );
 }
