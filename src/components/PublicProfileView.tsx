@@ -34,9 +34,10 @@ type FavoriteBeerRow = {
 };
 
 function avgRating(checkins: CheckinRow[]) {
-  if (!checkins.length) return 0;
-  const sum = checkins.reduce((acc, c) => acc + Number(c.rating || 0), 0);
-  return Math.round((sum / checkins.length) * 100) / 100;
+  const rated = checkins.filter((c) => c.rating !== null && c.rating !== undefined);
+  if (!rated.length) return 0;
+  const sum = rated.reduce((acc, c) => acc + Number(c.rating ?? 0), 0);
+  return Math.round((sum / rated.length) * 100) / 100;
 }
 
 export default function PublicProfileView({ username }: { username: string }) {

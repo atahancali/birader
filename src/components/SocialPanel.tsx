@@ -177,9 +177,10 @@ function typoDistance(aRaw: string, bRaw: string) {
 }
 
 function averageRating(checkins: CheckinRow[]) {
-  if (!checkins.length) return 0;
-  const sum = checkins.reduce((acc, c) => acc + Number(c.rating || 0), 0);
-  return Math.round((sum / checkins.length) * 100) / 100;
+  const rated = checkins.filter((c) => c.rating !== null && c.rating !== undefined);
+  if (!rated.length) return 0;
+  const sum = rated.reduce((acc, c) => acc + Number(c.rating ?? 0), 0);
+  return Math.round((sum / rated.length) * 100) / 100;
 }
 
 function topBeers(checkins: CheckinRow[], limit = 12) {
@@ -767,17 +768,20 @@ export default function SocialPanel({
       return;
     }
 
-    const rows = (checkinRows as Array<{ user_id: string; rating: number }> | null) ?? [];
+    const rows = (checkinRows as Array<{ user_id: string; rating: number | null }> | null) ?? [];
     if (!rows.length) {
       setLeaderRows([]);
       return;
     }
 
-    const agg = new Map<string, { logs: number; ratingSum: number }>();
+    const agg = new Map<string, { logs: number; ratedCount: number; ratingSum: number }>();
     for (const row of rows) {
-      const entry = agg.get(row.user_id) ?? { logs: 0, ratingSum: 0 };
+      const entry = agg.get(row.user_id) ?? { logs: 0, ratedCount: 0, ratingSum: 0 };
       entry.logs += 1;
-      entry.ratingSum += Number(row.rating ?? 0);
+      if (row.rating !== null && row.rating !== undefined) {
+        entry.ratedCount += 1;
+        entry.ratingSum += Number(row.rating);
+      }
       agg.set(row.user_id, entry);
     }
 
@@ -807,7 +811,7 @@ export default function SocialPanel({
         username: profileRef.username,
         display_name: profileRef.display_name,
         logs: stats.logs,
-        avgRating: Math.round((stats.ratingSum / Math.max(1, stats.logs)) * 100) / 100,
+        avgRating: Math.round((stats.ratingSum / Math.max(1, stats.ratedCount)) * 100) / 100,
       });
     }
 
