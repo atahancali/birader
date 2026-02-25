@@ -6,6 +6,7 @@ import FootballHeatmap from "@/components/FootballHeatmap";
 import { supabase } from "@/lib/supabase";
 import { normalizeUsername } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
+import { favoriteBeerName } from "@/lib/beer";
 
 type ProfileRow = {
   user_id: string;
@@ -57,11 +58,33 @@ export default function PublicProfileView({ username }: { username: string }) {
   const [editBio, setEditBio] = useState("");
   const [editIsPublic, setEditIsPublic] = useState(true);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [favoriteQuery, setFavoriteQuery] = useState("");
 
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const [year, setYear] = useState(currentYear);
   const avg = useMemo(() => avgRating(checkins), [checkins]);
   const isOwnProfile = sessionUserId === profile?.user_id;
+  const favoriteNames = useMemo(
+    () => new Set(favorites.map((f) => favoriteBeerName(f.beer_name))),
+    [favorites]
+  );
+  const favoriteOptionPool = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const c of checkins) {
+      const n = favoriteBeerName(c.beer_name || "");
+      if (!n) continue;
+      counts.set(n, (counts.get(n) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([n]) => n);
+  }, [checkins]);
+  const filteredFavoriteOptions = useMemo(() => {
+    const q = favoriteQuery.trim().toLowerCase();
+    const pool = favoriteOptionPool.filter((name) => !favoriteNames.has(name));
+    if (!q) return pool.slice(0, 20);
+    return pool.filter((name) => name.toLowerCase().includes(q)).slice(0, 20);
+  }, [favoriteNames, favoriteOptionPool, favoriteQuery]);
   const shownName = useMemo(() => {
     const d = (profile?.display_name || "").trim();
     return d || `@${profile?.username || ""}`;
@@ -317,6 +340,44 @@ export default function PublicProfileView({ username }: { username: string }) {
     }
   }
 
+  async function addFavoriteFromProfile(rawName?: string) {
+    if (!isOwnProfile || !sessionUserId) return;
+    const beer = favoriteBeerName((rawName ?? favoriteQuery).trim());
+    if (!beer) return;
+    if (favoriteNames.has(beer)) return;
+    if (favorites.length >= 3) {
+      alert("En fazla 3 favori ekleyebilirsin.");
+      return;
+    }
+    const usedRanks = new Set(favorites.map((f) => Number(f.rank)));
+    let rank = 1;
+    while (usedRanks.has(rank) && rank <= 3) rank += 1;
+    const { error } = await supabase.from("favorite_beers").upsert(
+      { user_id: sessionUserId, beer_name: beer, rank },
+      { onConflict: "user_id,beer_name", ignoreDuplicates: true }
+    );
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    setFavorites((prev) => [...prev, { beer_name: beer, rank }].sort((a, b) => a.rank - b.rank));
+    setFavoriteQuery("");
+  }
+
+  async function removeFavoriteFromProfile(rank: number) {
+    if (!isOwnProfile || !sessionUserId) return;
+    const { error } = await supabase
+      .from("favorite_beers")
+      .delete()
+      .eq("user_id", sessionUserId)
+      .eq("rank", rank);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    setFavorites((prev) => prev.filter((f) => Number(f.rank) !== rank));
+  }
+
   if (loading) {
     return (
       <main className="min-h-screen max-w-md mx-auto p-4">
@@ -426,6 +487,54 @@ export default function PublicProfileView({ username }: { username: string }) {
             >
               {savingProfile ? "Kaydediliyor..." : "Profili kaydet"}
             </button>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
+            <div className="text-xs opacity-70">Favoriler (en fazla 3)</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {favorites.map((f) => (
+                <button
+                  key={`edit-fav-${f.rank}`}
+                  type="button"
+                  onClick={() => void removeFavoriteFromProfile(Number(f.rank))}
+                  className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs"
+                  title="Kaldir"
+                >
+                  #{f.rank} {f.beer_name} ×
+                </button>
+              ))}
+              {!favorites.length ? <div className="text-xs opacity-60">Henuz favori yok.</div> : null}
+            </div>
+            <div className="mt-2 rounded-xl border border-white/10 bg-black/30 p-2">
+              <input
+                value={favoriteQuery}
+                onChange={(e) => setFavoriteQuery(e.target.value)}
+                placeholder="Favori bira ara / yaz..."
+                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+              />
+              <div className="mt-2 flex flex-wrap gap-2">
+                {filteredFavoriteOptions.map((name) => (
+                  <button
+                    key={`edit-fav-opt-${name}`}
+                    type="button"
+                    onClick={() => void addFavoriteFromProfile(name)}
+                    className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs"
+                  >
+                    {name}
+                  </button>
+                ))}
+                {filteredFavoriteOptions.length === 0 ? (
+                  <div className="text-xs opacity-60">Oneri yok, yazarak ekleyebilirsin.</div>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => void addFavoriteFromProfile()}
+                className="mt-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm"
+              >
+                Yazdigimi favoriye ekle
+              </button>
+            </div>
           </div>
         </section>
       ) : null}

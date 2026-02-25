@@ -1684,6 +1684,61 @@ export default function SocialPanel({
           ) : null}
         </div>
 
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+          <div className="text-xs opacity-70">Kullanici ara ve takip et</div>
+          <div className="mt-2 flex gap-2">
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void searchUsers();
+                }
+              }}
+              placeholder="handle veya isim ara"
+              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => void searchUsers()}
+              className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm"
+            >
+              {searchBusy ? "..." : "Ara"}
+            </button>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {searchResults.map((p) => {
+              const isFollowing = followingIds.has(p.user_id);
+              return (
+                <div key={p.user_id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/25 p-2">
+                  <div className="min-w-0">
+                    <Link href={`/u/${p.username}`} className="truncate text-sm underline">
+                      {visibleName(p)}
+                    </Link>
+                    <div className="truncate text-[11px] opacity-65">@{p.username}</div>
+                    {followerIds.has(p.user_id) ? (
+                      <div className="text-[11px] text-amber-200/85">Seni takip ediyor</div>
+                    ) : null}
+                    {p.bio ? <div className="truncate text-xs opacity-70">{p.bio}</div> : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void (isFollowing ? unfollow(p) : follow(p))}
+                    className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+                  >
+                    {isFollowing ? "Takibi birak" : "Takip et"}
+                  </button>
+                </div>
+              );
+            })}
+            {!searchBusy && searchResults.length === 0 ? (
+              <div className="text-xs opacity-60">Arama sonucu yok.</div>
+            ) : null}
+          </div>
+        </div>
+
         <div className="rounded-2xl border border-amber-300/20 bg-amber-500/5 p-3">
           <div className="flex items-center justify-between gap-3">
             <div className="text-xs text-amber-200/90">
@@ -2032,139 +2087,6 @@ export default function SocialPanel({
             {feedBusy ? <div className="text-xs opacity-60">Akis yukleniyor...</div> : null}
             {!feedBusy && !filteredFeedItems.length ? (
               <div className="text-xs opacity-60">Takip akisinda gosterilecek log yok.</div>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-          <div className="text-xs opacity-70">Favoriler (en fazla 3)</div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {favorites.map((f) => (
-              <button
-                key={f.rank}
-                type="button"
-                onClick={() => removeFavorite(Number(f.rank))}
-                className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs"
-                title="Kaldir"
-              >
-                #{f.rank} {f.beer_name} ×
-              </button>
-            ))}
-            {!favorites.length ? <div className="text-xs opacity-60">Henuz favori yok.</div> : null}
-          </div>
-
-          <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-2">
-            <div className="relative">
-              <input
-                value={favoriteQuery}
-                onChange={(e) => {
-                  setFavoriteQuery(e.target.value);
-                  setFavoriteOpen(true);
-                }}
-                onFocus={() => setFavoriteOpen(true)}
-                placeholder="Favori bira ara..."
-                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
-              />
-              <button
-                type="button"
-                onClick={() => setFavoriteOpen((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs"
-              >
-                {favoriteOpen ? "Kapat" : "Ac"}
-              </button>
-            </div>
-
-            {favoriteOpen ? (
-              <div className="mt-2 max-h-44 overflow-auto rounded-xl border border-white/10 bg-black/40 p-1">
-                {filteredFavoriteOptions.length === 0 ? (
-                  <div className="px-2 py-2 text-xs opacity-60">Sonuc yok.</div>
-                ) : (
-                  filteredFavoriteOptions.map((name) => (
-                    <button
-                      key={name}
-                      type="button"
-                      onClick={() => {
-                        setAddingFavorite(name);
-                        setFavoriteQuery(name);
-                        setFavoriteOpen(false);
-                      }}
-                      className={`w-full rounded-lg px-2 py-2 text-left text-sm hover:bg-white/10 ${
-                        addingFavorite === name ? "bg-white/10" : ""
-                      }`}
-                    >
-                      {name}
-                    </button>
-                  ))
-                )}
-              </div>
-            ) : null}
-
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <div className="truncate text-xs opacity-70">
-                Secili: <span className="opacity-90">{addingFavorite || "—"}</span>
-              </div>
-              <button
-                type="button"
-                onClick={addFavorite}
-                className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm"
-              >
-                Ekle
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-          <div className="text-xs opacity-70">Kullanici ara ve takip et</div>
-          <div className="mt-2 flex gap-2">
-            <input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void searchUsers();
-                }
-              }}
-              placeholder="handle veya isim ara"
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
-            />
-            <button
-              type="button"
-              onClick={() => void searchUsers()}
-              className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm"
-            >
-              {searchBusy ? "..." : "Ara"}
-            </button>
-          </div>
-
-          <div className="mt-3 space-y-2">
-            {searchResults.map((p) => {
-              const isFollowing = followingIds.has(p.user_id);
-              return (
-                <div key={p.user_id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/25 p-2">
-                  <div className="min-w-0">
-                    <Link href={`/u/${p.username}`} className="truncate text-sm underline">
-                      {visibleName(p)}
-                    </Link>
-                    <div className="truncate text-[11px] opacity-65">@{p.username}</div>
-                    {followerIds.has(p.user_id) ? (
-                      <div className="text-[11px] text-amber-200/85">Seni takip ediyor</div>
-                    ) : null}
-                    {p.bio ? <div className="truncate text-xs opacity-70">{p.bio}</div> : null}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void (isFollowing ? unfollow(p) : follow(p))}
-                    className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
-                  >
-                    {isFollowing ? "Takibi birak" : "Takip et"}
-                  </button>
-                </div>
-              );
-            })}
-            {!searchBusy && searchResults.length === 0 ? (
-              <div className="text-xs opacity-60">Arama sonucu yok.</div>
             ) : null}
           </div>
         </div>
