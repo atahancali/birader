@@ -68,6 +68,7 @@ create index if not exists idx_follows_following on public.follows (following_id
 create index if not exists idx_checkins_city_district on public.checkins (city, district);
 create index if not exists idx_checkins_location_text on public.checkins (location_text);
 create index if not exists idx_checkins_geo on public.checkins (latitude, longitude);
+create index if not exists idx_checkins_created_at on public.checkins (created_at desc);
 create index if not exists idx_analytics_events_name_time on public.analytics_events (event_name, created_at desc);
 create index if not exists idx_analytics_events_user_time on public.analytics_events (user_id, created_at desc);
 create index if not exists idx_product_suggestions_created_at on public.product_suggestions (created_at desc);

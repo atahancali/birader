@@ -143,6 +143,7 @@ alter table public.checkins add column if not exists longitude double precision;
 create index if not exists idx_checkins_city_district on public.checkins (city, district);
 create index if not exists idx_checkins_location_text on public.checkins (location_text);
 create index if not exists idx_checkins_geo on public.checkins (latitude, longitude);
+create index if not exists idx_checkins_created_at on public.checkins (created_at desc);
 
 -- refresh checks / constraints
 alter table public.favorite_beers drop constraint if exists favorite_beers_rank_check;

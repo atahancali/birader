@@ -39,6 +39,7 @@ type HeaderProfile = {
   username: string;
   display_name?: string | null;
   avatar_path?: string | null;
+  is_admin?: boolean | null;
 };
 type ProductSuggestionRow = {
   id: number;
@@ -57,7 +58,6 @@ const MAX_BULK_BACKDATE_COUNT = 10;
 const ONBOARDING_SEEN_KEY = "birader:onboarding:v1";
 const PENDING_COMPLIANCE_KEY = "birader:pending-compliance:v1";
 const LOG_SUBMIT_COOLDOWN_MS = 10_000;
-const ADMIN_EMAIL_ALLOWLIST = new Set(["birader.com.app@gmail.com"]);
 
 type BeerItem = {
   brand: string;
@@ -725,6 +725,7 @@ export default function Home() {
   const [recentExpandStep, setRecentExpandStep] = useState(0);
   const [headerProfile, setHeaderProfile] = useState<HeaderProfile | null>(null);
   const [isLogMutating, setIsLogMutating] = useState(false);
+  const [isAdminUser, setIsAdminUser] = useState(false);
   const [adminSuggestions, setAdminSuggestions] = useState<ProductSuggestionRow[]>([]);
   const [adminSuggestionsBusy, setAdminSuggestionsBusy] = useState(false);
   const [adminSuggestionStatusFilter, setAdminSuggestionStatusFilter] = useState<"all" | "new" | "in_progress" | "done">("all");
@@ -739,8 +740,8 @@ export default function Home() {
     [customDistrict, district]
   );
   const canManageSuggestions = useMemo(
-    () => Boolean(session?.user?.email && ADMIN_EMAIL_ALLOWLIST.has(session.user.email.toLowerCase())),
-    [session?.user?.email]
+    () => isAdminUser,
+    [isAdminUser]
   );
 
   function canOpenLogStep(step: 1 | 2 | 3 | 4) {
@@ -861,24 +862,30 @@ export default function Home() {
       loadFavorites();
       supabase
         .from("profiles")
-        .select("username, display_name, avatar_path")
+        .select("username, display_name, avatar_path, is_admin")
         .eq("user_id", session.user.id)
         .maybeSingle()
         .then(({ data }) => {
           if (data) {
+            setIsAdminUser(Boolean((data as any).is_admin));
             setHeaderProfile({
               username: (data as any).username,
               display_name: (data as any).display_name,
               avatar_path: (data as any).avatar_path,
+              is_admin: Boolean((data as any).is_admin),
             });
           } else {
+            setIsAdminUser(false);
             setHeaderProfile({
               username: usernameFromEmail(session.user.email) || `user-${session.user.id.slice(0, 6)}`,
               display_name: "",
               avatar_path: "",
+              is_admin: false,
             });
           }
         });
+    } else {
+      setIsAdminUser(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id]);
