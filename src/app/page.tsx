@@ -40,6 +40,16 @@ type HeaderProfile = {
   display_name?: string | null;
   avatar_path?: string | null;
 };
+type ProductSuggestionRow = {
+  id: number;
+  user_id: string | null;
+  category: string;
+  message: string;
+  status: "new" | "in_progress" | "done";
+  created_at: string;
+  username?: string | null;
+  display_name?: string | null;
+};
 
 type HomeSection = "log" | "social" | "heatmap" | "stats";
 type LocationSuggestion = { city: string; district: string; score: number };
@@ -47,6 +57,7 @@ const MAX_BULK_BACKDATE_COUNT = 10;
 const ONBOARDING_SEEN_KEY = "birader:onboarding:v1";
 const PENDING_COMPLIANCE_KEY = "birader:pending-compliance:v1";
 const LOG_SUBMIT_COOLDOWN_MS = 10_000;
+const ADMIN_EMAIL_ALLOWLIST = new Set(["birader.com.app@gmail.com"]);
 
 type BeerItem = {
   brand: string;
@@ -165,6 +176,12 @@ function beerLabel(b: BeerItem) {
 
 function beerStyleLabel(b: BeerItem) {
   return `${b.brand} — ${b.format}`;
+}
+
+function inferFormatFromBeerName(label: string): BeerItem["format"] {
+  if (label.includes("— Fici —")) return "Fici";
+  if (label.includes("— Şişe/Kutu —")) return "Şişe/Kutu";
+  return "Fici";
 }
 
 function isoTodayLocal() {
@@ -708,6 +725,10 @@ export default function Home() {
   const [recentExpandStep, setRecentExpandStep] = useState(0);
   const [headerProfile, setHeaderProfile] = useState<HeaderProfile | null>(null);
   const [isLogMutating, setIsLogMutating] = useState(false);
+  const [adminSuggestions, setAdminSuggestions] = useState<ProductSuggestionRow[]>([]);
+  const [adminSuggestionsBusy, setAdminSuggestionsBusy] = useState(false);
+  const [adminSuggestionStatusFilter, setAdminSuggestionStatusFilter] = useState<"all" | "new" | "in_progress" | "done">("all");
+  const [adminSuggestionCategoryFilter, setAdminSuggestionCategoryFilter] = useState<string>("all");
   const lastLogAttemptAtRef = useRef(0);
 
   const year = useMemo(() => new Date().getFullYear(), []);
@@ -716,6 +737,10 @@ export default function Home() {
   const resolvedDistrict = useMemo(
     () => (district === "Diger" ? customDistrict.trim() : district.trim()),
     [customDistrict, district]
+  );
+  const canManageSuggestions = useMemo(
+    () => Boolean(session?.user?.email && ADMIN_EMAIL_ALLOWLIST.has(session.user.email.toLowerCase())),
+    [session?.user?.email]
   );
 
   function canOpenLogStep(step: 1 | 2 | 3 | 4) {
@@ -857,6 +882,11 @@ export default function Home() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (canManageSuggestions) void loadAdminSuggestions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canManageSuggestions]);
 
   useEffect(() => {
     if (!session?.user?.id) return;
@@ -1021,6 +1051,75 @@ export default function Home() {
       nightShare,
       uniqueCities,
       badges,
+    };
+  }, [checkins]);
+
+  const topBeersOverall = useMemo(() => {
+    const counts = new Map<string, number>();
+    const ratingAgg = new Map<string, { sum: number; rated: number }>();
+    for (const c of checkins) {
+      const key = favoriteBeerName(c.beer_name || "");
+      if (!key) continue;
+      counts.set(key, (counts.get(key) || 0) + 1);
+      const current = ratingAgg.get(key) || { sum: 0, rated: 0 };
+      if (c.rating !== null && c.rating !== undefined && Number(c.rating) > 0) {
+        current.sum += Number(c.rating);
+        current.rated += 1;
+      }
+      ratingAgg.set(key, current);
+    }
+    return Array.from(counts.entries())
+      .map(([beer, logs]) => {
+        const r = ratingAgg.get(beer) || { sum: 0, rated: 0 };
+        const avg = r.rated ? Math.round((r.sum / r.rated) * 100) / 100 : 0;
+        return { beer, logs, avg };
+      })
+      .sort((a, b) => (b.logs !== a.logs ? b.logs - a.logs : b.avg - a.avg))
+      .slice(0, 5);
+  }, [checkins]);
+
+  const monthComparison = useMemo(() => {
+    const now = new Date();
+    const curMonth = now.getMonth();
+    const curYear = now.getFullYear();
+    const prevDate = new Date(curYear, curMonth - 1, 1);
+    const prevMonth = prevDate.getMonth();
+    const prevYear = prevDate.getFullYear();
+    let currentLogs = 0;
+    let previousLogs = 0;
+    let currentRated = 0;
+    let previousRated = 0;
+    let currentRatingSum = 0;
+    let previousRatingSum = 0;
+    let unrated = 0;
+    for (const c of checkins) {
+      const d = new Date(c.created_at);
+      if (Number.isNaN(d.getTime())) continue;
+      const m = d.getMonth();
+      const y = d.getFullYear();
+      const isRated = c.rating !== null && c.rating !== undefined && Number(c.rating) > 0;
+      if (!isRated) unrated += 1;
+      if (m === curMonth && y === curYear) {
+        currentLogs += 1;
+        if (isRated) {
+          currentRated += 1;
+          currentRatingSum += Number(c.rating);
+        }
+      } else if (m === prevMonth && y === prevYear) {
+        previousLogs += 1;
+        if (isRated) {
+          previousRated += 1;
+          previousRatingSum += Number(c.rating);
+        }
+      }
+    }
+    return {
+      currentLogs,
+      previousLogs,
+      deltaLogs: currentLogs - previousLogs,
+      currentAvg: currentRated ? Math.round((currentRatingSum / currentRated) * 100) / 100 : 0,
+      previousAvg: previousRated ? Math.round((previousRatingSum / previousRated) * 100) / 100 : 0,
+      unratedShare: checkins.length ? Math.round((unrated / checkins.length) * 100) : 0,
     };
   }, [checkins]);
 
@@ -1280,6 +1379,55 @@ export default function Home() {
     setSuggestionMessage("");
     setSuggestionCategory("general");
     setSuggestionOpen(false);
+  }
+
+  async function loadAdminSuggestions() {
+    if (!canManageSuggestions) return;
+    setAdminSuggestionsBusy(true);
+    const { data, error } = await supabase
+      .from("product_suggestions")
+      .select("id, user_id, category, message, status, created_at")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    setAdminSuggestionsBusy(false);
+    if (error) {
+      alert(`Oneri listesi yuklenemedi: ${error.message}`);
+      return;
+    }
+
+    const rows = (data as ProductSuggestionRow[] | null) ?? [];
+    const userIds = Array.from(new Set(rows.map((r) => r.user_id).filter((x): x is string => Boolean(x))));
+    if (!userIds.length) {
+      setAdminSuggestions(rows);
+      return;
+    }
+    const { data: profileRows } = await supabase
+      .from("profiles")
+      .select("user_id, username, display_name")
+      .in("user_id", userIds);
+    const profileById = new Map<string, { username?: string | null; display_name?: string | null }>();
+    for (const p of ((profileRows as Array<{ user_id: string; username?: string | null; display_name?: string | null }> | null) ?? [])) {
+      profileById.set(p.user_id, { username: p.username, display_name: p.display_name });
+    }
+    setAdminSuggestions(
+      rows.map((r) => {
+        const p = r.user_id ? profileById.get(r.user_id) : null;
+        return { ...r, username: p?.username ?? null, display_name: p?.display_name ?? null };
+      })
+    );
+  }
+
+  async function updateSuggestionStatus(id: number, nextStatus: "new" | "in_progress" | "done") {
+    if (!canManageSuggestions) return;
+    const { error } = await supabase
+      .from("product_suggestions")
+      .update({ status: nextStatus })
+      .eq("id", id);
+    if (error) {
+      alert(`Durum guncellenemedi: ${error.message}`);
+      return;
+    }
+    setAdminSuggestions((prev) => prev.map((r) => (r.id === id ? { ...r, status: nextStatus } : r)));
   }
 
   function closeOnboarding(markSeen = true) {
@@ -2069,9 +2217,27 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         <div className="space-y-2">
           {checkins.slice(0, recentVisibleCount).map((c) => (
             <div key={c.id} className="rounded-3xl border border-white/10 bg-white/5 p-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <div className="font-semibold">{c.beer_name}</div>
-                <div className="text-sm">{c.rating === null ? "—" : `${c.rating}⭐`}</div>
+                <div className="flex items-center gap-2">
+                  <div className="text-sm">{c.rating === null ? "—" : `${c.rating}⭐`}</div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const inferred = inferFormatFromBeerName(c.beer_name);
+                      setFormat(inferred);
+                      setFormatConfirmed(true);
+                      setBeerName(c.beer_name);
+                      setBeerQuery(c.beer_name);
+                      setRating(c.rating === null || c.rating === undefined ? null : Number(c.rating));
+                      setLogStep(3);
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                    className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
+                  >
+                    Tekrar logla
+                  </button>
+                </div>
               </div>
               <div className="text-xs opacity-70 mt-1">
                 {new Date(c.created_at).toLocaleString("tr-TR")}
@@ -2250,6 +2416,43 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 />
       {activeSection === "stats" ? (
       <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
+        <div className="mb-4 grid grid-cols-2 gap-2 text-sm">
+          <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+            Bu ay log: <span className="font-semibold">{monthComparison.currentLogs}</span>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+            Gecen aya gore:{" "}
+            <span className={`font-semibold ${monthComparison.deltaLogs >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+              {monthComparison.deltaLogs >= 0 ? "+" : ""}
+              {monthComparison.deltaLogs}
+            </span>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+            Bu ay ort.: <span className="font-semibold">{monthComparison.currentAvg.toFixed(2)}⭐</span>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+            Puansiz oran: <span className="font-semibold">%{monthComparison.unratedShare}</span>
+          </div>
+        </div>
+
+        <div className="mb-4 rounded-2xl border border-white/10 bg-black/20 p-3">
+          <div className="text-sm text-amber-200">En cok loglanan biralar (Top 5)</div>
+          <div className="mt-2 space-y-2 text-sm">
+            {topBeersOverall.map((b, idx) => (
+              <div key={b.beer} className="flex items-center justify-between rounded-lg border border-white/10 bg-black/25 px-2 py-1.5">
+                <div className="truncate">
+                  <span className="mr-2 opacity-70">#{idx + 1}</span>
+                  {b.beer}
+                </div>
+                <div className="text-xs opacity-80">
+                  {b.logs} log • {b.avg.toFixed(2)}⭐
+                </div>
+              </div>
+            ))}
+            {!topBeersOverall.length ? <div className="text-xs opacity-60">Yeterli veri yok.</div> : null}
+          </div>
+        </div>
+
         <div className="mb-4 flex items-center justify-between gap-3">
           <div className="text-sm text-amber-200">Puan dağılımı (0.5 adım)</div>
           <div className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs">
@@ -2335,6 +2538,82 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             ) : null}
           </div>
         </div>
+
+        {canManageSuggestions ? (
+          <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm text-amber-200">Oneri yonetimi</div>
+              <button
+                type="button"
+                onClick={() => void loadAdminSuggestions()}
+                className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+              >
+                Yenile
+              </button>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <select
+                value={adminSuggestionStatusFilter}
+                onChange={(e) => setAdminSuggestionStatusFilter(e.target.value as "all" | "new" | "in_progress" | "done")}
+                className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
+              >
+                <option value="all">Durum: Tum</option>
+                <option value="new">Yeni</option>
+                <option value="in_progress">In progress</option>
+                <option value="done">Done</option>
+              </select>
+              <select
+                value={adminSuggestionCategoryFilter}
+                onChange={(e) => setAdminSuggestionCategoryFilter(e.target.value)}
+                className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
+              >
+                <option value="all">Kategori: Tum</option>
+                {Array.from(new Set(adminSuggestions.map((s) => s.category).filter(Boolean)))
+                  .sort((a, b) => a.localeCompare(b, "tr"))
+                  .map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div className="mt-2 space-y-2">
+              {adminSuggestions
+                .filter((s) => adminSuggestionStatusFilter === "all" || s.status === adminSuggestionStatusFilter)
+                .filter((s) => adminSuggestionCategoryFilter === "all" || s.category === adminSuggestionCategoryFilter)
+                .map((s) => (
+                  <div key={s.id} className="rounded-xl border border-white/10 bg-black/25 p-2">
+                    <div className="flex items-center justify-between gap-2 text-[11px] opacity-75">
+                      <div className="truncate">
+                        {s.display_name?.trim() || (s.username ? `@${s.username}` : "anon")} • {s.category}
+                      </div>
+                      <div>{new Date(s.created_at).toLocaleString("tr-TR")}</div>
+                    </div>
+                    <div className="mt-1 text-xs">{s.message}</div>
+                    <div className="mt-2 flex items-center gap-2">
+                      {(["new", "in_progress", "done"] as const).map((st) => (
+                        <button
+                          key={`${s.id}-${st}`}
+                          type="button"
+                          onClick={() => void updateSuggestionStatus(s.id, st)}
+                          className={`rounded-lg border px-2 py-1 text-[11px] ${
+                            s.status === st ? "border-amber-300/35 bg-amber-500/15" : "border-white/15 bg-white/10"
+                          }`}
+                        >
+                          {st}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              {adminSuggestionsBusy ? <div className="text-xs opacity-60">Oneriler yukleniyor...</div> : null}
+              {!adminSuggestionsBusy && !adminSuggestions.length ? (
+                <div className="text-xs opacity-60">Oneri kaydi yok veya yetki bulunmuyor.</div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
       </section>
       ) : null}
 

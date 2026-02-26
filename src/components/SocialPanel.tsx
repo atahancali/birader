@@ -108,6 +108,7 @@ type OwnCheckinLite = {
 
 type FeedWindow = "all" | "24h" | "7d";
 type FeedScope = "all" | "following";
+type NotificationFilter = "all" | "unread" | "comment" | "mention" | "comment_like" | "follow";
 type LeaderWindow = "7d" | "30d" | "90d" | "365d";
 type LeaderScope = "all" | "followed";
 
@@ -120,6 +121,8 @@ type LeaderboardRow = {
 };
 
 const KEYBOARD_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
+const FEED_PAGE_SIZE = 25;
+const NOTIF_PAGE_SIZE = 30;
 
 function keyboardNeighborMap() {
   const map = new Map<string, Set<string>>();
@@ -241,6 +244,9 @@ export default function SocialPanel({
   const [relationHighlightUserId, setRelationHighlightUserId] = useState("");
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [feedBusy, setFeedBusy] = useState(false);
+  const [feedLoadingMore, setFeedLoadingMore] = useState(false);
+  const [feedCursorCreatedAt, setFeedCursorCreatedAt] = useState<string | null>(null);
+  const [feedHasMore, setFeedHasMore] = useState(true);
   const [feedWindow, setFeedWindow] = useState<FeedWindow>("24h");
   const [feedScope, setFeedScope] = useState<FeedScope>("all");
   const [feedMinRating, setFeedMinRating] = useState<number>(0);
@@ -253,6 +259,8 @@ export default function SocialPanel({
   const [commentLikeBusyId, setCommentLikeBusyId] = useState<number>(0);
   const [notifications, setNotifications] = useState<NotificationView[]>([]);
   const [notifBusy, setNotifBusy] = useState(false);
+  const [notifLimit, setNotifLimit] = useState(NOTIF_PAGE_SIZE);
+  const [notifFilter, setNotifFilter] = useState<NotificationFilter>("all");
   const [notifPanelOpen, setNotifPanelOpen] = useState(true);
   const [notifActionBusyId, setNotifActionBusyId] = useState<number>(0);
   const [highlightCheckinId, setHighlightCheckinId] = useState("");
@@ -328,6 +336,11 @@ export default function SocialPanel({
   }, [feedItems, feedMinRating, feedQuery, feedScope, feedWindow, followingIds, userId]);
   const followerIds = useMemo(() => new Set(followerProfiles.map((p) => p.user_id)), [followerProfiles]);
   const unreadNotifCount = useMemo(() => notifications.filter((n) => !n.is_read).length, [notifications]);
+  const filteredNotifications = useMemo(() => {
+    if (notifFilter === "all") return notifications;
+    if (notifFilter === "unread") return notifications.filter((n) => !n.is_read);
+    return notifications.filter((n) => n.type === notifFilter);
+  }, [notifications, notifFilter]);
 
   function markDbError(message: string) {
     const lower = message.toLowerCase();
@@ -421,14 +434,22 @@ export default function SocialPanel({
     return null;
   }
 
-  async function loadFeed() {
-    setFeedBusy(true);
-    const { data: checkinRows, error: checkinErr } = await supabase
+  async function loadFeed(reset = true) {
+    if (!reset && !feedHasMore) return;
+    if (reset) setFeedBusy(true);
+    else setFeedLoadingMore(true);
+
+    let query = supabase
       .from("checkins")
       .select("id, user_id, beer_name, rating, created_at")
       .order("created_at", { ascending: false })
-      .limit(40);
-    setFeedBusy(false);
+      .limit(FEED_PAGE_SIZE);
+    if (!reset && feedCursorCreatedAt) {
+      query = query.lt("created_at", feedCursorCreatedAt);
+    }
+    const { data: checkinRows, error: checkinErr } = await query;
+    if (reset) setFeedBusy(false);
+    else setFeedLoadingMore(false);
 
     if (checkinErr) {
       markDbError(checkinErr.message);
@@ -437,10 +458,13 @@ export default function SocialPanel({
 
     const rows = (checkinRows as FeedCheckinRow[] | null) ?? [];
     if (!rows.length) {
-      setFeedItems([]);
-      setFeedCommentsByCheckin({});
-      setCommentLikeCountById({});
-      setCommentLikedByMe({});
+      if (reset) {
+        setFeedItems([]);
+        setFeedCommentsByCheckin({});
+        setCommentLikeCountById({});
+        setCommentLikedByMe({});
+      }
+      setFeedHasMore(false);
       return;
     }
 
@@ -460,15 +484,21 @@ export default function SocialPanel({
       profileById.set(p.user_id, { username: p.username, display_name: p.display_name });
     }
 
-    setFeedItems(
-      rows.map((r) => ({
-        ...r,
-        username: profileById.get(r.user_id)?.username ?? "kullanici",
-        display_name: profileById.get(r.user_id)?.display_name ?? "",
-      }))
-    );
+    const mapped = rows.map((r) => ({
+      ...r,
+      username: profileById.get(r.user_id)?.username ?? "kullanici",
+      display_name: profileById.get(r.user_id)?.display_name ?? "",
+    }));
+    setFeedItems((prev) => {
+      if (reset) return mapped;
+      const existing = new Set(prev.map((x) => String(x.id)));
+      const merged = [...prev, ...mapped.filter((x) => !existing.has(String(x.id)))];
+      return merged;
+    });
+    setFeedCursorCreatedAt(rows[rows.length - 1]?.created_at ?? null);
+    setFeedHasMore(rows.length === FEED_PAGE_SIZE);
     await loadCommentsForCheckins(rows.map((r) => String(r.id)));
-    trackEvent({ eventName: "feed_loaded", userId, props: { count: rows.length } });
+    trackEvent({ eventName: "feed_loaded", userId, props: { count: rows.length, reset } });
   }
 
   async function loadCommentsForCheckins(checkinIds: string[]) {
@@ -652,14 +682,14 @@ export default function SocialPanel({
     if (!inviteSourceCheckinId && rows.length > 0) setInviteSourceCheckinId(String(rows[0].id));
   }
 
-  async function loadNotifications() {
+  async function loadNotifications(limit = notifLimit) {
     setNotifBusy(true);
     const { data, error } = await supabase
       .from("notifications")
       .select("id, user_id, actor_id, type, ref_id, payload, is_read, created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
-      .limit(30);
+      .limit(limit);
     setNotifBusy(false);
 
     if (error) {
@@ -697,6 +727,21 @@ export default function SocialPanel({
     setNotifications(viewRows);
   }
 
+  async function markAllNotificationsRead() {
+    const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
+    if (!unreadIds.length) return;
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("user_id", userId)
+      .in("id", unreadIds);
+    if (error) {
+      markDbError(error.message);
+      return;
+    }
+    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+  }
+
   async function ensureFeedCheckinLoaded(checkinId: string) {
     const exists = feedIdsRef.current.includes(checkinId);
     if (exists) return true;
@@ -724,7 +769,7 @@ export default function SocialPanel({
         ...prev.filter((x) => String(x.id) !== String(checkin.id)),
       ]
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-        .slice(0, 40)
+        .slice(0, 200)
     );
     await loadCommentsForCheckins([String(checkin.id)]);
     return true;
@@ -845,7 +890,7 @@ export default function SocialPanel({
 
     const ids = (rows as FollowRow[] | null)?.map((r) => r.following_id) ?? [];
     setFollowingIds(new Set(ids));
-    await loadFeed();
+    await loadFeed(true);
 
     if (!ids.length) {
       setFollowingProfiles([]);
@@ -942,7 +987,7 @@ export default function SocialPanel({
     }
 
     await loadFollowing();
-    await Promise.all([loadOwnRecentCheckins(), loadPendingInvites(), loadNotifications()]);
+    await Promise.all([loadOwnRecentCheckins(), loadPendingInvites(), loadNotifications(notifLimit)]);
     setLoading(false);
   }
 
@@ -950,6 +995,11 @@ export default function SocialPanel({
     void loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
+
+  useEffect(() => {
+    if (!loading) void loadNotifications(notifLimit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notifLimit]);
 
   useEffect(() => {
     followingIdsRef.current = followingIds;
@@ -1004,7 +1054,7 @@ export default function SocialPanel({
               ...prev.filter((x) => x.id !== row.id),
             ]
               .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-              .slice(0, 40);
+              .slice(0, 200);
             return next;
           });
           void leaderboardReloadRef.current?.();
@@ -1816,7 +1866,10 @@ export default function SocialPanel({
               </button>
               <button
                 type="button"
-                onClick={() => void loadNotifications()}
+                onClick={() => {
+                  setNotifLimit(NOTIF_PAGE_SIZE);
+                  void loadNotifications(NOTIF_PAGE_SIZE);
+                }}
                 className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
               >
                 Yenile
@@ -1825,7 +1878,28 @@ export default function SocialPanel({
           </div>
           {notifPanelOpen ? (
             <div className="mt-2 space-y-2">
-              {notifications.map((n) => (
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={notifFilter}
+                  onChange={(e) => setNotifFilter(e.target.value as NotificationFilter)}
+                  className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-[11px] outline-none"
+                >
+                  <option value="all">Tumu</option>
+                  <option value="unread">Sadece okunmamis</option>
+                  <option value="follow">Takip</option>
+                  <option value="comment">Yorum</option>
+                  <option value="mention">Mention</option>
+                  <option value="comment_like">Yorum begeni</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => void markAllNotificationsRead()}
+                  className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
+                >
+                  Tumunu okundu yap
+                </button>
+              </div>
+              {filteredNotifications.map((n) => (
                 <div
                   key={n.id}
                   role="button"
@@ -1860,8 +1934,17 @@ export default function SocialPanel({
                 </div>
               ))}
               {notifBusy ? <div className="text-xs opacity-60">Bildirimler yukleniyor...</div> : null}
-              {!notifBusy && !notifications.length ? (
+              {!notifBusy && !filteredNotifications.length ? (
                 <div className="text-xs opacity-60">Bildirim yok.</div>
+              ) : null}
+              {notifications.length >= notifLimit ? (
+                <button
+                  type="button"
+                  onClick={() => setNotifLimit((v) => v + NOTIF_PAGE_SIZE)}
+                  className="w-full rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+                >
+                  Daha fazla bildirim
+                </button>
               ) : null}
             </div>
           ) : null}
@@ -2029,7 +2112,7 @@ export default function SocialPanel({
             <div className="text-xs opacity-70">Sosyal akis</div>
             <button
               type="button"
-              onClick={() => void loadFollowing()}
+              onClick={() => void loadFeed(true)}
               className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
             >
               Yenile
@@ -2177,6 +2260,16 @@ export default function SocialPanel({
             {feedBusy ? <div className="text-xs opacity-60">Akis yukleniyor...</div> : null}
             {!feedBusy && !filteredFeedItems.length ? (
               <div className="text-xs opacity-60">Akista gosterilecek log yok.</div>
+            ) : null}
+            {!feedBusy && feedHasMore ? (
+              <button
+                type="button"
+                disabled={feedLoadingMore}
+                onClick={() => void loadFeed(false)}
+                className="w-full rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs disabled:opacity-50"
+              >
+                {feedLoadingMore ? "Yukleniyor..." : "Daha fazla log yukle"}
+              </button>
             ) : null}
           </div>
         </div>

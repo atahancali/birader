@@ -95,6 +95,8 @@ alter table public.analytics_events enable row level security;
 alter table public.product_suggestions enable row level security;
 
 -- profiles: everyone can read public profiles, owner can read/write self
+alter table public.profiles add column if not exists is_admin boolean not null default false;
+
 drop policy if exists profiles_public_read on public.profiles;
 create policy profiles_public_read on public.profiles
 for select using (is_public = true or auth.uid() = user_id);
@@ -199,12 +201,42 @@ drop policy if exists product_suggestions_insert_auth on public.product_suggesti
 create policy product_suggestions_insert_auth on public.product_suggestions
 for insert with check (auth.uid() = user_id);
 
+drop policy if exists product_suggestions_read_own_or_admin on public.product_suggestions;
+create policy product_suggestions_read_own_or_admin on public.product_suggestions
+for select using (
+  auth.uid() = user_id
+  or exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
+drop policy if exists product_suggestions_update_admin on public.product_suggestions;
+create policy product_suggestions_update_admin on public.product_suggestions
+for update using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+) with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
 revoke all on public.analytics_events from anon;
 revoke all on public.analytics_events from authenticated;
 grant insert on public.analytics_events to authenticated;
 revoke all on public.product_suggestions from anon;
 revoke all on public.product_suggestions from authenticated;
-grant insert on public.product_suggestions to authenticated;
+grant insert, select, update on public.product_suggestions to authenticated;
 
 create table if not exists public.checkin_comments (
   id bigserial primary key,

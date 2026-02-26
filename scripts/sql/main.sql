@@ -77,6 +77,7 @@ alter table public.product_suggestions enable row level security;
 
 -- 002_profile_display_name_and_public_checkins
 alter table public.profiles add column if not exists display_name text not null default '';
+alter table public.profiles add column if not exists is_admin boolean not null default false;
 create index if not exists idx_profiles_display_name on public.profiles (display_name);
 
 alter table public.checkins enable row level security;
@@ -209,12 +210,42 @@ drop policy if exists product_suggestions_insert_auth on public.product_suggesti
 create policy product_suggestions_insert_auth on public.product_suggestions
 for insert with check (auth.uid() = user_id);
 
+drop policy if exists product_suggestions_read_own_or_admin on public.product_suggestions;
+create policy product_suggestions_read_own_or_admin on public.product_suggestions
+for select using (
+  auth.uid() = user_id
+  or exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
+drop policy if exists product_suggestions_update_admin on public.product_suggestions;
+create policy product_suggestions_update_admin on public.product_suggestions
+for update using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+) with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
 revoke all on public.analytics_events from anon;
 revoke all on public.analytics_events from authenticated;
 grant insert on public.analytics_events to authenticated;
 revoke all on public.product_suggestions from anon;
 revoke all on public.product_suggestions from authenticated;
-grant insert on public.product_suggestions to authenticated;
+grant insert, select, update on public.product_suggestions to authenticated;
 
 -- 009_checkin_comments_and_share_invites
 create table if not exists public.checkin_comments (
