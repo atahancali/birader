@@ -676,6 +676,7 @@ export default function Home() {
   // logging state
   const today = useMemo(() => isoTodayLocal(), []);
   const [format, setFormat] = useState<BeerItem["format"]>("Fici");
+  const [formatConfirmed, setFormatConfirmed] = useState(false);
   const [beerQuery, setBeerQuery] = useState("");
   const [beerName, setBeerName] = useState<string>("");
   const [rating, setRating] = useState<number | null>(null);
@@ -697,6 +698,8 @@ export default function Home() {
   const [replaceFavoriteRank, setReplaceFavoriteRank] = useState<number | null>(null);
   const [activeSection, setActiveSection] = useState<HomeSection>("log");
   const [logStep, setLogStep] = useState<1 | 2 | 3 | 4>(1);
+  const [heatmapMode, setHeatmapMode] = useState<"football" | "grid">("football");
+  const [gridCellMetric, setGridCellMetric] = useState<"color" | "count" | "avgRating">("color");
   const [suggestionOpen, setSuggestionOpen] = useState(false);
   const [suggestionCategory, setSuggestionCategory] = useState("general");
   const [suggestionMessage, setSuggestionMessage] = useState("");
@@ -714,6 +717,26 @@ export default function Home() {
     () => (district === "Diger" ? customDistrict.trim() : district.trim()),
     [customDistrict, district]
   );
+
+  function canOpenLogStep(step: 1 | 2 | 3 | 4) {
+    if (step <= 1) return true;
+    if (!formatConfirmed) return false;
+    if (step >= 3 && !(isBackDate ? batchBeerNames.length > 0 || !!beerName : !!beerName)) return false;
+    return true;
+  }
+
+  function goToLogStep(step: 1 | 2 | 3 | 4) {
+    if (step < logStep) {
+      setLogStep(step);
+      return;
+    }
+    if (!canOpenLogStep(step)) {
+      if (!formatConfirmed) alert("Once Adim 1'de sunum tarzini sec.");
+      else alert("Once bira secimini tamamla.");
+      return;
+    }
+    setLogStep(step);
+  }
 
   function beginLogMutation() {
     if (isLogMutating) {
@@ -1224,6 +1247,7 @@ export default function Home() {
 
     if (incomingBeer.includes("— Fici —")) setFormat("Fici");
     else if (incomingBeer.includes("— Şişe/Kutu —")) setFormat("Şişe/Kutu");
+    setFormatConfirmed(true);
 
     setBeerName(incomingBeer);
     setBeerQuery(incomingBeer);
@@ -1393,6 +1417,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           setDateISO(today);
           setRating(null);
           setLogStep(1);
+          setFormatConfirmed(false);
           setCustomDistrict("");
           setLocationText("");
           setPriceText("");
@@ -1434,6 +1459,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       setDateISO(today);
       setRating(null);
       setLogStep(1);
+      setFormatConfirmed(false);
       setCustomDistrict("");
       setLocationText("");
       setPriceText("");
@@ -1571,6 +1597,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           onOpenLogForDay={(d) => {
             setDateISO(d);
             setActiveSection("log");
+            setFormatConfirmed(true);
             setLogStep(2);
             setSelectedDay(null);
           }}
@@ -1670,18 +1697,20 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             const step = (idx + 1) as 1 | 2 | 3 | 4;
             const active = step === logStep;
             const done = step < logStep;
+            const blocked = step > logStep && !canOpenLogStep(step);
             return (
               <button
                 key={label}
                 type="button"
-                onClick={() => setLogStep(step)}
+                onClick={() => goToLogStep(step)}
+                disabled={blocked}
                 className={`rounded-xl border px-2 py-2 text-[11px] ${
                   active
                     ? "border-amber-300/35 bg-amber-500/15"
                     : done
                       ? "border-white/20 bg-white/10"
                       : "border-white/10 bg-black/20"
-                }`}
+                } ${blocked ? "opacity-45" : ""}`}
               >
                 {label}
               </button>
@@ -1695,7 +1724,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => setFormat("Fici")}
+                onClick={() => {
+                  setFormat("Fici");
+                  setFormatConfirmed(true);
+                }}
                 className={`rounded-3xl border p-4 text-left ${
                   format === "Fici" ? "border-amber-300/35 bg-amber-500/10" : "border-white/10 bg-black/20"
                 }`}
@@ -1705,7 +1737,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               </button>
               <button
                 type="button"
-                onClick={() => setFormat("Şişe/Kutu")}
+                onClick={() => {
+                  setFormat("Şişe/Kutu");
+                  setFormatConfirmed(true);
+                }}
                 className={`rounded-3xl border p-4 text-left ${
                   format === "Şişe/Kutu" ? "border-amber-300/35 bg-amber-500/10" : "border-white/10 bg-black/20"
                 }`}
@@ -2011,8 +2046,15 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           </button>
           <button
             type="button"
-            onClick={() => setLogStep((s) => (s < 4 ? ((s + 1) as 1 | 2 | 3 | 4) : s))}
-            disabled={logStep === 4 || (logStep === 2 && !beerName)}
+            onClick={() => {
+              const next = (logStep < 4 ? (logStep + 1) : logStep) as 1 | 2 | 3 | 4;
+              goToLogStep(next);
+            }}
+            disabled={
+              logStep === 4 ||
+              (logStep === 1 && !formatConfirmed) ||
+              (logStep === 2 && !(isBackDate ? batchBeerNames.length > 0 || !!beerName : !!beerName))
+            }
             className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs disabled:opacity-40"
           >
             {logStep === 4 ? "Son" : "Ileri"}
@@ -2077,7 +2119,42 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
       {activeSection === "heatmap" ? (
         <>
-          <FootballHeatmap year={year} checkins={checkins} onSelectDay={(d) => setSelectedDay(d)} />
+          <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="text-sm opacity-80">Isi haritasi ({year})</div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={heatmapMode}
+                  onChange={(e) => setHeatmapMode(e.target.value as "football" | "grid")}
+                  className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
+                >
+                  <option value="football">Saha</option>
+                  <option value="grid">Grid</option>
+                </select>
+                {heatmapMode === "grid" ? (
+                  <select
+                    value={gridCellMetric}
+                    onChange={(e) => setGridCellMetric(e.target.value as "color" | "count" | "avgRating")}
+                    className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
+                  >
+                    <option value="color">Renk</option>
+                    <option value="count">Sayi</option>
+                    <option value="avgRating">Ortalama ⭐</option>
+                  </select>
+                ) : null}
+              </div>
+            </div>
+            {heatmapMode === "football" ? (
+              <FootballHeatmap year={year} checkins={checkins} onSelectDay={(d) => setSelectedDay(d)} />
+            ) : (
+              <FieldHeatmap
+                year={year}
+                checkins={checkins}
+                onSelectDay={(d) => setSelectedDay(d)}
+                cellMetric={gridCellMetric}
+              />
+            )}
+          </section>
           <GeoHeatmap year={year} checkins={checkins} />
           <MonthZoom
             open={selectedMonth !== null}
