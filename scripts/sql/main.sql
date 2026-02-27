@@ -92,6 +92,8 @@ alter table public.user_badges enable row level security;
 -- 002_profile_display_name_and_public_checkins
 alter table public.profiles add column if not exists display_name text not null default '';
 alter table public.profiles add column if not exists is_admin boolean not null default false;
+alter table public.profiles add column if not exists heatmap_color_from text not null default '#f59e0b';
+alter table public.profiles add column if not exists heatmap_color_to text not null default '#ef4444';
 create index if not exists idx_profiles_display_name on public.profiles (display_name);
 
 alter table public.checkins enable row level security;

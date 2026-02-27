@@ -15,6 +15,7 @@ import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
 import { TURKEY_CITIES, districtsForCity } from "@/lib/trLocations";
 import { DAY_PERIOD_OPTIONS, dayPeriodLabelEn, dayPeriodLabelTr, type DayPeriod } from "@/lib/dayPeriod";
+import { HEATMAP_PALETTES } from "@/lib/heatmapTheme";
 
 type Checkin = {
   id: string;
@@ -42,6 +43,8 @@ type HeaderProfile = {
   display_name?: string | null;
   avatar_path?: string | null;
   is_admin?: boolean | null;
+  heatmap_color_from?: string | null;
+  heatmap_color_to?: string | null;
 };
 type ProductSuggestionRow = {
   id: number;
@@ -69,6 +72,12 @@ const MAX_BULK_BACKDATE_COUNT = 10;
 const ONBOARDING_SEEN_KEY = "birader:onboarding:v1";
 const PENDING_COMPLIANCE_KEY = "birader:pending-compliance:v1";
 const LOG_SUBMIT_COOLDOWN_MS = 10_000;
+const HEATMAP_THEME_KEY = "birader:heatmap-theme:v1";
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
 
 type BeerItem = {
   brand: string;
@@ -702,6 +711,16 @@ export default function Home() {
     await supabase.auth.signOut();
   }
 
+  async function installPwa() {
+    if (!pwaPromptEvent) return;
+    await pwaPromptEvent.prompt();
+    try {
+      await pwaPromptEvent.userChoice;
+    } catch {}
+    setPwaPromptEvent(null);
+    setPwaInstallOpen(false);
+  }
+
   // logging state
   const today = useMemo(() => isoTodayLocal(), []);
   const [format, setFormat] = useState<BeerItem["format"]>("Fici");
@@ -730,6 +749,8 @@ export default function Home() {
   const [logStep, setLogStep] = useState<1 | 2 | 3 | 4>(1);
   const [heatmapMode, setHeatmapMode] = useState<"football" | "grid">("football");
   const [gridCellMetric, setGridCellMetric] = useState<"color" | "count" | "avgRating">("color");
+  const [gridColorFrom, setGridColorFrom] = useState<string>("#f59e0b");
+  const [gridColorTo, setGridColorTo] = useState<string>("#ef4444");
   const [suggestionOpen, setSuggestionOpen] = useState(false);
   const [suggestionCategory, setSuggestionCategory] = useState("general");
   const [suggestionMessage, setSuggestionMessage] = useState("");
@@ -737,6 +758,8 @@ export default function Home() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [recentExpandStep, setRecentExpandStep] = useState(0);
   const [headerProfile, setHeaderProfile] = useState<HeaderProfile | null>(null);
+  const [pwaPromptEvent, setPwaPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
+  const [pwaInstallOpen, setPwaInstallOpen] = useState(false);
   const [isLogMutating, setIsLogMutating] = useState(false);
   const [isAdminUser, setIsAdminUser] = useState(false);
   const [dbBadges, setDbBadges] = useState<UserBadgeRow[]>([]);
@@ -805,6 +828,24 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const onBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setPwaPromptEvent(e as BeforeInstallPromptEvent);
+      setPwaInstallOpen(true);
+    };
+    const onInstalled = () => {
+      setPwaPromptEvent(null);
+      setPwaInstallOpen(false);
+    };
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  useEffect(() => {
     async function flushPendingCompliance() {
       if (!session?.user?.id || !session?.user?.email) return;
       try {
@@ -832,6 +873,22 @@ export default function Home() {
     void flushPendingCompliance();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id, session?.user?.email]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(HEATMAP_THEME_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { from?: string; to?: string };
+      if (parsed.from) setGridColorFrom(parsed.from);
+      if (parsed.to) setGridColorTo(parsed.to);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(HEATMAP_THEME_KEY, JSON.stringify({ from: gridColorFrom, to: gridColorTo }));
+    } catch {}
+  }, [gridColorFrom, gridColorTo]);
 
   async function loadCheckins() {
     if (!session?.user?.id) return;
@@ -879,7 +936,7 @@ export default function Home() {
       loadFavorites();
       supabase
         .from("profiles")
-        .select("username, display_name, avatar_path, is_admin")
+        .select("username, display_name, avatar_path, is_admin, heatmap_color_from, heatmap_color_to")
         .eq("user_id", session.user.id)
         .maybeSingle()
         .then(({ data }) => {
@@ -890,7 +947,11 @@ export default function Home() {
               display_name: (data as any).display_name,
               avatar_path: (data as any).avatar_path,
               is_admin: Boolean((data as any).is_admin),
+              heatmap_color_from: (data as any).heatmap_color_from,
+              heatmap_color_to: (data as any).heatmap_color_to,
             });
+            if ((data as any).heatmap_color_from) setGridColorFrom(String((data as any).heatmap_color_from));
+            if ((data as any).heatmap_color_to) setGridColorTo(String((data as any).heatmap_color_to));
           } else {
             setIsAdminUser(false);
             setHeaderProfile({
@@ -898,6 +959,8 @@ export default function Home() {
               display_name: "",
               avatar_path: "",
               is_admin: false,
+              heatmap_color_from: null,
+              heatmap_color_to: null,
             });
           }
         });
@@ -1477,6 +1540,21 @@ export default function Home() {
     alert("Tum rozetler yenilendi.");
   }
 
+  async function saveHeatmapThemeToProfile(nextFrom: string, nextTo: string) {
+    if (!session?.user?.id) return;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ heatmap_color_from: nextFrom, heatmap_color_to: nextTo })
+      .eq("user_id", session.user.id);
+    if (!error) {
+      setHeaderProfile((prev) =>
+        prev
+          ? { ...prev, heatmap_color_from: nextFrom, heatmap_color_to: nextTo }
+          : prev
+      );
+    }
+  }
+
   async function updateSuggestionStatus(id: number, nextStatus: "new" | "in_progress" | "done") {
     if (!canManageSuggestions) return;
     const { error } = await supabase
@@ -1804,7 +1882,13 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           </p>
         </div>
 
-        <FieldHeatmap year={year} checkins={checkins} onSelectDay={(d) => setSelectedDay(d)} />
+        <FieldHeatmap
+          year={year}
+          checkins={checkins}
+          onSelectDay={(d) => setSelectedDay(d)}
+          colorFrom={gridColorFrom}
+          colorTo={gridColorTo}
+        />
 
         <DayModal
           open={selectedDay !== null}
@@ -1903,6 +1987,44 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           </Link>
         </div>
       </div>
+
+      <section className="mt-4 rounded-2xl border border-amber-300/25 bg-amber-500/5 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="text-xs text-amber-200/85">Birader Mobile</div>
+            <div className="text-[11px] opacity-70">iOS/Android uygulama linkleri ve web app kurulumu</div>
+          </div>
+          {pwaPromptEvent ? (
+            <button
+              type="button"
+              onClick={() => void installPwa()}
+              className="rounded-lg border border-amber-300/35 bg-amber-500/15 px-2 py-1 text-xs"
+            >
+              Ana ekrana ekle
+            </button>
+          ) : null}
+        </div>
+        {pwaInstallOpen || pwaPromptEvent ? (
+          <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+            <a
+              href="https://apps.apple.com"
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg border border-white/15 bg-white/10 px-2 py-1.5 text-center"
+            >
+              App Store
+            </a>
+            <a
+              href="https://play.google.com/store"
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg border border-white/15 bg-white/10 px-2 py-1.5 text-center"
+            >
+              Google Play
+            </a>
+          </div>
+        ) : null}
+      </section>
 
       {activeSection === "log" ? (
       <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
@@ -2385,15 +2507,56 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   <option value="grid">Grid</option>
                 </select>
                 {heatmapMode === "grid" ? (
-                  <select
-                    value={gridCellMetric}
-                    onChange={(e) => setGridCellMetric(e.target.value as "color" | "count" | "avgRating")}
-                    className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
-                  >
-                    <option value="color">Renk</option>
-                    <option value="count">Sayi</option>
-                    <option value="avgRating">Ortalama ⭐</option>
-                  </select>
+                  <>
+                    <select
+                      value={gridCellMetric}
+                      onChange={(e) => setGridCellMetric(e.target.value as "color" | "count" | "avgRating")}
+                      className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
+                    >
+                      <option value="color">Renk</option>
+                      <option value="count">Sayi</option>
+                      <option value="avgRating">Ortalama ⭐</option>
+                    </select>
+                    <select
+                      value={`${gridColorFrom}|${gridColorTo}`}
+                      onChange={(e) => {
+                        const [from, to] = String(e.target.value || "").split("|");
+                        if (!from || !to) return;
+                        setGridColorFrom(from);
+                        setGridColorTo(to);
+                        void saveHeatmapThemeToProfile(from, to);
+                      }}
+                      className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
+                    >
+                      {HEATMAP_PALETTES.map((p) => (
+                        <option key={p.key} value={`${p.from}|${p.to}`}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="color"
+                      value={gridColorFrom}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setGridColorFrom(next);
+                        void saveHeatmapThemeToProfile(next, gridColorTo);
+                      }}
+                      title="Gradient baslangic"
+                      className="h-8 w-8 rounded border border-white/20 bg-black/20 p-0.5"
+                    />
+                    <input
+                      type="color"
+                      value={gridColorTo}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setGridColorTo(next);
+                        void saveHeatmapThemeToProfile(gridColorFrom, next);
+                      }}
+                      title="Gradient bitis"
+                      className="h-8 w-8 rounded border border-white/20 bg-black/20 p-0.5"
+                    />
+                  </>
                 ) : null}
               </div>
             </div>
@@ -2405,6 +2568,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 checkins={checkins}
                 onSelectDay={(d) => setSelectedDay(d)}
                 cellMetric={gridCellMetric}
+                colorFrom={gridColorFrom}
+                colorTo={gridColorTo}
               />
             )}
           </section>

@@ -10,6 +10,7 @@ import { normalizeUsername } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
 import { dayPeriodLabelEn, dayPeriodLabelTr, type DayPeriod } from "@/lib/dayPeriod";
+import { HEATMAP_PALETTES } from "@/lib/heatmapTheme";
 
 type ProfileRow = {
   user_id: string;
@@ -18,6 +19,8 @@ type ProfileRow = {
   bio: string;
   is_public: boolean;
   avatar_path?: string | null;
+  heatmap_color_from?: string | null;
+  heatmap_color_to?: string | null;
 };
 
 type CheckinRow = {
@@ -48,7 +51,7 @@ type UserBadgeRow = {
 };
 
 function avgRating(checkins: CheckinRow[]) {
-  const rated = checkins.filter((c) => c.rating !== null && c.rating !== undefined);
+  const rated = checkins.filter((c) => c.rating !== null && c.rating !== undefined && Number(c.rating) > 0);
   if (!rated.length) return 0;
   const sum = rated.reduce((acc, c) => acc + Number(c.rating ?? 0), 0);
   return Math.round((sum / rated.length) * 100) / 100;
@@ -76,6 +79,8 @@ export default function PublicProfileView({ username }: { username: string }) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [heatmapMode, setHeatmapMode] = useState<"football" | "grid">("football");
   const [gridCellMetric, setGridCellMetric] = useState<"color" | "count" | "avgRating">("color");
+  const [gridColorFrom, setGridColorFrom] = useState<string>("#f59e0b");
+  const [gridColorTo, setGridColorTo] = useState<string>("#ef4444");
 
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const [year, setYear] = useState(currentYear);
@@ -171,7 +176,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       const normalized = normalizeUsername(username);
       const { data: row, error } = await supabase
         .from("profiles")
-        .select("user_id, username, display_name, bio, is_public, avatar_path")
+        .select("user_id, username, display_name, bio, is_public, avatar_path, heatmap_color_from, heatmap_color_to")
         .eq("username", normalized)
         .maybeSingle();
 
@@ -195,6 +200,8 @@ export default function PublicProfileView({ username }: { username: string }) {
       }
 
       setProfile(p);
+      if (p.heatmap_color_from) setGridColorFrom(p.heatmap_color_from);
+      if (p.heatmap_color_to) setGridColorTo(p.heatmap_color_to);
       setEditDisplayName((p.display_name || "").trim() || p.username);
       setEditBio(p.bio || "");
       setEditIsPublic(p.is_public);
@@ -331,6 +338,8 @@ export default function PublicProfileView({ username }: { username: string }) {
         display_name: editDisplayName.trim().slice(0, 32),
         bio: editBio.trim(),
         is_public: editIsPublic,
+        heatmap_color_from: gridColorFrom,
+        heatmap_color_to: gridColorTo,
       })
       .eq("user_id", sessionUserId);
     setSavingProfile(false);
@@ -345,6 +354,8 @@ export default function PublicProfileView({ username }: { username: string }) {
             display_name: editDisplayName.trim().slice(0, 32),
             bio: editBio.trim(),
             is_public: editIsPublic,
+            heatmap_color_from: gridColorFrom,
+            heatmap_color_to: gridColorTo,
           }
         : prev
     );
@@ -616,6 +627,39 @@ export default function PublicProfileView({ username }: { username: string }) {
               />
               Profil herkese acik
             </label>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+              <div className="text-xs opacity-70">Grid renk geçisi</div>
+              <div className="mt-2 flex items-center gap-2">
+                <select
+                  value={`${gridColorFrom}|${gridColorTo}`}
+                  onChange={(e) => {
+                    const [from, to] = String(e.target.value || "").split("|");
+                    if (!from || !to) return;
+                    setGridColorFrom(from);
+                    setGridColorTo(to);
+                  }}
+                  className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
+                >
+                  {HEATMAP_PALETTES.map((p) => (
+                    <option key={`profile-theme-${p.key}`} value={`${p.from}|${p.to}`}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="color"
+                  value={gridColorFrom}
+                  onChange={(e) => setGridColorFrom(e.target.value)}
+                  className="h-8 w-8 rounded border border-white/20 bg-black/20 p-0.5"
+                />
+                <input
+                  type="color"
+                  value={gridColorTo}
+                  onChange={(e) => setGridColorTo(e.target.value)}
+                  className="h-8 w-8 rounded border border-white/20 bg-black/20 p-0.5"
+                />
+              </div>
+            </div>
             <button
               type="button"
               onClick={() => void saveOwnProfile()}
@@ -723,15 +767,33 @@ export default function PublicProfileView({ username }: { username: string }) {
               <option value="grid">Grid</option>
             </select>
             {heatmapMode === "grid" ? (
-              <select
-                value={gridCellMetric}
-                onChange={(e) => setGridCellMetric(e.target.value as "color" | "count" | "avgRating")}
-                className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
-              >
-                <option value="color">Renk</option>
-                <option value="count">Sayi</option>
-                <option value="avgRating">Ortalama ⭐</option>
-              </select>
+              <>
+                <select
+                  value={gridCellMetric}
+                  onChange={(e) => setGridCellMetric(e.target.value as "color" | "count" | "avgRating")}
+                  className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
+                >
+                  <option value="color">Renk</option>
+                  <option value="count">Sayi</option>
+                  <option value="avgRating">Ortalama ⭐</option>
+                </select>
+                <select
+                  value={`${gridColorFrom}|${gridColorTo}`}
+                  onChange={(e) => {
+                    const [from, to] = String(e.target.value || "").split("|");
+                    if (!from || !to) return;
+                    setGridColorFrom(from);
+                    setGridColorTo(to);
+                  }}
+                  className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
+                >
+                  {HEATMAP_PALETTES.map((p) => (
+                    <option key={`hm-theme-${p.key}`} value={`${p.from}|${p.to}`}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </>
             ) : null}
             <select
               value={year}
@@ -755,6 +817,8 @@ export default function PublicProfileView({ username }: { username: string }) {
             onSelectDay={(d) => isOwnProfile && setSelectedDay(d)}
             readOnly={!isOwnProfile}
             cellMetric={gridCellMetric}
+            colorFrom={gridColorFrom}
+            colorTo={gridColorTo}
           />
         )}
       </section>

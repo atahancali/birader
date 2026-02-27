@@ -1,5 +1,7 @@
 "use client";
 
+import { gradientColor } from "@/lib/heatmapTheme";
+
 type CheckinLite = { created_at: string; rating?: number | null };
 
 const DOW_TR = ["Pzt","Sal","Çar","Per","Cum","Cmt","Paz"];
@@ -26,26 +28,22 @@ function weekIndexFromYearStart(d: Date, year: number) {
   return Math.floor((diffDays + dowMonFirst(ss)) / 7); 
 }
 
-function colorByCount(count: number) {
-  if (!count) return "bg-white/5";
-  if (count === 1) return "bg-white/15";
-  if (count === 2) return "bg-white/25";
-  if (count === 3) return "bg-white/35";
-  return "bg-white/45";
-}
-
 export default function FieldHeatmap({
   year,
   checkins,
   onSelectDay,
   readOnly = false,
   cellMetric = "color",
+  colorFrom = "#f59e0b",
+  colorTo = "#ef4444",
 }: {
   year: number;
   checkins: CheckinLite[];
   onSelectDay: (isoDay: string) => void;
   readOnly?: boolean;
   cellMetric?: "color" | "count" | "avgRating";
+  colorFrom?: string;
+  colorTo?: string;
 }) {
   // per-day stats
   const dayStats: Record<string, { count: number; ratingSum: number; ratingCount: number }> = {};
@@ -144,11 +142,18 @@ export default function FieldHeatmap({
                           }
                           className={[
                             "rounded border border-white/10 text-[10px] font-semibold",
-                            iso ? colorByCount(count) : "bg-transparent border-transparent",
+                            iso ? "" : "bg-transparent border-transparent",
                             iso && count > 0 && cellMetric !== "color" ? "text-white/90" : "text-white/0",
                             iso && !readOnly ? "active:scale-[0.98]" : "",
                           ].join(" ")}
-                          style={{ height: `${cellSize}px`, width: `${cellSize}px` }}
+                          style={{
+                            height: `${cellSize}px`,
+                            width: `${cellSize}px`,
+                            backgroundColor:
+                              !iso || count <= 0
+                                ? "rgba(255,255,255,0.06)"
+                                : gradientColor(colorFrom, colorTo, Math.min(1, count / 5), 0.9),
+                          }}
                         >
                           {iso && count > 0 && cellMetric !== "color" ? textValue : ""}
                         </button>

@@ -1,5 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
+
+export const viewport: Viewport = {
+  themeColor: "#111111",
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://birader.app"),

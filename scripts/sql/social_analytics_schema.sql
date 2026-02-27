@@ -13,6 +13,8 @@ create table if not exists public.profiles (
 
 alter table public.profiles add column if not exists avatar_path text not null default '';
 alter table public.profiles add column if not exists display_name text not null default '';
+alter table public.profiles add column if not exists heatmap_color_from text not null default '#f59e0b';
+alter table public.profiles add column if not exists heatmap_color_to text not null default '#ef4444';
 alter table public.checkins add column if not exists country_code text not null default 'TR';
 alter table public.checkins add column if not exists city text not null default '';
 alter table public.checkins add column if not exists district text not null default '';
