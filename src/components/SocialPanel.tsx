@@ -275,7 +275,9 @@ export default function SocialPanel({
   const [notifLimit, setNotifLimit] = useState(NOTIF_PAGE_SIZE);
   const [notifFilter, setNotifFilter] = useState<NotificationFilter>("all");
   const [notifPanelOpen, setNotifPanelOpen] = useState(true);
+  const [notifSummaryMode, setNotifSummaryMode] = useState(false);
   const [notifActionBusyId, setNotifActionBusyId] = useState<number>(0);
+  const [reportBusyKey, setReportBusyKey] = useState("");
   const [highlightCheckinId, setHighlightCheckinId] = useState("");
   const [highlightCommentId, setHighlightCommentId] = useState<number>(0);
   const [pendingInvites, setPendingInvites] = useState<PendingInviteView[]>([]);
@@ -298,6 +300,7 @@ export default function SocialPanel({
   const followingNameRef = useRef<Map<string, { username: string; display_name?: string | null }>>(new Map());
   const leaderboardReloadRef = useRef<(() => Promise<void>) | null>(null);
   const feedIdsRef = useRef<string[]>([]);
+  const feedLoadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const fallbackBase = useMemo(() => {
     const fromEmail = usernameFromEmail(sessionEmail);
@@ -356,6 +359,33 @@ export default function SocialPanel({
     if (notifFilter === "unread") return notifications.filter((n) => !n.is_read);
     return notifications.filter((n) => n.type === notifFilter);
   }, [notifications, notifFilter]);
+  const notificationSummaries = useMemo(() => {
+    const grouped = new Map<
+      string,
+      { key: string; count: number; latest: NotificationView; type: NotificationView["type"]; actor: string }
+    >();
+    for (const n of filteredNotifications) {
+      const dateBucket = new Date(n.created_at).toISOString().slice(0, 10);
+      const key = `${n.type}|${n.actor_username}|${dateBucket}`;
+      const prev = grouped.get(key);
+      if (!prev) {
+        grouped.set(key, {
+          key,
+          count: 1,
+          latest: n,
+          type: n.type,
+          actor: visibleName({ username: n.actor_username, display_name: n.actor_display_name }),
+        });
+        continue;
+      }
+      if (new Date(n.created_at).getTime() > new Date(prev.latest.created_at).getTime()) prev.latest = n;
+      prev.count += 1;
+      grouped.set(key, prev);
+    }
+    return Array.from(grouped.values()).sort(
+      (a, b) => new Date(b.latest.created_at).getTime() - new Date(a.latest.created_at).getTime()
+    );
+  }, [filteredNotifications]);
 
   function markDbError(message: string) {
     const lower = message.toLowerCase();
@@ -1110,6 +1140,23 @@ export default function SocialPanel({
   }, [feedItems]);
 
   useEffect(() => {
+    const node = feedLoadMoreRef.current;
+    if (!node) return;
+    if (feedBusy || feedLoadingMore || !feedHasMore) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (!entry?.isIntersecting) return;
+        void loadFeed(false);
+      },
+      { rootMargin: "180px" }
+    );
+    obs.observe(node);
+    return () => obs.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feedBusy, feedHasMore, feedLoadingMore, filteredFeedItems.length]);
+
+  useEffect(() => {
     void loadLeaderboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leaderScope, leaderWindow, followingIds]);
@@ -1780,6 +1827,30 @@ export default function SocialPanel({
     }
   }
 
+  async function reportContent(payload: {
+    targetType: "checkin" | "comment";
+    targetId: string;
+    targetUserId?: string | null;
+  }) {
+    const key = `${payload.targetType}:${payload.targetId}`;
+    if (reportBusyKey === key) return;
+    setReportBusyKey(key);
+    const { error } = await supabase.from("content_reports").insert({
+      reporter_id: userId,
+      target_user_id: payload.targetUserId || null,
+      target_type: payload.targetType,
+      target_id: payload.targetId,
+      reason: "user_reported",
+      status: "open",
+    });
+    setReportBusyKey("");
+    if (error) {
+      markDbError(error.message);
+      return;
+    }
+    alert("Rapor alindi.");
+  }
+
   async function openNotification(item: NotificationView) {
     setNotifActionBusyId(item.id);
     if (!item.is_read) await markNotificationRead(item.id);
@@ -2157,41 +2228,64 @@ export default function SocialPanel({
                   Tumunu okundu yap
                 </button>
               </div>
-              {filteredNotifications.map((n) => (
-                <div
-                  key={n.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => void openNotification(n)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      void openNotification(n);
-                    }
-                  }}
-                  className={`w-full rounded-xl border p-2 text-left ${
-                    n.is_read
-                      ? "border-white/10 bg-black/20"
-                      : "border-amber-300/40 bg-amber-400/10 shadow-[0_0_0_1px_rgba(252,211,77,0.15)]"
-                  } ${notifActionBusyId === n.id ? "pointer-events-none opacity-70" : ""}`}
-                >
-                  <div className="text-xs">
-                    <Link
-                      href={`/u/${encodeURIComponent(n.actor_username)}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="underline"
+              <button
+                type="button"
+                onClick={() => setNotifSummaryMode((v) => !v)}
+                className="w-full rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
+              >
+                {notifSummaryMode ? "Tek tek gor" : "Ozet gorunumu"}
+              </button>
+              {notifSummaryMode
+                ? notificationSummaries.map((g) => (
+                    <button
+                      key={g.key}
+                      type="button"
+                      onClick={() => void openNotification(g.latest)}
+                      className="w-full rounded-xl border border-white/10 bg-black/20 p-2 text-left"
                     >
-                      {visibleName({ username: n.actor_username, display_name: n.actor_display_name })}
-                    </Link>
-                    {n.type === "comment" ? " loguna yorum yazdi." : null}
-                    {n.type === "mention" ? " seni yorumda etiketledi." : null}
-                    {n.type === "comment_like" ? " yorumunu begendi." : null}
-                    {n.type === "checkin_like" ? " logunu begendi." : null}
-                    {n.type === "follow" ? " seni takip etmeye basladi." : null}
-                  </div>
-                  <div className="mt-1 text-[11px] opacity-65">{new Date(n.created_at).toLocaleString("tr-TR")}</div>
-                </div>
-              ))}
+                      <div className="text-xs">
+                        {g.actor} • {g.type} • {g.count} adet
+                      </div>
+                      <div className="mt-1 text-[11px] opacity-65">
+                        {new Date(g.latest.created_at).toLocaleString("tr-TR")}
+                      </div>
+                    </button>
+                  ))
+                : filteredNotifications.map((n) => (
+                    <div
+                      key={n.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => void openNotification(n)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          void openNotification(n);
+                        }
+                      }}
+                      className={`w-full rounded-xl border p-2 text-left ${
+                        n.is_read
+                          ? "border-white/10 bg-black/20"
+                          : "border-amber-300/40 bg-amber-400/10 shadow-[0_0_0_1px_rgba(252,211,77,0.15)]"
+                      } ${notifActionBusyId === n.id ? "pointer-events-none opacity-70" : ""}`}
+                    >
+                      <div className="text-xs">
+                        <Link
+                          href={`/u/${encodeURIComponent(n.actor_username)}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="underline"
+                        >
+                          {visibleName({ username: n.actor_username, display_name: n.actor_display_name })}
+                        </Link>
+                        {n.type === "comment" ? " loguna yorum yazdi." : null}
+                        {n.type === "mention" ? " seni yorumda etiketledi." : null}
+                        {n.type === "comment_like" ? " yorumunu begendi." : null}
+                        {n.type === "checkin_like" ? " logunu begendi." : null}
+                        {n.type === "follow" ? " seni takip etmeye basladi." : null}
+                      </div>
+                      <div className="mt-1 text-[11px] opacity-65">{new Date(n.created_at).toLocaleString("tr-TR")}</div>
+                    </div>
+                  ))}
               {notifBusy ? <div className="text-xs opacity-60">Bildirimler yukleniyor...</div> : null}
               {!notifBusy && !filteredNotifications.length ? (
                 <div className="text-xs opacity-60">Bildirim yok.</div>
@@ -2449,6 +2543,20 @@ export default function SocialPanel({
                     >
                       ♥ {checkinLikeCountById[String(item.id)] || 0}
                     </button>
+                    <button
+                      type="button"
+                      disabled={reportBusyKey === `checkin:${String(item.id)}`}
+                      onClick={() =>
+                        void reportContent({
+                          targetType: "checkin",
+                          targetId: String(item.id),
+                          targetUserId: item.user_id,
+                        })
+                      }
+                      className="rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-[10px]"
+                    >
+                      Rapor
+                    </button>
                   </div>
                   <button
                     type="button"
@@ -2500,6 +2608,20 @@ export default function SocialPanel({
                           >
                             ♥ {commentLikeCountById[c.id] || 0}
                           </button>
+                          <button
+                            type="button"
+                            disabled={reportBusyKey === `comment:${String(c.id)}`}
+                            onClick={() =>
+                              void reportContent({
+                                targetType: "comment",
+                                targetId: String(c.id),
+                                targetUserId: c.user_id,
+                              })
+                            }
+                            className="shrink-0 rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5 text-[10px]"
+                          >
+                            Rapor
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -2530,19 +2652,32 @@ export default function SocialPanel({
               </div>
             ))}
 
-            {feedBusy ? <div className="text-xs opacity-60">Akis yukleniyor...</div> : null}
+            {feedBusy ? (
+              <div className="space-y-2">
+                {Array.from({ length: 3 }).map((_, idx) => (
+                  <div key={`feed-skeleton-${idx}`} className="animate-pulse rounded-xl border border-white/10 bg-black/20 p-3">
+                    <div className="h-3 w-32 rounded bg-white/10" />
+                    <div className="mt-2 h-4 w-48 rounded bg-white/10" />
+                    <div className="mt-2 h-8 w-full rounded bg-white/5" />
+                  </div>
+                ))}
+              </div>
+            ) : null}
             {!feedBusy && !filteredFeedItems.length ? (
               <div className="text-xs opacity-60">Akista gosterilecek log yok.</div>
             ) : null}
             {!feedBusy && feedHasMore ? (
-              <button
-                type="button"
-                disabled={feedLoadingMore}
-                onClick={() => void loadFeed(false)}
-                className="w-full rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs disabled:opacity-50"
-              >
-                {feedLoadingMore ? "Yukleniyor..." : "Daha fazla log yukle"}
-              </button>
+              <>
+                <button
+                  type="button"
+                  disabled={feedLoadingMore}
+                  onClick={() => void loadFeed(false)}
+                  className="w-full rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs disabled:opacity-50"
+                >
+                  {feedLoadingMore ? "Yukleniyor..." : "Daha fazla log yukle"}
+                </button>
+                <div ref={feedLoadMoreRef} className="h-2 w-full" />
+              </>
             ) : null}
           </div>
         </div>

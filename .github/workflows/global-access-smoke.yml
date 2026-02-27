@@ -1,0 +1,22 @@
+name: Global Access Smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - "https://birader.app/"
+          - "https://birader.app/yardim"
+    steps:
+      - name: Curl timing
+        run: |
+          echo "Checking ${{ matrix.target }}"
+          curl -o /dev/null -sS \
+            -w "status=%{http_code} dns=%{time_namelookup}s connect=%{time_connect}s tls=%{time_appconnect}s ttfb=%{time_starttransfer}s total=%{time_total}s\n" \
+            "${{ matrix.target }}"

@@ -15,6 +15,7 @@ alter table public.profiles add column if not exists avatar_path text not null d
 alter table public.profiles add column if not exists display_name text not null default '';
 alter table public.profiles add column if not exists heatmap_color_from text not null default '#f59e0b';
 alter table public.profiles add column if not exists heatmap_color_to text not null default '#ef4444';
+alter table public.profiles add column if not exists referral_code text;
 alter table public.checkins add column if not exists country_code text not null default 'TR';
 alter table public.checkins add column if not exists city text not null default '';
 alter table public.checkins add column if not exists district text not null default '';
@@ -24,6 +25,8 @@ alter table public.checkins add column if not exists note text not null default 
 alter table public.checkins add column if not exists latitude double precision;
 alter table public.checkins add column if not exists longitude double precision;
 alter table public.checkins add column if not exists day_period text;
+alter table public.checkins add column if not exists media_url text not null default '';
+alter table public.checkins add column if not exists media_type text not null default '';
 alter table public.checkins alter column rating drop not null;
 update public.checkins set rating = null where rating is not null and rating <= 0;
 alter table public.checkins drop constraint if exists checkins_rating_nullable_half_check;
@@ -80,6 +83,17 @@ create table if not exists public.product_suggestions (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.content_reports (
+  id bigserial primary key,
+  reporter_id uuid null references auth.users(id) on delete set null,
+  target_user_id uuid null references auth.users(id) on delete set null,
+  target_type text not null,
+  target_id text not null,
+  reason text not null default '',
+  status text not null default 'open',
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.user_badges (
   user_id uuid not null references auth.users(id) on delete cascade,
   badge_key text not null,
@@ -94,6 +108,7 @@ create table if not exists public.user_badges (
 
 create index if not exists idx_profiles_username on public.profiles (username);
 create index if not exists idx_profiles_display_name on public.profiles (display_name);
+create unique index if not exists idx_profiles_referral_code_unique on public.profiles (referral_code);
 create index if not exists idx_follows_follower on public.follows (follower_id);
 create index if not exists idx_follows_following on public.follows (following_id);
 create index if not exists idx_checkins_city_district on public.checkins (city, district);
@@ -127,6 +142,7 @@ alter table public.favorite_beers enable row level security;
 alter table public.analytics_events enable row level security;
 alter table public.product_suggestions enable row level security;
 alter table public.user_badges enable row level security;
+alter table public.content_reports enable row level security;
 
 -- profiles: everyone can read public profiles, owner can read/write self
 alter table public.profiles add column if not exists is_admin boolean not null default false;
@@ -265,6 +281,39 @@ for update using (
   )
 );
 
+drop policy if exists content_reports_insert_auth on public.content_reports;
+create policy content_reports_insert_auth on public.content_reports
+for insert with check (auth.uid() = reporter_id);
+
+drop policy if exists content_reports_read_admin on public.content_reports;
+create policy content_reports_read_admin on public.content_reports
+for select using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
+drop policy if exists content_reports_update_admin on public.content_reports;
+create policy content_reports_update_admin on public.content_reports
+for update using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+) with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
 drop policy if exists user_badges_read_public_or_owner on public.user_badges;
 create policy user_badges_read_public_or_owner on public.user_badges
 for select using (
@@ -301,6 +350,9 @@ grant insert on public.analytics_events to authenticated;
 revoke all on public.product_suggestions from anon;
 revoke all on public.product_suggestions from authenticated;
 grant insert, select, update on public.product_suggestions to authenticated;
+revoke all on public.content_reports from anon;
+revoke all on public.content_reports from authenticated;
+grant insert, select, update on public.content_reports to authenticated;
 revoke all on public.user_badges from anon;
 revoke all on public.user_badges from authenticated;
 grant select, insert, update, delete on public.user_badges to authenticated;

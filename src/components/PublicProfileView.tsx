@@ -34,6 +34,8 @@ type CheckinRow = {
   location_text?: string | null;
   price_try?: number | null;
   note?: string | null;
+  media_url?: string | null;
+  media_type?: string | null;
 };
 
 type FavoriteBeerRow = {
@@ -217,7 +219,7 @@ export default function PublicProfileView({ username }: { username: string }) {
           .order("rank", { ascending: true }),
         supabase
           .from("checkins")
-          .select("id, beer_name, rating, created_at, day_period, city, district, location_text, price_try, note")
+          .select("id, beer_name, rating, created_at, day_period, city, district, location_text, price_try, note, media_url, media_type")
           .eq("user_id", p.user_id)
           .gte("created_at", start)
           .lt("created_at", end)
@@ -486,7 +488,7 @@ export default function PublicProfileView({ username }: { username: string }) {
     const end = `${year + 1}-01-01T00:00:00.000Z`;
     const { data } = await supabase
       .from("checkins")
-      .select("id, beer_name, rating, created_at, day_period, city, district, location_text, price_try, note")
+      .select("id, beer_name, rating, created_at, day_period, city, district, location_text, price_try, note, media_url, media_type")
       .eq("user_id", sessionUserId)
       .gte("created_at", start)
       .lt("created_at", end)
@@ -845,6 +847,16 @@ export default function PublicProfileView({ username }: { username: string }) {
                 <div className="mt-1 text-xs opacity-80">💸 {Number(c.price_try).toFixed(2)} TL</div>
               ) : null}
               {c.note ? <div className="mt-1 text-xs opacity-70">{c.note}</div> : null}
+              {(c.media_url || "").trim() ? (
+                <div className="mt-2 overflow-hidden rounded-lg border border-white/10 bg-black/30">
+                  {(c.media_type || "").startsWith("video") ? (
+                    <video src={c.media_url || ""} controls className="h-40 w-full object-cover" />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={c.media_url || ""} alt="checkin medya" className="h-40 w-full object-cover" />
+                  )}
+                </div>
+              ) : null}
             </div>
           ))}
           {!checkins.length ? <div className="text-xs opacity-60">Bu yil check-in yok.</div> : null}

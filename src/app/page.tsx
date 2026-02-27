@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import DayModal from "@/components/DayModal";
@@ -9,13 +10,19 @@ import MonthZoom from "@/components/MonthZoom";
 import FieldHeatmap from "@/components/FieldHeatmap";
 import FootballHeatmap from "@/components/FootballHeatmap";
 import GeoHeatmap from "@/components/GeoHeatmap";
-import SocialPanel from "@/components/SocialPanel";
 import { usernameFromEmail, usernameToCandidateEmails } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
 import { TURKEY_CITIES, districtsForCity } from "@/lib/trLocations";
 import { DAY_PERIOD_OPTIONS, dayPeriodLabelEn, dayPeriodLabelTr, type DayPeriod } from "@/lib/dayPeriod";
 import { HEATMAP_PALETTES } from "@/lib/heatmapTheme";
+import { getExperimentVariant } from "@/lib/ab";
+import { t, type AppLang } from "@/lib/i18n";
+
+const SocialPanel = dynamic(() => import("@/components/SocialPanel"), {
+  ssr: false,
+  loading: () => <div className="mt-6 text-xs opacity-60">Sosyal yukleniyor...</div>,
+});
 
 type Checkin = {
   id: string;
@@ -31,6 +38,8 @@ type Checkin = {
   note?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  media_url?: string | null;
+  media_type?: string | null;
 };
 
 type FavoriteBeer = {
@@ -45,6 +54,7 @@ type HeaderProfile = {
   is_admin?: boolean | null;
   heatmap_color_from?: string | null;
   heatmap_color_to?: string | null;
+  referral_code?: string | null;
 };
 type ProductSuggestionRow = {
   id: number;
@@ -73,6 +83,9 @@ const ONBOARDING_SEEN_KEY = "birader:onboarding:v1";
 const PENDING_COMPLIANCE_KEY = "birader:pending-compliance:v1";
 const LOG_SUBMIT_COOLDOWN_MS = 10_000;
 const HEATMAP_THEME_KEY = "birader:heatmap-theme:v1";
+const LANG_KEY = "birader:lang:v1";
+const REFERRAL_KEY = "birader:pending-referral:v1";
+const OFFLINE_LOG_QUEUE_KEY = "birader:offline-log-queue:v1";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -232,6 +245,13 @@ function sanitizePrice(input: string) {
   return Math.round(n * 100) / 100;
 }
 
+function inferMediaType(urlRaw: string) {
+  const url = urlRaw.trim().toLowerCase();
+  if (!url) return "";
+  if (url.match(/\.(mp4|webm|mov)(\?|$)/) || url.includes("video")) return "video";
+  return "image";
+}
+
 function normalizeTR(input: string) {
   return input
     .toLowerCase()
@@ -252,6 +272,10 @@ function normalizeTR(input: string) {
 
 function looksLikeEmail(input: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.trim().toLowerCase());
+}
+
+function randomReferralCode() {
+  return `b${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function ageFromBirthDate(isoDate: string) {
@@ -646,6 +670,11 @@ export default function Home() {
           try {
             await upsertComplianceProfile(signupData.session.user.id, signupEmail, compliancePayload);
             localStorage.removeItem(PENDING_COMPLIANCE_KEY);
+            const ref = (localStorage.getItem(REFERRAL_KEY) || "").trim();
+            if (ref) {
+              trackEvent({ eventName: "referral_signup", userId: signupData.session.user.id, props: { ref } });
+              localStorage.removeItem(REFERRAL_KEY);
+            }
           } catch {}
           trackEvent({
             eventName: "auth_success",
@@ -671,6 +700,11 @@ export default function Home() {
             try {
               await upsertComplianceProfile(s.session.user.id, signupEmail, compliancePayload);
               localStorage.removeItem(PENDING_COMPLIANCE_KEY);
+              const ref = (localStorage.getItem(REFERRAL_KEY) || "").trim();
+              if (ref) {
+                trackEvent({ eventName: "referral_signup", userId: s.session.user.id, props: { ref } });
+                localStorage.removeItem(REFERRAL_KEY);
+              }
             } catch {}
           }
           trackEvent({
@@ -732,7 +766,9 @@ export default function Home() {
   const [district, setDistrict] = useState<string>("");
   const [customDistrict, setCustomDistrict] = useState("");
   const [locationSuggestQuery, setLocationSuggestQuery] = useState("");
+  const [remoteLocationSuggestions, setRemoteLocationSuggestions] = useState<LocationSuggestion[]>([]);
   const [locationText, setLocationText] = useState("");
+  const [mediaUrl, setMediaUrl] = useState("");
   const [priceText, setPriceText] = useState("");
   const [logNote, setLogNote] = useState("");
   const [dayPeriod, setDayPeriod] = useState<DayPeriod>("evening");
@@ -760,12 +796,25 @@ export default function Home() {
   const [headerProfile, setHeaderProfile] = useState<HeaderProfile | null>(null);
   const [pwaPromptEvent, setPwaPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [pwaInstallOpen, setPwaInstallOpen] = useState(false);
+  const [lang, setLang] = useState<AppLang>("tr");
+  const [abOnboardingVariant, setAbOnboardingVariant] = useState<"A" | "B">("A");
   const [isLogMutating, setIsLogMutating] = useState(false);
   const [isAdminUser, setIsAdminUser] = useState(false);
   const [dbBadges, setDbBadges] = useState<UserBadgeRow[]>([]);
   const [badgeRefreshBusy, setBadgeRefreshBusy] = useState(false);
   const [adminSuggestions, setAdminSuggestions] = useState<ProductSuggestionRow[]>([]);
   const [adminSuggestionsBusy, setAdminSuggestionsBusy] = useState(false);
+  const [adminReports, setAdminReports] = useState<Array<{
+    id: number;
+    reporter_id: string | null;
+    target_user_id: string | null;
+    target_type: string;
+    target_id: string;
+    reason: string;
+    status: "open" | "reviewed" | "resolved";
+    created_at: string;
+  }>>([]);
+  const [adminReportsBusy, setAdminReportsBusy] = useState(false);
   const [adminSuggestionStatusFilter, setAdminSuggestionStatusFilter] = useState<"all" | "new" | "in_progress" | "done">("all");
   const [adminSuggestionCategoryFilter, setAdminSuggestionCategoryFilter] = useState<string>("all");
   const lastLogAttemptAtRef = useRef(0);
@@ -846,6 +895,28 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LANG_KEY);
+      if (saved === "tr" || saved === "en") setLang(saved);
+    } catch {}
+    setAbOnboardingVariant(getExperimentVariant("onboarding-copy-v1"));
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LANG_KEY, lang);
+    } catch {}
+  }, [lang]);
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const ref = (params.get("ref") || "").trim().toLowerCase();
+      if (ref) localStorage.setItem(REFERRAL_KEY, ref);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
     async function flushPendingCompliance() {
       if (!session?.user?.id || !session?.user?.email) return;
       try {
@@ -898,7 +969,7 @@ export default function Home() {
 
     const { data, error } = await supabase
       .from("checkins")
-      .select("id, beer_name, rating, created_at, day_period, country_code, city, district, location_text, price_try, note, latitude, longitude")
+      .select("id, beer_name, rating, created_at, day_period, country_code, city, district, location_text, price_try, note, latitude, longitude, media_url, media_type")
       .eq("user_id", session.user.id)
       .gte("created_at", start)
       .lt("created_at", end)
@@ -930,13 +1001,46 @@ export default function Home() {
     setFavorites(normalized);
   }
 
+  function readOfflineLogQueue() {
+    try {
+      const raw = localStorage.getItem(OFFLINE_LOG_QUEUE_KEY);
+      if (!raw) return [] as Array<Record<string, any>>;
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [] as Array<Record<string, any>>;
+    }
+  }
+
+  function writeOfflineLogQueue(rows: Array<Record<string, any>>) {
+    try {
+      localStorage.setItem(OFFLINE_LOG_QUEUE_KEY, JSON.stringify(rows.slice(-200)));
+    } catch {}
+  }
+
+  async function flushOfflineLogQueue() {
+    if (!session?.user?.id) return;
+    const queued = readOfflineLogQueue();
+    if (!queued.length) return;
+    const ownRows = queued.filter((r) => String(r.user_id) === session.user.id);
+    if (!ownRows.length) return;
+    const { error } = await supabase.from("checkins").insert(ownRows);
+    if (!error) {
+      const remained = queued.filter((r) => String(r.user_id) !== session.user.id);
+      writeOfflineLogQueue(remained);
+      await loadCheckins();
+      trackEvent({ eventName: "offline_queue_flushed", userId: session.user.id, props: { count: ownRows.length } });
+    }
+  }
+
   useEffect(() => {
     if (session?.user?.id) {
       loadCheckins();
       loadFavorites();
+      void flushOfflineLogQueue();
       supabase
         .from("profiles")
-        .select("username, display_name, avatar_path, is_admin, heatmap_color_from, heatmap_color_to")
+        .select("username, display_name, avatar_path, is_admin, heatmap_color_from, heatmap_color_to, referral_code")
         .eq("user_id", session.user.id)
         .maybeSingle()
         .then(({ data }) => {
@@ -949,9 +1053,11 @@ export default function Home() {
               is_admin: Boolean((data as any).is_admin),
               heatmap_color_from: (data as any).heatmap_color_from,
               heatmap_color_to: (data as any).heatmap_color_to,
+              referral_code: (data as any).referral_code,
             });
             if ((data as any).heatmap_color_from) setGridColorFrom(String((data as any).heatmap_color_from));
             if ((data as any).heatmap_color_to) setGridColorTo(String((data as any).heatmap_color_to));
+            void ensureReferralCode();
           } else {
             setIsAdminUser(false);
             setHeaderProfile({
@@ -961,6 +1067,7 @@ export default function Home() {
               is_admin: false,
               heatmap_color_from: null,
               heatmap_color_to: null,
+              referral_code: null,
             });
           }
         });
@@ -971,7 +1078,10 @@ export default function Home() {
   }, [session?.user?.id]);
 
   useEffect(() => {
-    if (canManageSuggestions) void loadAdminSuggestions();
+    if (canManageSuggestions) {
+      void loadAdminSuggestions();
+      void loadAdminReports();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canManageSuggestions]);
 
@@ -979,9 +1089,16 @@ export default function Home() {
     if (!session?.user?.id) return;
     try {
       const seen = localStorage.getItem(ONBOARDING_SEEN_KEY);
-      if (!seen) setOnboardingOpen(true);
+      if (!seen) {
+        setOnboardingOpen(true);
+        trackEvent({
+          eventName: "onboarding_impression",
+          userId: session.user.id,
+          props: { variant: abOnboardingVariant },
+        });
+      }
     } catch {}
-  }, [session?.user?.id]);
+  }, [abOnboardingVariant, session?.user?.id]);
 
   useEffect(() => {
     if (!session?.user?.id) return;
@@ -1215,6 +1332,25 @@ export default function Home() {
       unratedShare: checkins.length ? Math.round((unrated / checkins.length) * 100) : 0,
     };
   }, [checkins]);
+
+  const weeklyRecap = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - 6);
+    const weekly = checkins.filter((c) => {
+      const dt = new Date(c.created_at);
+      return dt >= start && dt <= now;
+    });
+    const rated = weekly.filter((c) => c.rating !== null && c.rating !== undefined && Number(c.rating) > 0);
+    const avg = rated.length
+      ? Math.round((rated.reduce((s, c) => s + Number(c.rating || 0), 0) / rated.length) * 100) / 100
+      : 0;
+    const topBeerMap = new Map<string, number>();
+    for (const c of weekly) topBeerMap.set(c.beer_name, (topBeerMap.get(c.beer_name) || 0) + 1);
+    const topBeer = Array.from(topBeerMap.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "-";
+    return { count: weekly.length, avg, topBeer };
+  }, [checkins]);
   const stereotypeBadges = dbBadges;
 
   const highlightedBucketInfo = useMemo(() => {
@@ -1376,6 +1512,11 @@ export default function Home() {
     const uname = (headerProfile?.username || usernameFromEmail(session?.user?.email) || "").trim();
     return uname ? `/u/${uname}` : "/";
   }, [headerProfile?.username, session?.user?.email]);
+  const referralLink = useMemo(() => {
+    const code = (headerProfile?.referral_code || "").trim();
+    if (!code) return "";
+    return `https://birader.app/?ref=${encodeURIComponent(code)}`;
+  }, [headerProfile?.referral_code]);
   const recentVisibleCount = useMemo(() => {
     if (recentExpandStep <= 0) return 5;
     if (recentExpandStep === 1) return 10;
@@ -1415,6 +1556,16 @@ export default function Home() {
     }
 
     const q = normalizeTR(locationSuggestQuery);
+    for (const s of remoteLocationSuggestions) {
+      const key = `${s.city}::${s.district}`;
+      const prev = merged.get(key);
+      merged.set(key, {
+        city: s.city,
+        district: s.district,
+        score: Math.max(prev?.score || 0, s.score || 1),
+      });
+    }
+
     const rows = Array.from(merged.values());
     if (!q) return rows.sort((a, b) => b.score - a.score).slice(0, 8);
 
@@ -1432,7 +1583,35 @@ export default function Home() {
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
-  }, [checkins, locationSuggestQuery]);
+  }, [checkins, locationSuggestQuery, remoteLocationSuggestions]);
+
+  useEffect(() => {
+    const q = locationSuggestQuery.trim();
+    if (q.length < 3) {
+      setRemoteLocationSuggestions([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&countrycodes=tr&limit=5&q=${encodeURIComponent(q)}`;
+        const res = await fetch(url, { headers: { Accept: "application/json" } });
+        if (!res.ok) return;
+        const rows = (await res.json()) as Array<{ display_name?: string }>;
+        const mapped: LocationSuggestion[] = rows
+          .map((r) => String(r.display_name || ""))
+          .filter(Boolean)
+          .map((name) => {
+            const parts = name.split(",").map((x) => x.trim()).filter(Boolean);
+            const district = parts[0] || "";
+            const resolvedCity = parts.find((p) => TURKEY_CITIES.some((c) => c === p)) || city;
+            return { city: resolvedCity, district, score: 2 };
+          })
+          .filter((x) => x.city && x.district);
+        setRemoteLocationSuggestions(mapped);
+      } catch {}
+    }, 280);
+    return () => clearTimeout(t);
+  }, [locationSuggestQuery, city]);
 
   function quickLogFromFeed(payload: { beerName: string; rating: number }) {
     const incomingBeer = payload.beerName?.trim();
@@ -1511,6 +1690,37 @@ export default function Home() {
     );
   }
 
+  async function loadAdminReports() {
+    if (!canManageSuggestions) return;
+    setAdminReportsBusy(true);
+    const { data, error } = await supabase
+      .from("content_reports")
+      .select("id, reporter_id, target_user_id, target_type, target_id, reason, status, created_at")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    setAdminReportsBusy(false);
+    if (error) return;
+    setAdminReports(
+      ((data as Array<any> | null) ?? []).map((r) => ({
+        id: Number(r.id),
+        reporter_id: r.reporter_id ?? null,
+        target_user_id: r.target_user_id ?? null,
+        target_type: String(r.target_type || ""),
+        target_id: String(r.target_id || ""),
+        reason: String(r.reason || ""),
+        status: (String(r.status || "open") as "open" | "reviewed" | "resolved"),
+        created_at: String(r.created_at || ""),
+      }))
+    );
+  }
+
+  async function updateReportStatus(id: number, status: "open" | "reviewed" | "resolved") {
+    if (!canManageSuggestions) return;
+    const { error } = await supabase.from("content_reports").update({ status }).eq("id", id);
+    if (error) return;
+    setAdminReports((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
+  }
+
   async function loadMyBadges() {
     if (!session?.user?.id) {
       setDbBadges([]);
@@ -1552,6 +1762,23 @@ export default function Home() {
           ? { ...prev, heatmap_color_from: nextFrom, heatmap_color_to: nextTo }
           : prev
       );
+    }
+  }
+
+  async function ensureReferralCode() {
+    if (!session?.user?.id) return;
+    if ((headerProfile?.referral_code || "").trim()) return;
+    for (let i = 0; i < 6; i += 1) {
+      const candidate = randomReferralCode();
+      const { error } = await supabase
+        .from("profiles")
+        .update({ referral_code: candidate })
+        .eq("user_id", session.user.id)
+        .is("referral_code", null);
+      if (!error) {
+        setHeaderProfile((prev) => (prev ? { ...prev, referral_code: candidate } : prev));
+        return;
+      }
     }
   }
 
@@ -1659,6 +1886,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     const normalizedRating = sanitizeRating(rating);
     const normalizedPrice = sanitizePrice(priceText);
     const normalizedLocation = locationText.trim();
+    const normalizedMediaUrl = mediaUrl.trim();
+    const normalizedMediaType = inferMediaType(normalizedMediaUrl);
     const normalizedNote = logNote.trim();
     const normalizedCity = city.trim();
     const normalizedDistrict = resolvedDistrict;
@@ -1688,6 +1917,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           note: normalizedNote || "",
           latitude: null,
           longitude: null,
+          media_url: normalizedMediaUrl || "",
+          media_type: normalizedMediaType || "",
         }));
         const { error } = await supabase.from("checkins").insert(rows);
 
@@ -1708,6 +1939,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           setCustomDistrict("");
           setDayPeriod("evening");
           setLocationText("");
+          setMediaUrl("");
           setPriceText("");
           setLogNote("");
           setDateOpen(false);
@@ -1741,11 +1973,37 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             note: normalizedNote || "",
             latitude: null,
             longitude: null,
+            media_url: normalizedMediaUrl || "",
+            media_type: normalizedMediaType || "",
           })),
           ...prev,
         ];
         return next;
       });
+
+      if (session?.user?.id) {
+        const created_at =
+          dateISO === today ? new Date().toISOString() : new Date(`${dateISO}T12:00:00.000Z`).toISOString();
+        const queueRows = targets.map((beer) => ({
+          user_id: session.user.id,
+          beer_name: beer,
+          rating: normalizedRating,
+          created_at,
+          day_period: dayPeriod,
+          country_code: "TR",
+          city: normalizedCity,
+          district: normalizedDistrict,
+          location_text: normalizedLocation || "",
+          price_try: normalizedPrice,
+          note: normalizedNote || "",
+          latitude: null,
+          longitude: null,
+          media_url: normalizedMediaUrl || "",
+          media_type: normalizedMediaType || "",
+        }));
+        const queued = readOfflineLogQueue();
+        writeOfflineLogQueue([...queued, ...queueRows]);
+      }
 
       setDateISO(today);
       setRating(null);
@@ -1754,6 +2012,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       setCustomDistrict("");
       setDayPeriod("evening");
       setLocationText("");
+      setMediaUrl("");
       setPriceText("");
       setLogNote("");
       setDateOpen(false);
@@ -1953,6 +2212,26 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setLang("tr")}
+              className={`rounded-md border px-2 py-0.5 text-[10px] ${
+                lang === "tr" ? "border-amber-300/35 bg-amber-500/15" : "border-white/15 bg-white/5"
+              }`}
+            >
+              TR
+            </button>
+            <button
+              type="button"
+              onClick={() => setLang("en")}
+              className={`rounded-md border px-2 py-0.5 text-[10px] ${
+                lang === "en" ? "border-amber-300/35 bg-amber-500/15" : "border-white/15 bg-white/5"
+              }`}
+            >
+              EN
+            </button>
+          </div>
           <Link
             href={headerProfileHref}
             className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-2 py-1.5"
@@ -2000,7 +2279,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               onClick={() => void installPwa()}
               className="rounded-lg border border-amber-300/35 bg-amber-500/15 px-2 py-1 text-xs"
             >
-              Ana ekrana ekle
+              {t(lang, "cta_add_home")}
             </button>
           ) : null}
         </div>
@@ -2024,12 +2303,34 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             </a>
           </div>
         ) : null}
+        {referralLink ? (
+          <div className="mt-2 rounded-lg border border-white/10 bg-black/25 p-2">
+            <div className="text-[11px] opacity-70">Davet linkin</div>
+            <div className="mt-1 flex items-center gap-2">
+              <input
+                value={referralLink}
+                readOnly
+                className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-[11px] outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(referralLink).catch(() => {});
+                  trackEvent({ eventName: "referral_copy_link", userId: session?.user?.id ?? null });
+                }}
+                className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
+              >
+                Kopyala
+              </button>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       {activeSection === "log" ? (
       <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
         <div className="mb-2 flex items-center justify-between">
-          <div className="text-sm text-amber-200">Bira logla</div>
+          <div className="text-sm text-amber-200">{t(lang, "heading_log")}</div>
           <div className="text-xs opacity-70">Adım {logStep}/4</div>
         </div>
         <div className="mb-4 grid grid-cols-4 gap-2">
@@ -2250,6 +2551,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
                 />
                 <input
+                  value={mediaUrl}
+                  onChange={(e) => setMediaUrl(e.target.value)}
+                  placeholder="Gorsel/video URL (opsiyonel)"
+                  className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+                />
+                <input
                   value={priceText}
                   onChange={(e) => setPriceText(e.target.value)}
                   placeholder="Fiyat (TL)"
@@ -2438,6 +2745,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       setBeerQuery(c.beer_name);
                       setRating(c.rating === null || c.rating === undefined ? null : Number(c.rating));
                       setDayPeriod((c.day_period as DayPeriod) || "evening");
+                      setMediaUrl((c.media_url || "").trim());
                       setLogStep(3);
                       window.scrollTo({ top: 0, behavior: "smooth" });
                     }}
@@ -2460,6 +2768,16 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 <div className="text-xs opacity-80 mt-1">💸 {Number(c.price_try).toFixed(2)} TL</div>
               ) : null}
               {c.note ? <div className="text-xs opacity-75 mt-1">{c.note}</div> : null}
+              {(c.media_url || "").trim() ? (
+                <div className="mt-2 overflow-hidden rounded-lg border border-white/10 bg-black/30">
+                  {(c.media_type || inferMediaType(c.media_url || "")).startsWith("video") ? (
+                    <video src={c.media_url || ""} controls className="h-40 w-full object-cover" />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={c.media_url || ""} alt="checkin medya" className="h-40 w-full object-cover" />
+                  )}
+                </div>
+              ) : null}
             </div>
           ))}
           {checkins.length === 0 ? (
@@ -2496,7 +2814,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         <>
           <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="text-sm opacity-80">Isi haritasi ({year})</div>
+              <div className="text-sm opacity-80">{t(lang, "heading_heatmap")} ({year})</div>
               <div className="flex items-center gap-2">
                 <select
                   value={heatmapMode}
@@ -2671,6 +2989,15 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       {activeSection === "stats" ? (
       <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
         <div className="mb-4 grid grid-cols-2 gap-2 text-sm">
+          <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+            Son 7g log: <span className="font-semibold">{weeklyRecap.count}</span>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+            Son 7g ort: <span className="font-semibold">{weeklyRecap.avg.toFixed(2)}⭐</span>
+          </div>
+          <div className="col-span-2 rounded-xl border border-white/10 bg-black/20 p-2">
+            Son 7g top bira: <span className="font-semibold">{weeklyRecap.topBeer}</span>
+          </div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">
             Bu ay log: <span className="font-semibold">{monthComparison.currentLogs}</span>
           </div>
@@ -2891,6 +3218,47 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 <div className="text-xs opacity-60">Oneri kaydi yok veya yetki bulunmuyor.</div>
               ) : null}
             </div>
+
+            <div className="mt-4 rounded-xl border border-white/10 bg-black/25 p-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs opacity-75">Moderasyon raporlari</div>
+                <button
+                  type="button"
+                  onClick={() => void loadAdminReports()}
+                  className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
+                >
+                  Yenile
+                </button>
+              </div>
+              <div className="mt-2 space-y-2">
+                {adminReports.map((r) => (
+                  <div key={`report-${r.id}`} className="rounded-lg border border-white/10 bg-black/30 p-2">
+                    <div className="text-[11px] opacity-70">
+                      #{r.id} • {r.target_type}:{r.target_id} • {new Date(r.created_at).toLocaleString("tr-TR")}
+                    </div>
+                    <div className="mt-1 text-xs">Reason: {r.reason || "user_reported"}</div>
+                    <div className="mt-1 flex items-center gap-2">
+                      {(["open", "reviewed", "resolved"] as const).map((st) => (
+                        <button
+                          key={`report-${r.id}-${st}`}
+                          type="button"
+                          onClick={() => void updateReportStatus(r.id, st)}
+                          className={`rounded-md border px-2 py-1 text-[11px] ${
+                            r.status === st ? "border-amber-300/35 bg-amber-500/15" : "border-white/15 bg-white/10"
+                          }`}
+                        >
+                          {st}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {adminReportsBusy ? <div className="text-xs opacity-60">Raporlar yukleniyor...</div> : null}
+                {!adminReportsBusy && !adminReports.length ? (
+                  <div className="text-xs opacity-60">Rapor yok.</div>
+                ) : null}
+              </div>
+            </div>
           </div>
         ) : null}
       </section>
@@ -2958,7 +3326,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/70" onClick={() => closeOnboarding(true)} />
           <div className="absolute left-1/2 top-1/2 w-[92%] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/10 bg-black p-4">
-            <div className="text-lg font-semibold">Hizli baslangic</div>
+            <div className="text-lg font-semibold">{abOnboardingVariant === "A" ? "Hizli baslangic" : "2 dakikada basla"}</div>
             <div className="mt-3 space-y-2 text-sm opacity-90">
               <div>1. `Logla` sekmesinde adim adim bira ekle.</div>
               <div>2. Gecmis gun icin `adet` ile toplu log at, sonra puanlari duzenle.</div>
@@ -2988,10 +3356,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/85 backdrop-blur-md">
         <div className="mx-auto grid max-w-md grid-cols-5 gap-1 p-2">
           {[
-            { key: "log", label: "Log" },
-            { key: "social", label: "Sosyal" },
-            { key: "heatmap", label: "Harita" },
-            { key: "stats", label: "İstatistik" },
+            { key: "log", label: t(lang, "nav_log") },
+            { key: "social", label: t(lang, "nav_social") },
+            { key: "heatmap", label: t(lang, "nav_heatmap") },
+            { key: "stats", label: t(lang, "nav_stats") },
           ].map((item) => (
             <button
               key={item.key}
@@ -3010,7 +3378,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             href="/yardim"
             className="rounded-xl border border-white/10 bg-black/30 px-2 py-2 text-center text-xs text-white/75"
           >
-            Yardım
+            {t(lang, "nav_help")}
           </Link>
         </div>
       </nav>
