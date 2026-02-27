@@ -1112,6 +1112,17 @@ export default function Home() {
             }
           }
 
+          // Self-heal: if display_name is old @handle-like value, keep it aligned with current username.
+          const rowDisplay = String(row.display_name || "").trim();
+          const rowDisplayNorm = normalizeUsername(rowDisplay.replace(/^@+/, ""));
+          if (rowDisplay && rowDisplay.startsWith("@") && rowDisplayNorm && rowDisplayNorm !== String(row.username || "").trim().toLowerCase()) {
+            const patch = { display_name: String(row.username || "").trim() };
+            const syncDisplayRes = await supabase.from("profiles").update(patch).eq("user_id", session.user.id);
+            if (!syncDisplayRes.error) {
+              row = { ...row, ...patch };
+            }
+          }
+
           setIsAdminUser(Boolean(row.is_admin));
           setHeaderProfile({
             username: row.username,
@@ -2400,8 +2411,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               )}
             </div>
             <div className="max-w-[120px] truncate text-xs text-amber-100">
-              {(headerProfile?.display_name || "").trim() ||
-                `@${headerProfile?.username || usernameFromEmail(session?.user?.email) || tx(lang, "kullanici", "user")}`}
+              {`@${headerProfile?.username || usernameFromEmail(session?.user?.email) || tx(lang, "kullanici", "user")}`}
             </div>
           </Link>
 
