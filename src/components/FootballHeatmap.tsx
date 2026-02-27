@@ -1,16 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { AppLang } from "@/lib/i18n";
 
 type CheckinLite = { created_at: string };
 
 const DOW_TR = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
+const DOW_EN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function isoLocal(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function todayLocalIso() {
+  return isoLocal(new Date());
 }
 
 // Monday-first: Mon=0..Sun=6
@@ -40,11 +46,13 @@ export default function FootballHeatmap({
   checkins,
   onSelectDay,
   height = 180,
+  lang = "tr",
 }: {
   year: number;
   checkins: CheckinLite[];
   onSelectDay: (isoDay: string) => void;
   height?: number;
+  lang?: AppLang;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -56,6 +64,8 @@ export default function FootballHeatmap({
     iso: string;
     count: number;
     dow: string;
+    week: number;
+    future: boolean;
   } | null>(null);
 
   // counts per day
@@ -118,10 +128,10 @@ export default function FootballHeatmap({
     if (!iso) return null;
 
     const dt = new Date(iso + "T12:00:00");
-    const dow = DOW_TR[dowMonFirst(dt)];
+    const dow = (lang === "en" ? DOW_EN : DOW_TR)[dowMonFirst(dt)];
     const count = counts[iso] || 0;
 
-    return { iso, dow, count };
+    return { iso, dow, count, week: w + 1, future: iso > todayLocalIso() };
   }
 
   useEffect(() => {
@@ -163,9 +173,10 @@ export default function FootballHeatmap({
     // labels
     ctx.fillStyle = "rgba(255,255,255,0.55)";
     ctx.font = "11px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    const dowLabels = lang === "en" ? DOW_EN : DOW_TR;
     for (let i = 0; i < 7; i++) {
       const y = padY + (innerH / 7) * (i + 0.5) + 4;
-      ctx.fillText(DOW_TR[i], 8, y);
+      ctx.fillText(dowLabels[i], 8, y);
     }
 
     // field frame
@@ -248,6 +259,18 @@ export default function FootballHeatmap({
     ctx.drawImage(off, 0, 0, cssW, cssH);
     ctx.restore();
 
+    // future-day mask (locked zone)
+    const todayIso = todayLocalIso();
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.4)";
+    for (const [iso, coord] of Object.entries(dayToCoord)) {
+      if (iso <= todayIso) continue;
+      const x = padX + coord.w * cellW;
+      const y = padY + coord.d * cellH;
+      ctx.fillRect(x, y, cellW, cellH);
+    }
+    ctx.restore();
+
     // vignette
     ctx.save();
     const vg = ctx.createRadialGradient(
@@ -277,7 +300,7 @@ export default function FootballHeatmap({
 
     // wrapper width for horizontal scroll
     wrap.style.minWidth = `${cssW}px`;
-  }, [counts, dayToCoord, height, maxCount, maxWeek, year]);
+  }, [counts, dayToCoord, height, maxCount, maxWeek, year, lang]);
 
   function handleClick(e: React.MouseEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current;
@@ -288,7 +311,7 @@ export default function FootballHeatmap({
     const y = e.clientY - rect.top;
 
     const hit = pickDayFromXY(x, y);
-    if (hit?.iso) onSelectDay(hit.iso);
+    if (hit?.iso && !hit.future) onSelectDay(hit.iso);
   }
 
   function handleMove(e: React.MouseEvent<HTMLCanvasElement>) {
@@ -316,6 +339,8 @@ export default function FootballHeatmap({
       iso: hit.iso,
       count: hit.count,
       dow: hit.dow,
+      week: hit.week,
+      future: hit.future,
     });
   }
 
@@ -327,7 +352,7 @@ export default function FootballHeatmap({
     <div className="mt-6">
       <div className="flex items-end justify-between">
         <div>
-          <div className="text-sm opacity-80">Isı haritası</div>
+          <div className="text-sm opacity-80">{lang === "en" ? "Heatmap" : "Isi haritasi"}</div>
           <div className="text-xl font-bold">{year}</div>
         </div>
 
@@ -341,7 +366,7 @@ export default function FootballHeatmap({
                 "linear-gradient(90deg, hsl(120 100% 60%), hsl(60 100% 60%), hsl(30 100% 60%), hsl(0 100% 60%))",
             }}
             aria-label="Heatmap legend"
-            title={`Yoğunluk ölçeği (max: ${maxCount})`}
+            title={lang === "en" ? `Density scale (max: ${maxCount})` : `Yogunluk olcegi (max: ${maxCount})`}
           />
           <div className="text-[11px] opacity-60">High</div>
         </div>
@@ -371,14 +396,21 @@ export default function FootballHeatmap({
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="font-semibold">
-                    {tip.dow} · {tip.iso}
+                    {tip.dow} · {tip.iso} · {lang === "en" ? "Week" : "Hafta"} {tip.week}
                   </div>
                   <div className="rounded-md bg-white/10 px-2 py-0.5 font-semibold">
                     {tip.count}
                   </div>
                 </div>
                 <div className="mt-1 opacity-70">
-                  Click: günü seç • Max: {maxCount}
+                  {tip.future
+                    ? lang === "en"
+                      ? "Future day is locked"
+                      : "Gelecek gun kilitli"
+                    : lang === "en"
+                    ? "Click: select day"
+                    : "Click: gunu sec"}{" "}
+                  • Max: {maxCount}
                 </div>
               </div>
             ) : null}
@@ -387,7 +419,9 @@ export default function FootballHeatmap({
       </div>
 
       <div className="mt-2 text-xs opacity-60">
-        İpucu: sağa kaydır. Haritada bir güne gelince tooltip çıkar; tıkla → seç.
+        {lang === "en"
+          ? "Hint: scroll right. Hover a day for tooltip; click to select."
+          : "Ipucu: saga kaydir. Haritada bir gune gelince tooltip cikar; tikla -> sec."}
       </div>
     </div>
   );

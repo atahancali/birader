@@ -1,10 +1,12 @@
 "use client";
 
 import { gradientColor } from "@/lib/heatmapTheme";
+import type { AppLang } from "@/lib/i18n";
 
 type CheckinLite = { created_at: string; rating?: number | null };
 
 const DOW_TR = ["Pzt","Sal","Çar","Per","Cum","Cmt","Paz"];
+const DOW_EN = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
 function isoLocal(d: Date) {
   const y = d.getFullYear();
@@ -36,6 +38,7 @@ export default function FieldHeatmap({
   cellMetric = "color",
   colorFrom = "#f59e0b",
   colorTo = "#ef4444",
+  lang = "tr",
 }: {
   year: number;
   checkins: CheckinLite[];
@@ -44,6 +47,7 @@ export default function FieldHeatmap({
   cellMetric?: "color" | "count" | "avgRating";
   colorFrom?: string;
   colorTo?: string;
+  lang?: AppLang;
 }) {
   // per-day stats
   const dayStats: Record<string, { count: number; ratingSum: number; ratingCount: number }> = {};
@@ -81,16 +85,27 @@ export default function FieldHeatmap({
   }
 
   const cellSize = cellMetric === "color" ? 18 : 26;
+  const todayIso = isoLocal(new Date());
+  const showCurrentWeek = new Date().getFullYear() === year;
+  const currentWeek = showCurrentWeek ? weekIndexFromYearStart(new Date(), year) + 1 : null;
 
+  const dow = lang === "en" ? DOW_EN : DOW_TR;
   return (
     <div className="mt-6">
       <div className="flex items-end justify-between">
         <div>
-          <div className="text-sm opacity-80">Isı haritası</div>
+          <div className="text-sm opacity-80">{lang === "en" ? "Heatmap" : "Isı haritası"}</div>
           <div className="text-xl font-bold">{year}</div>
         </div>
         <div className="text-xs opacity-60">
-          {cellMetric === "avgRating" ? "Günlük ortalama puan" : "Günlük bira sayısı"}
+          {cellMetric === "avgRating"
+            ? lang === "en"
+              ? "Daily average rating"
+              : "Günlük ortalama puan"
+            : lang === "en"
+            ? "Daily beer count"
+            : "Günlük bira sayısı"}
+          {currentWeek ? ` • ${lang === "en" ? "Week" : "Hafta"} ${currentWeek}` : ""}
         </div>
       </div>
 
@@ -100,7 +115,7 @@ export default function FieldHeatmap({
           {/* labels */}
           <div className="grid grid-cols-[40px_1fr] gap-3">
             <div className="pt-1">
-              {DOW_TR.map((d) => (
+              {dow.map((d) => (
                 <div key={d} className="text-[11px] opacity-60 flex items-center" style={{ height: `${cellSize + 2}px` }}>
                   {d}
                 </div>
@@ -108,6 +123,16 @@ export default function FieldHeatmap({
             </div>
 
             <div>
+              <div
+                className="mb-1 grid min-w-max gap-0.5 text-[10px] opacity-55"
+                style={{ gridTemplateColumns: `repeat(${maxWeek + 1}, ${cellSize}px)` }}
+              >
+                {Array.from({ length: maxWeek + 1 }).map((_, col) => (
+                  <div key={`wk-${col}`} className="text-center">
+                    {col % 4 === 0 ? col + 1 : ""}
+                  </div>
+                ))}
+              </div>
               {/* actual grid */}
               <div
                 className="grid min-w-max"
@@ -119,6 +144,7 @@ export default function FieldHeatmap({
                       const iso = grid[row][col];
                       const stat = iso ? dayStats[iso] : undefined;
                       const count = stat?.count || 0;
+                      const isFuture = !!iso && iso > todayIso;
                       const avgRating =
                         stat && stat.ratingCount > 0 ? Math.round((stat.ratingSum / stat.ratingCount) * 10) / 10 : null;
                       const textValue =
@@ -133,24 +159,31 @@ export default function FieldHeatmap({
                       return (
                         <button
                           key={`${row}-${col}`}
-                          disabled={!iso}
-                          onClick={() => !readOnly && iso && onSelectDay(iso)}
+                          disabled={!iso || isFuture || readOnly}
+                          onClick={() => !readOnly && iso && !isFuture && onSelectDay(iso)}
                           title={
                             iso
-                              ? `${iso} • ${count} bira${avgRating === null ? "" : ` • ${avgRating.toFixed(1)}⭐ ort.`}`
+                              ? lang === "en"
+                                ? `${iso} • Week ${col + 1} • ${count} beers${avgRating === null ? "" : ` • ${avgRating.toFixed(1)}⭐ avg`}${isFuture ? " • Future (locked)" : ""}`
+                                : `${iso} • Hafta ${col + 1} • ${count} bira${avgRating === null ? "" : ` • ${avgRating.toFixed(1)}⭐ ort.`}${isFuture ? " • Gelecek (kilitli)" : ""}`
                               : ""
                           }
                           className={[
                             "rounded border border-white/10 text-[10px] font-semibold",
                             iso ? "" : "bg-transparent border-transparent",
                             iso && count > 0 && cellMetric !== "color" ? "text-white/90" : "text-white/0",
-                            iso && !readOnly ? "active:scale-[0.98]" : "",
+                            isFuture ? "opacity-70" : "",
+                            iso && !readOnly && !isFuture ? "active:scale-[0.98]" : "",
                           ].join(" ")}
                           style={{
                             height: `${cellSize}px`,
                             width: `${cellSize}px`,
                             backgroundColor:
-                              !iso || count <= 0
+                              !iso
+                                ? "rgba(255,255,255,0.06)"
+                                : isFuture
+                                ? "rgba(255,255,255,0.025)"
+                                : count <= 0
                                 ? "rgba(255,255,255,0.06)"
                                 : gradientColor(colorFrom, colorTo, Math.min(1, count / 5), 0.9),
                           }}
@@ -166,7 +199,13 @@ export default function FieldHeatmap({
           </div>
 
           <div className="mt-3 text-xs opacity-60">
-            {readOnly ? "İpucu: sağa kaydır." : "İpucu: sağa kaydır. Hücreye dokun → gün detayı."}
+            {readOnly
+              ? lang === "en"
+                ? "Tip: scroll right."
+                : "İpucu: sağa kaydır."
+              : lang === "en"
+              ? "Tip: scroll right. Tap cell for day details."
+              : "İpucu: sağa kaydır. Hücreye dokun → gün detayı."}
           </div>
         </div>
       </div>

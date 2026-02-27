@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { dayPeriodLabelEn, dayPeriodLabelTr } from "@/lib/dayPeriod";
+import type { AppLang } from "@/lib/i18n";
 
 type Checkin = {
   id: string;
@@ -23,6 +24,7 @@ export default function DayModal({
   onDelete,
   onUpdate,
   onOpenLogForDay,
+  lang = "tr",
 }: {
   open: boolean;
   day: string;
@@ -33,6 +35,7 @@ export default function DayModal({
   onDelete: (id: string) => Promise<void>;
   onUpdate: (payload: { id: string; beer_name: string; rating: number | null }) => Promise<void>;
   onOpenLogForDay?: (day: string) => void;
+  lang?: AppLang;
 }) {
   // add form
   const [beerName, setBeerName] = useState("");
@@ -86,7 +89,7 @@ export default function DayModal({
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Bu kaydı silmek istiyor musun?")) return;
+    if (!confirm(lang === "en" ? "Do you want to delete this entry?" : "Bu kaydı silmek istiyor musun?")) return;
 
     setBusyId(id);
     try {
@@ -120,9 +123,9 @@ export default function DayModal({
         <div className="flex items-start justify-between">
           <div>
             <div className="text-xs opacity-70">{day}</div>
-            <div className="text-lg font-bold">Gün Detayı</div>
+            <div className="text-lg font-bold">{lang === "en" ? "Day details" : "Gün Detayı"}</div>
             <div className="text-sm opacity-80 mt-1">
-              {checkins.length} bira • Ortalama: {avg ? avg.toFixed(2) : "-"} ⭐
+              {checkins.length} {lang === "en" ? "beers" : "bira"} • {lang === "en" ? "Average" : "Ortalama"}: {avg ? avg.toFixed(2) : "-"} ⭐
             </div>
           </div>
           <button onClick={onClose} className="text-xl opacity-80">
@@ -133,14 +136,14 @@ export default function DayModal({
         {/* ADD FORM */}
         <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="text-xs opacity-70">Bu güne bira ekle</div>
+            <div className="text-xs opacity-70">{lang === "en" ? "Add beer to this day" : "Bu güne bira ekle"}</div>
             {onOpenLogForDay ? (
               <button
                 type="button"
                 onClick={() => onOpenLogForDay(day)}
                 className="rounded-xl border border-white/10 bg-black/20 px-2 py-1 text-[11px]"
               >
-                Secimli ekrana git
+                {lang === "en" ? "Go to guided log" : "Secimli ekrana git"}
               </button>
             ) : null}
           </div>
@@ -148,7 +151,7 @@ export default function DayModal({
           <input
             value={beerName}
             onChange={(e) => setBeerName(e.target.value)}
-            placeholder="Bira adı"
+            placeholder={lang === "en" ? "Beer name" : "Bira adı"}
             list="daymodal-beer-options"
             className="w-full rounded-2xl bg-black/20 border border-white/10 px-3 py-3 outline-none"
           />
@@ -165,7 +168,7 @@ export default function DayModal({
               rating === null ? "bg-white text-black" : "border-white/10 bg-black/20"
             }`}
           >
-            {rating === null ? "Puansız log (açık)" : "Puansız log"}
+            {rating === null ? (lang === "en" ? "Unrated log (on)" : "Puansız log (açık)") : (lang === "en" ? "Unrated log" : "Puansız log")}
           </button>
 
           <div className="mt-2 flex gap-2 flex-wrap">
@@ -188,7 +191,7 @@ export default function DayModal({
             onClick={handleAdd}
             className="mt-3 w-full rounded-2xl bg-white text-black py-3 font-semibold disabled:opacity-60"
           >
-            {saving ? "Ekleniyor..." : "Ekle"}
+            {saving ? (lang === "en" ? "Adding..." : "Ekleniyor...") : (lang === "en" ? "Add" : "Ekle")}
           </button>
         </div>
 
@@ -220,7 +223,7 @@ export default function DayModal({
                           onClick={() => startEdit(c)}
                           className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs"
                         >
-                          Düzenle
+                          {lang === "en" ? "Edit" : "Düzenle"}
                         </button>
 
                         <button
@@ -229,20 +232,20 @@ export default function DayModal({
                           disabled={isBusy}
                           className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs disabled:opacity-60"
                         >
-                          {isBusy ? "..." : "Sil"}
+                          {isBusy ? "..." : lang === "en" ? "Delete" : "Sil"}
                         </button>
                       </div>
                     </div>
                   </>
                 ) : (
                   <>
-                    <div className="text-xs opacity-70 mb-2">Düzenle</div>
+                    <div className="text-xs opacity-70 mb-2">{lang === "en" ? "Edit" : "Düzenle"}</div>
 
                     <input
                       value={editBeer}
                       onChange={(e) => setEditBeer(e.target.value)}
                       className="w-full rounded-2xl bg-black/20 border border-white/10 px-3 py-3 outline-none"
-                      placeholder="Bira adı"
+                      placeholder={lang === "en" ? "Beer name" : "Bira adı"}
                     />
 
                     <button
@@ -252,7 +255,7 @@ export default function DayModal({
                         editRating === null ? "bg-white text-black" : "border-white/10 bg-black/20"
                       }`}
                     >
-                      {editRating === null ? "Puansız log (açık)" : "Puansız log"}
+                      {editRating === null ? (lang === "en" ? "Unrated log (on)" : "Puansız log (açık)") : (lang === "en" ? "Unrated log" : "Puansız log")}
                     </button>
 
                     <div className="mt-2 flex gap-2 flex-wrap">
@@ -276,7 +279,7 @@ export default function DayModal({
                         onClick={cancelEdit}
                         className="rounded-2xl border border-white/10 bg-black/20 py-3 text-sm"
                       >
-                        Vazgeç
+                        {lang === "en" ? "Cancel" : "Vazgeç"}
                       </button>
                       <button
                         type="button"
@@ -284,7 +287,7 @@ export default function DayModal({
                         disabled={isBusy}
                         className="rounded-2xl bg-white text-black py-3 text-sm font-semibold disabled:opacity-60"
                       >
-                        {isBusy ? "Kaydediliyor..." : "Kaydet"}
+                        {isBusy ? (lang === "en" ? "Saving..." : "Kaydediliyor...") : (lang === "en" ? "Save" : "Kaydet")}
                       </button>
                     </div>
                   </>
@@ -294,7 +297,7 @@ export default function DayModal({
           })}
 
           {checkins.length === 0 && (
-            <div className="text-sm opacity-70">Bu gün için kayıt yok.</div>
+            <div className="text-sm opacity-70">{lang === "en" ? "No entries for this day." : "Bu gün için kayıt yok."}</div>
           )}
         </div>
       </div>

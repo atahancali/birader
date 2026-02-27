@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import FootballHeatmap from "@/components/FootballHeatmap";
 import FieldHeatmap from "@/components/FieldHeatmap";
@@ -11,6 +12,8 @@ import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
 import { dayPeriodLabelEn, dayPeriodLabelTr, type DayPeriod } from "@/lib/dayPeriod";
 import { HEATMAP_PALETTES } from "@/lib/heatmapTheme";
+import { useAppLang } from "@/lib/appLang";
+import { tx } from "@/lib/i18n";
 
 type ProfileRow = {
   user_id: string;
@@ -52,6 +55,20 @@ type UserBadgeRow = {
   computed_at: string;
 };
 
+const CHECKINS_SELECT_WITH_MEDIA =
+  "id, beer_name, rating, created_at, day_period, city, district, location_text, price_try, note, media_url, media_type";
+const CHECKINS_SELECT_BASE =
+  "id, beer_name, rating, created_at, day_period, city, district, location_text, price_try, note";
+
+function isMissingMediaColumnError(error: any) {
+  const msg = String(error?.message || "").toLowerCase();
+  return msg.includes("does not exist") && (msg.includes("media_url") || msg.includes("media_type"));
+}
+
+function looksLikeEmail(input: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.trim());
+}
+
 function avgRating(checkins: CheckinRow[]) {
   const rated = checkins.filter((c) => c.rating !== null && c.rating !== undefined && Number(c.rating) > 0);
   if (!rated.length) return 0;
@@ -60,7 +77,10 @@ function avgRating(checkins: CheckinRow[]) {
 }
 
 export default function PublicProfileView({ username }: { username: string }) {
+  const router = useRouter();
+  const { lang, setLang } = useAppLang("tr");
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
+  const [sessionEmail, setSessionEmail] = useState("");
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [favorites, setFavorites] = useState<FavoriteBeerRow[]>([]);
   const [checkins, setCheckins] = useState<CheckinRow[]>([]);
@@ -72,6 +92,8 @@ export default function PublicProfileView({ username }: { username: string }) {
   const [errorText, setErrorText] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [editUsername, setEditUsername] = useState("");
+  const [editLoginEmail, setEditLoginEmail] = useState("");
   const [editDisplayName, setEditDisplayName] = useState("");
   const [editBio, setEditBio] = useState("");
   const [editIsPublic, setEditIsPublic] = useState(true);
@@ -126,6 +148,31 @@ export default function PublicProfileView({ username }: { username: string }) {
     [checkins]
   );
 
+  async function fetchYearCheckins(userId: string, yearValue: number) {
+    const start = `${yearValue}-01-01T00:00:00.000Z`;
+    const end = `${yearValue + 1}-01-01T00:00:00.000Z`;
+    const withMedia = await supabase
+      .from("checkins")
+      .select(CHECKINS_SELECT_WITH_MEDIA)
+      .eq("user_id", userId)
+      .gte("created_at", start)
+      .lt("created_at", end)
+      .order("created_at", { ascending: false });
+    if (!withMedia.error) return { data: (withMedia.data as CheckinRow[] | null) ?? [], error: null as any };
+    if (!isMissingMediaColumnError(withMedia.error)) return { data: [] as CheckinRow[], error: withMedia.error };
+    const fallback = await supabase
+      .from("checkins")
+      .select(CHECKINS_SELECT_BASE)
+      .eq("user_id", userId)
+      .gte("created_at", start)
+      .lt("created_at", end)
+      .order("created_at", { ascending: false });
+    return {
+      data: (((fallback.data as any[] | null) ?? []).map((c) => ({ ...c, media_url: null, media_type: null })) as CheckinRow[]),
+      error: fallback.error,
+    };
+  }
+
   async function loadBadgesForUser(userId: string) {
     const { data } = await supabase
       .from("user_badges")
@@ -167,6 +214,7 @@ export default function PublicProfileView({ username }: { username: string }) {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSessionUserId(data.session?.user?.id ?? null);
+      setSessionEmail((data.session?.user?.email || "").trim().toLowerCase());
     });
   }, []);
 
@@ -215,14 +263,13 @@ export default function PublicProfileView({ username }: { username: string }) {
       }
 
       setProfile(p);
+      setEditUsername(p.username);
       if (p.heatmap_color_from) setGridColorFrom(p.heatmap_color_from);
       if (p.heatmap_color_to) setGridColorTo(p.heatmap_color_to);
       setEditDisplayName((p.display_name || "").trim() || p.username);
       setEditBio(p.bio || "");
       setEditIsPublic(p.is_public);
-
-      const start = `${year}-01-01T00:00:00.000Z`;
-      const end = `${year + 1}-01-01T00:00:00.000Z`;
+      setEditLoginEmail(sessionEmail || "");
 
       const [favoritesRes, checkinsRes, followersRes, followingRes, badgesRes] = await Promise.all([
         supabase
@@ -230,13 +277,7 @@ export default function PublicProfileView({ username }: { username: string }) {
           .select("beer_name, rank")
           .eq("user_id", p.user_id)
           .order("rank", { ascending: true }),
-        supabase
-          .from("checkins")
-          .select("id, beer_name, rating, created_at, day_period, city, district, location_text, price_try, note, media_url, media_type")
-          .eq("user_id", p.user_id)
-          .gte("created_at", start)
-          .lt("created_at", end)
-          .order("created_at", { ascending: false }),
+        fetchYearCheckins(p.user_id, year),
         supabase
           .from("follows")
           .select("follower_id", { count: "exact", head: true })
@@ -255,13 +296,13 @@ export default function PublicProfileView({ username }: { username: string }) {
       ]);
 
       if (favoritesRes.error) setErrorText(favoritesRes.error.message);
-      if (checkinsRes.error) setErrorText(checkinsRes.error.message);
+      if ((checkinsRes as any).error) setErrorText((checkinsRes as any).error.message);
       if (followersRes.error) setErrorText(followersRes.error.message);
       if (followingRes.error) setErrorText(followingRes.error.message);
       if (badgesRes.error) setErrorText(badgesRes.error.message);
 
       setFavorites((favoritesRes.data as FavoriteBeerRow[] | null) ?? []);
-      setCheckins((checkinsRes.data as CheckinRow[] | null) ?? []);
+      setCheckins(((checkinsRes as any).data as CheckinRow[] | null) ?? []);
       setFollowers(followersRes.count ?? 0);
       setFollowing(followingRes.count ?? 0);
       setDbBadges((badgesRes.data as UserBadgeRow[] | null) ?? []);
@@ -298,7 +339,7 @@ export default function PublicProfileView({ username }: { username: string }) {
     }
 
     void loadProfile();
-  }, [sessionUserId, username, year]);
+  }, [sessionEmail, sessionUserId, username, year]);
 
   async function toggleFollow() {
     if (!profile || !sessionUserId || sessionUserId === profile.user_id) return;
@@ -346,13 +387,58 @@ export default function PublicProfileView({ username }: { username: string }) {
 
   async function saveOwnProfile() {
     if (!profile || !isOwnProfile || !sessionUserId) return;
+    const nextUsername = normalizeUsername(editUsername || "");
+    const rawDisplayName = (editDisplayName || "").trim().slice(0, 32);
+    const normalizedRawDisplay = normalizeUsername(rawDisplayName.replace(/^@+/, ""));
+    const shouldSyncDisplayWithUsername = !rawDisplayName || normalizedRawDisplay === profile.username;
+    const nextDisplayName = shouldSyncDisplayWithUsername ? nextUsername : rawDisplayName;
+    const nextBio = (editBio || "").trim();
+    const currentEmail = (sessionEmail || "").trim().toLowerCase();
+    const typedEmail = (editLoginEmail || "").trim().toLowerCase();
+
+    if (nextUsername.length < 3) {
+      alert(tx(lang, "Login nick en az 3 karakter olmali.", "Login nick must be at least 3 characters."));
+      return;
+    }
+    if (typedEmail && !looksLikeEmail(typedEmail)) {
+      alert(tx(lang, "Gecerli bir e-posta gir.", "Enter a valid e-mail."));
+      return;
+    }
+
+    if (nextUsername !== profile.username) {
+      const { data: takenRow, error: takenErr } = await supabase
+        .from("profiles")
+        .select("user_id")
+        .eq("username", nextUsername)
+        .maybeSingle();
+      if (takenErr) {
+        alert(takenErr.message);
+        return;
+      }
+      if (takenRow && String((takenRow as any).user_id || "") !== sessionUserId) {
+        alert(tx(lang, "Bu login nick zaten kullaniliyor.", "This login nick is already in use."));
+        return;
+      }
+    }
+
+    let targetEmail = typedEmail || currentEmail;
+    if (
+      nextUsername !== profile.username &&
+      currentEmail &&
+      /@birader\.(app|local)$/.test(currentEmail) &&
+      (!typedEmail || typedEmail === currentEmail)
+    ) {
+      targetEmail = `${nextUsername}@birader.app`;
+    }
+
     setSavingProfile(true);
     let error: any = null;
     const withTheme = await supabase
       .from("profiles")
       .update({
-        display_name: editDisplayName.trim().slice(0, 32),
-        bio: editBio.trim(),
+        username: nextUsername,
+        display_name: nextDisplayName || nextUsername,
+        bio: nextBio,
         is_public: editIsPublic,
         heatmap_color_from: gridColorFrom,
         heatmap_color_to: gridColorTo,
@@ -364,31 +450,52 @@ export default function PublicProfileView({ username }: { username: string }) {
       const fallback = await supabase
         .from("profiles")
         .update({
-          display_name: editDisplayName.trim().slice(0, 32),
-          bio: editBio.trim(),
+          username: nextUsername,
+          display_name: nextDisplayName || nextUsername,
+          bio: nextBio,
           is_public: editIsPublic,
         })
         .eq("user_id", sessionUserId);
       error = fallback.error;
     }
-    setSavingProfile(false);
     if (error) {
+      setSavingProfile(false);
       alert(error.message);
       return;
     }
+
+    if (targetEmail && targetEmail !== currentEmail) {
+      const { data: authData, error: authErr } = await supabase.auth.updateUser({ email: targetEmail });
+      if (authErr) {
+        setSavingProfile(false);
+        alert(authErr.message);
+        return;
+      }
+      setSessionEmail((authData.user?.email || targetEmail).trim().toLowerCase());
+    }
+
+    setSavingProfile(false);
     setProfile((prev) =>
       prev
         ? {
             ...prev,
-            display_name: editDisplayName.trim().slice(0, 32),
-            bio: editBio.trim(),
+            username: nextUsername,
+            display_name: nextDisplayName || nextUsername,
+            bio: nextBio,
             is_public: editIsPublic,
             heatmap_color_from: gridColorFrom,
             heatmap_color_to: gridColorTo,
           }
         : prev
     );
+    setEditUsername(nextUsername);
+    setEditDisplayName(nextDisplayName || nextUsername);
+    setEditBio(nextBio);
+    setEditLoginEmail(targetEmail || "");
     setEditOpen(false);
+    if (nextUsername !== profile.username) {
+      router.replace(`/u/${encodeURIComponent(nextUsername)}`);
+    }
   }
 
   async function onAvatarFileChange(file?: File) {
@@ -499,6 +606,11 @@ export default function PublicProfileView({ username }: { username: string }) {
 
   async function addCheckinOnDay(payload: { day: string; beer_name: string; rating: number | null }) {
     if (!sessionUserId || !isOwnProfile) return;
+    const todayIso = new Date().toISOString().slice(0, 10);
+    if (payload.day > todayIso) {
+      alert(tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."));
+      return;
+    }
     const created_at = new Date(`${payload.day}T12:00:00.000Z`).toISOString();
     const { error } = await supabase.from("checkins").insert({
       user_id: sessionUserId,
@@ -511,16 +623,8 @@ export default function PublicProfileView({ username }: { username: string }) {
       alert(error.message);
       return;
     }
-    const start = `${year}-01-01T00:00:00.000Z`;
-    const end = `${year + 1}-01-01T00:00:00.000Z`;
-    const { data } = await supabase
-      .from("checkins")
-      .select("id, beer_name, rating, created_at, day_period, city, district, location_text, price_try, note, media_url, media_type")
-      .eq("user_id", sessionUserId)
-      .gte("created_at", start)
-      .lt("created_at", end)
-      .order("created_at", { ascending: false });
-    setCheckins((data as CheckinRow[] | null) ?? []);
+    const refreshed = await fetchYearCheckins(sessionUserId, year);
+    setCheckins((refreshed.data as CheckinRow[] | null) ?? []);
     await supabase.rpc("refresh_my_badges");
     await loadBadgesForUser(sessionUserId);
   }
@@ -558,7 +662,7 @@ export default function PublicProfileView({ username }: { username: string }) {
   if (loading) {
     return (
       <main className="min-h-screen max-w-md mx-auto p-4">
-        <div className="text-sm opacity-70">Profil yukleniyor...</div>
+        <div className="text-sm opacity-70">{tx(lang, "Profil yukleniyor...", "Loading profile...")}</div>
       </main>
     );
   }
@@ -567,7 +671,7 @@ export default function PublicProfileView({ username }: { username: string }) {
     return (
       <main className="min-h-screen max-w-md mx-auto p-4">
         <Link href="/" className="text-xs underline opacity-80">
-          Ana sayfaya don
+          {tx(lang, "Ana sayfaya don", "Back to home")}
         </Link>
         <div className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/10 p-3 text-sm">
           {errorText ?? "Profil bulunamadi."}
@@ -591,23 +695,43 @@ export default function PublicProfileView({ username }: { username: string }) {
             ) : null}
           </div>
           <div>
-          <div className="text-xs opacity-70">Birader Profil</div>
+          <div className="text-xs opacity-70">{tx(lang, "Birader Profil", "Birader Profile")}</div>
           <h1 className="text-2xl font-bold">{shownName}</h1>
           <div className="text-xs opacity-70">@{profile.username}</div>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setLang("tr")}
+              className={`rounded-md border px-2 py-0.5 text-[10px] ${
+                lang === "tr" ? "border-amber-300/35 bg-amber-500/15" : "border-white/15 bg-white/5"
+              }`}
+            >
+              TR
+            </button>
+            <button
+              type="button"
+              onClick={() => setLang("en")}
+              className={`rounded-md border px-2 py-0.5 text-[10px] ${
+                lang === "en" ? "border-amber-300/35 bg-amber-500/15" : "border-white/15 bg-white/5"
+              }`}
+            >
+              EN
+            </button>
+          </div>
           {isOwnProfile ? (
             <button
               type="button"
               onClick={() => setEditOpen((v) => !v)}
               className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
             >
-              {editOpen ? "Kapat" : "Edit profile"}
+              {editOpen ? tx(lang, "Kapat", "Close") : tx(lang, "Edit profile", "Edit profile")}
             </button>
           ) : null}
           <Link href="/" className="text-xs underline opacity-80">
-            Ana sayfa
+            {tx(lang, "Ana sayfa", "Home")}
           </Link>
         </div>
       </div>
@@ -616,7 +740,7 @@ export default function PublicProfileView({ username }: { username: string }) {
 
       {isOwnProfile && editOpen ? (
         <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
-          <div className="text-sm opacity-80">Profil ayarlari</div>
+          <div className="text-sm opacity-80">{tx(lang, "Profil ayarlari", "Profile settings")}</div>
           <div className="mt-2 flex items-center gap-3">
             <div className="h-14 w-14 overflow-hidden rounded-full border border-white/15 bg-black/30">
               {profile.avatar_path ? (
@@ -625,7 +749,7 @@ export default function PublicProfileView({ username }: { username: string }) {
               ) : null}
             </div>
             <label className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs cursor-pointer">
-              {avatarUploading ? "Yukleniyor..." : "Avatar yukle"}
+              {avatarUploading ? tx(lang, "Yukleniyor...", "Uploading...") : tx(lang, "Avatar yukle", "Upload avatar")}
               <input
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
@@ -636,16 +760,36 @@ export default function PublicProfileView({ username }: { username: string }) {
           </div>
           <div className="mt-2 grid gap-2">
             <input
+              value={editUsername}
+              onChange={(e) => setEditUsername(e.target.value)}
+              maxLength={24}
+              placeholder={tx(lang, "login nick (benzersiz)", "login nick (unique)")}
+              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+            />
+            <input
+              value={editLoginEmail}
+              onChange={(e) => setEditLoginEmail(e.target.value)}
+              placeholder={tx(lang, "login e-posta", "login e-mail")}
+              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+            />
+            <div className="text-[11px] opacity-65">
+              {tx(
+                lang,
+                "E-posta degisimi Supabase tarafinda dogrulama isteyebilir.",
+                "E-mail change may require confirmation on Supabase side."
+              )}
+            </div>
+            <input
               value={editDisplayName}
               onChange={(e) => setEditDisplayName(e.target.value)}
               maxLength={32}
-              placeholder="gorunen isim"
+              placeholder={tx(lang, "gorunen nick", "display nick")}
               className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
             />
             <input
               value={editBio}
               onChange={(e) => setEditBio(e.target.value)}
-              placeholder="kisa bio (opsiyonel)"
+              placeholder={tx(lang, "kisa bio (opsiyonel)", "short bio (optional)")}
               className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
             />
             <label className="flex items-center gap-2 text-xs opacity-80">
@@ -654,10 +798,10 @@ export default function PublicProfileView({ username }: { username: string }) {
                 checked={editIsPublic}
                 onChange={(e) => setEditIsPublic(e.target.checked)}
               />
-              Profil herkese acik
+              {tx(lang, "Profil herkese acik", "Public profile")}
             </label>
             <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-              <div className="text-xs opacity-70">Grid renk geçisi</div>
+              <div className="text-xs opacity-70">{tx(lang, "Grid renk gecisi", "Grid color gradient")}</div>
               <div className="mt-2 flex items-center gap-2">
                 <select
                   value={`${gridColorFrom}|${gridColorTo}`}
@@ -695,12 +839,12 @@ export default function PublicProfileView({ username }: { username: string }) {
               disabled={savingProfile}
               className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm"
             >
-              {savingProfile ? "Kaydediliyor..." : "Profili kaydet"}
+              {savingProfile ? tx(lang, "Kaydediliyor...", "Saving...") : tx(lang, "Profili kaydet", "Save profile")}
             </button>
           </div>
 
           <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
-            <div className="text-xs opacity-70">Favoriler (en fazla 3)</div>
+            <div className="text-xs opacity-70">{tx(lang, "Favoriler (en fazla 3)", "Favorites (max 3)")}</div>
             <div className="mt-2 flex flex-wrap gap-2">
               {favorites.map((f) => (
                 <button
@@ -708,12 +852,12 @@ export default function PublicProfileView({ username }: { username: string }) {
                   type="button"
                   onClick={() => void removeFavoriteFromProfile(Number(f.rank))}
                   className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs"
-                  title="Kaldir"
+                  title={tx(lang, "Kaldir", "Remove")}
                 >
                   #{f.rank} {f.beer_name} ×
                 </button>
               ))}
-              {!favorites.length ? <div className="text-xs opacity-60">Henuz favori yok.</div> : null}
+              {!favorites.length ? <div className="text-xs opacity-60">{tx(lang, "Henuz favori yok.", "No favorites yet.")}</div> : null}
             </div>
             <div className="mt-2 rounded-xl border border-white/10 bg-black/30 p-2">
               <input
@@ -734,7 +878,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                   </button>
                 ))}
                 {filteredFavoriteOptions.length === 0 ? (
-                  <div className="text-xs opacity-60">Oneri yok, yazarak ekleyebilirsin.</div>
+                  <div className="text-xs opacity-60">{tx(lang, "Oneri yok, yazarak ekleyebilirsin.", "No suggestions, you can type and add.")}</div>
                 ) : null}
               </div>
               <button
@@ -742,7 +886,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                 onClick={() => void addFavoriteFromProfile()}
                 className="mt-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm"
               >
-                Yazdigimi favoriye ekle
+                {tx(lang, "Yazdigimi favoriye ekle", "Add typed value to favorites")}
               </button>
             </div>
           </div>
@@ -751,10 +895,10 @@ export default function PublicProfileView({ username }: { username: string }) {
 
       <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
         <div className="grid grid-cols-2 gap-2 text-sm">
-          <div className="rounded-xl border border-white/10 bg-black/20 p-2">Ortalama: {avg.toFixed(2)}⭐</div>
-          <div className="rounded-xl border border-white/10 bg-black/20 p-2">{year} log: {checkins.length}</div>
-          <div className="rounded-xl border border-white/10 bg-black/20 p-2">Takipci: {followers}</div>
-          <div className="rounded-xl border border-white/10 bg-black/20 p-2">Takip: {following}</div>
+          <div className="rounded-xl border border-white/10 bg-black/20 p-2">{tx(lang, "Ortalama", "Average")}: {avg.toFixed(2)}⭐</div>
+          <div className="rounded-xl border border-white/10 bg-black/20 p-2">{year} {tx(lang, "log", "logs")}: {checkins.length}</div>
+          <div className="rounded-xl border border-white/10 bg-black/20 p-2">{tx(lang, "Takipci", "Followers")}: {followers}</div>
+          <div className="rounded-xl border border-white/10 bg-black/20 p-2">{tx(lang, "Takip", "Following")}: {following}</div>
         </div>
 
         {sessionUserId && sessionUserId !== profile.user_id ? (
@@ -764,35 +908,35 @@ export default function PublicProfileView({ username }: { username: string }) {
               onClick={() => void toggleFollow()}
               className="w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm"
             >
-              {isFollowing ? "Takibi birak" : "Takip et"}
+              {isFollowing ? tx(lang, "Takibi birak", "Unfollow") : tx(lang, "Takip et", "Follow")}
             </button>
-            {followsMe ? <div className="mt-2 text-xs text-amber-200/85">Seni takip ediyor</div> : null}
+            {followsMe ? <div className="mt-2 text-xs text-amber-200/85">{tx(lang, "Seni takip ediyor", "Follows you")}</div> : null}
           </div>
         ) : null}
       </section>
 
       <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
-        <div className="text-sm opacity-80">Favoriler</div>
+        <div className="text-sm opacity-80">{tx(lang, "Favoriler", "Favorites")}</div>
         <div className="mt-2 flex flex-wrap gap-2">
           {favorites.map((f) => (
             <div key={f.rank} className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs">
               #{f.rank} {f.beer_name}
             </div>
           ))}
-          {!favorites.length ? <div className="text-xs opacity-60">Favori secilmemis.</div> : null}
+          {!favorites.length ? <div className="text-xs opacity-60">{tx(lang, "Favori secilmemis.", "No favorites selected.")}</div> : null}
         </div>
       </section>
 
       <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="text-sm opacity-80">Isi haritasi ({year})</div>
+          <div className="text-sm opacity-80">{tx(lang, "Isi haritasi", "Heatmap")} ({year})</div>
           <div className="flex items-center gap-2">
             <select
               value={heatmapMode}
               onChange={(e) => setHeatmapMode(e.target.value as "football" | "grid")}
               className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
             >
-              <option value="football">Saha</option>
+              <option value="football">{tx(lang, "Saha", "Field")}</option>
               <option value="grid">Grid</option>
             </select>
             {heatmapMode === "grid" ? (
@@ -802,9 +946,9 @@ export default function PublicProfileView({ username }: { username: string }) {
                   onChange={(e) => setGridCellMetric(e.target.value as "color" | "count" | "avgRating")}
                   className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
                 >
-                  <option value="color">Renk</option>
-                  <option value="count">Sayi</option>
-                  <option value="avgRating">Ortalama ⭐</option>
+                <option value="color">{tx(lang, "Renk", "Color")}</option>
+                <option value="count">{tx(lang, "Sayi", "Count")}</option>
+                <option value="avgRating">{tx(lang, "Ortalama ⭐", "Average ⭐")}</option>
                 </select>
                 <select
                   value={`${gridColorFrom}|${gridColorTo}`}
@@ -838,7 +982,7 @@ export default function PublicProfileView({ username }: { username: string }) {
           </div>
         </div>
         {heatmapMode === "football" ? (
-          <FootballHeatmap year={year} checkins={checkins} onSelectDay={(d) => isOwnProfile && setSelectedDay(d)} />
+          <FootballHeatmap year={year} checkins={checkins} onSelectDay={(d) => isOwnProfile && setSelectedDay(d)} lang={lang} />
         ) : (
           <FieldHeatmap
             year={year}
@@ -848,12 +992,13 @@ export default function PublicProfileView({ username }: { username: string }) {
             cellMetric={gridCellMetric}
             colorFrom={gridColorFrom}
             colorTo={gridColorTo}
+            lang={lang}
           />
         )}
       </section>
 
       <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
-        <div className="text-sm opacity-80">Son check-in'ler</div>
+        <div className="text-sm opacity-80">{tx(lang, "Son check-in'ler", "Recent check-ins")}</div>
         <div className="mt-2 space-y-2">
           {checkins.slice(0, 10).map((c) => (
             <div key={c.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
@@ -886,12 +1031,12 @@ export default function PublicProfileView({ username }: { username: string }) {
               ) : null}
             </div>
           ))}
-          {!checkins.length ? <div className="text-xs opacity-60">Bu yil check-in yok.</div> : null}
+          {!checkins.length ? <div className="text-xs opacity-60">{tx(lang, "Bu yil check-in yok.", "No check-ins this year.")}</div> : null}
         </div>
       </section>
 
       <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
-        <div className="text-sm opacity-80">Stereotip rozetler / Stereotype badges</div>
+        <div className="text-sm opacity-80">{tx(lang, "Stereotip rozetler", "Stereotype badges")}</div>
         <div className="mt-2 flex flex-wrap gap-2">
           {stereotypeBadges.map((b) => (
             <div key={b.badge_key} className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
@@ -899,7 +1044,7 @@ export default function PublicProfileView({ username }: { username: string }) {
               <div className="opacity-75">{b.title_en}</div>
             </div>
           ))}
-          {!stereotypeBadges.length ? <div className="text-xs opacity-60">Henüz stereotip rozet yok.</div> : null}
+          {!stereotypeBadges.length ? <div className="text-xs opacity-60">{tx(lang, "Henüz stereotip rozet yok.", "No stereotype badges yet.")}</div> : null}
         </div>
       </section>
 
@@ -909,6 +1054,7 @@ export default function PublicProfileView({ username }: { username: string }) {
           day={selectedDay ?? ""}
           checkins={dayCheckins}
           beerOptions={beerOptions}
+          lang={lang}
           onClose={() => setSelectedDay(null)}
           onAdd={addCheckinOnDay}
           onDelete={deleteCheckinOnDay}

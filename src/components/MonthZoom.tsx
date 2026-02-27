@@ -1,11 +1,19 @@
 "use client";
 
+import type { AppLang } from "@/lib/i18n";
+
 type CheckinLite = { created_at: string };
 
 const MONTHS_TR = [
   "Ocak","Şubat","Mart","Nisan","Mayıs","Haziran",
   "Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"
 ];
+const MONTHS_EN = [
+  "January","February","March","April","May","June",
+  "July","August","September","October","November","December"
+];
+const DOW_TR = ["Pzt","Sal","Çar","Per","Cum","Cmt","Paz"];
+const DOW_EN = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
 function isoDay(d: Date) {
   const y = d.getFullYear();
@@ -30,6 +38,7 @@ export default function MonthZoom({
   onClose,
   onSelectDay,
   selectedDay,
+  lang = "tr",
 }: {
   open: boolean;
   year: number;
@@ -38,6 +47,7 @@ export default function MonthZoom({
   onClose: () => void;
   onSelectDay: (iso: string) => void;
   selectedDay: string | null;
+  lang?: AppLang;
 }) {
   if (!open) return null;
 
@@ -76,21 +86,21 @@ return (
         </button>
 
         <div className="text-base font-medium tracking-wide">
-          {MONTHS_TR[monthIndex]} {year}
+          {(lang === "en" ? MONTHS_EN : MONTHS_TR)[monthIndex]} {year}
         </div>
 
         <button
           onClick={() => onSelectDay(isoDay(new Date()))}
           className="h-9 px-3 rounded-xl border border-white/10 bg-white/5 text-sm active:scale-[0.98]"
         >
-          bugün
+          {lang === "en" ? "Today" : "bugun"}
         </button>
       </div>
 
       {/* WEEKDAYS + GRID */}
       <div className="mt-6">
         <div className="grid grid-cols-7 gap-2 text-[11px] opacity-70 mb-2">
-          {["Pzt","Sal","Çar","Per","Cum","Cmt","Paz"].map((d) => (
+          {(lang === "en" ? DOW_EN : DOW_TR).map((d) => (
             <div key={d} className="text-center">{d}</div>
           ))}
         </div>
@@ -109,6 +119,7 @@ return (
               const count = counts[day] || 0;
               const isToday = day === todayIso;
               const isSelected = selectedDay === day;
+              const isFuture = day > todayIso;
 
               const borderClass = isToday
                 ? "border-white/40"
@@ -121,9 +132,10 @@ return (
               return (
                 <button
                   key={day}
-                  onClick={() => onSelectDay(day)}
-                  className={`relative aspect-square rounded-2xl border ${borderClass} ${ringClass} ${colorByCount(count)} active:scale-[0.98]`}
-                  title={`${day} • ${count} bira`}
+                  onClick={() => !isFuture && onSelectDay(day)}
+                  disabled={isFuture}
+                  className={`relative aspect-square rounded-2xl border ${borderClass} ${ringClass} ${isFuture ? "bg-white/5 opacity-60" : colorByCount(count)} ${isFuture ? "" : "active:scale-[0.98]"}`}
+                  title={`${day} • ${count} ${lang === "en" ? "beers" : "bira"}${isFuture ? (lang === "en" ? " • Future (locked)" : " • Gelecek (kilitli)") : ""}`}
                 >
                   <div className="absolute left-2 top-2 text-xs opacity-80">
                     {Number(day.slice(8, 10))}
@@ -145,4 +157,3 @@ return (
   </div>
 );
 }
-

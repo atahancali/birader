@@ -17,11 +17,12 @@ import { TURKEY_CITIES, districtsForCity } from "@/lib/trLocations";
 import { DAY_PERIOD_OPTIONS, dayPeriodLabelEn, dayPeriodLabelTr, type DayPeriod } from "@/lib/dayPeriod";
 import { HEATMAP_PALETTES } from "@/lib/heatmapTheme";
 import { getExperimentVariant } from "@/lib/ab";
-import { t, type AppLang } from "@/lib/i18n";
+import { t, tx } from "@/lib/i18n";
+import { useAppLang } from "@/lib/appLang";
 
 const SocialPanel = dynamic(() => import("@/components/SocialPanel"), {
   ssr: false,
-  loading: () => <div className="mt-6 text-xs opacity-60">Sosyal yukleniyor...</div>,
+  loading: () => <div className="mt-6 text-xs opacity-60">Sosyal yukleniyor... / Loading social...</div>,
 });
 
 type Checkin = {
@@ -83,10 +84,13 @@ const ONBOARDING_SEEN_KEY = "birader:onboarding:v1";
 const PENDING_COMPLIANCE_KEY = "birader:pending-compliance:v1";
 const LOG_SUBMIT_COOLDOWN_MS = 10_000;
 const HEATMAP_THEME_KEY = "birader:heatmap-theme:v1";
-const LANG_KEY = "birader:lang:v1";
 const REFERRAL_KEY = "birader:pending-referral:v1";
 const OFFLINE_LOG_QUEUE_KEY = "birader:offline-log-queue:v1";
 const TUTORIAL_DONE_KEY = "birader:tutorial-done:v1";
+const CHECKINS_SELECT_WITH_MEDIA =
+  "id, beer_name, rating, created_at, day_period, country_code, city, district, location_text, price_try, note, latitude, longitude, media_url, media_type";
+const CHECKINS_SELECT_BASE =
+  "id, beer_name, rating, created_at, day_period, country_code, city, district, location_text, price_try, note, latitude, longitude";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -259,6 +263,11 @@ function inferMediaType(urlRaw: string) {
   return "image";
 }
 
+function isMissingMediaColumnError(error: any) {
+  const msg = String(error?.message || "").toLowerCase();
+  return msg.includes("does not exist") && (msg.includes("media_url") || msg.includes("media_type"));
+}
+
 function normalizeTR(input: string) {
   return input
     .toLowerCase()
@@ -425,6 +434,7 @@ function ComboboxBeer({
   options,
   value,
   onChange,
+  lang,
 }: {
   formatLabel: string;
   query: string;
@@ -433,6 +443,7 @@ function ComboboxBeer({
   options: string[];
   value: string;
   onChange: (v: string) => void;
+  lang: "tr" | "en";
 }) {
   const [open, setOpen] = useState(false);
 
@@ -451,7 +462,7 @@ function ComboboxBeer({
     <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
       {pinned.length > 0 && (
         <div className="mb-2">
-          <div className="mb-2 text-[11px] opacity-60">★ En çok içtiklerin</div>
+          <div className="mb-2 text-[11px] opacity-60">{tx(lang, "★ En cok ictiklerin", "★ Most consumed")}</div>
           <div className="flex flex-wrap gap-2">
             {pinned.slice(0, 6).map((b) => {
               const active = b === value;
@@ -481,7 +492,7 @@ function ComboboxBeer({
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
-          placeholder={`${formatLabel} için ara... (örn. efes, 330)`}
+          placeholder={tx(lang, `${formatLabel} icin ara... (orn. efes, 330)`, `Search in ${formatLabel}... (e.g. efes, 330)`)}
           className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm outline-none focus:border-white/25"
         />
         <button
@@ -489,12 +500,12 @@ function ComboboxBeer({
           onClick={() => setOpen((v) => !v)}
           className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs"
         >
-          {open ? "Kapat" : "Aç"}
+          {open ? tx(lang, "Kapat", "Close") : tx(lang, "Ac", "Open")}
         </button>
       </div>
 
       <div className="mt-2 text-xs opacity-70">
-        Seçili: <span className="opacity-90">{value || "—"}</span>
+        {tx(lang, "Secili", "Selected")}: <span className="opacity-90">{value || "—"}</span>
       </div>
 
       {open && (
@@ -509,11 +520,11 @@ function ComboboxBeer({
               }}
               className="mb-2 w-full rounded-lg border border-amber-300/30 bg-amber-500/10 px-2 py-2 text-left text-sm"
             >
-              Listede yok, bunu kullan: {customCandidate}
+              {tx(lang, "Listede yok, bunu kullan", "Not in list, use this")}: {customCandidate}
             </button>
           ) : null}
           {merged.length === 0 ? (
-            <div className="px-2 py-2 text-sm opacity-60">Sonuç yok.</div>
+            <div className="px-2 py-2 text-sm opacity-60">{tx(lang, "Sonuc yok.", "No results.")}</div>
           ) : (
             merged.map((b) => (
               <button
@@ -637,7 +648,7 @@ export default function Home() {
         }
         const age = ageFromBirthDate(signupBirthDate);
         if (age < 18) {
-          alert("Birader 18+ kullanicilar icindir.");
+          alert(tx(lang, "Birader 18+ kullanicilar icindir.", "Birader is for 18+ users."));
           return;
         }
         if (!signupTermsAccepted || !signupPrivacyAccepted || !signupCommercialAccepted) {
@@ -803,7 +814,7 @@ export default function Home() {
   const [headerProfile, setHeaderProfile] = useState<HeaderProfile | null>(null);
   const [pwaPromptEvent, setPwaPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [pwaInstallOpen, setPwaInstallOpen] = useState(false);
-  const [lang, setLang] = useState<AppLang>("tr");
+  const { lang, setLang } = useAppLang("tr");
   const [abOnboardingVariant, setAbOnboardingVariant] = useState<"A" | "B">("A");
   const [tutorialOpen, setTutorialOpen] = useState(false);
   const [tutorialStepIdx, setTutorialStepIdx] = useState(0);
@@ -904,18 +915,9 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(LANG_KEY);
-      if (saved === "tr" || saved === "en") setLang(saved);
-    } catch {}
     setAbOnboardingVariant(getExperimentVariant("onboarding-copy-v1"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(LANG_KEY, lang);
-    } catch {}
-  }, [lang]);
 
   useEffect(() => {
     try {
@@ -981,19 +983,33 @@ export default function Home() {
     const start = `${year}-01-01T00:00:00.000Z`;
     const end = `${year + 1}-01-01T00:00:00.000Z`;
 
-    const { data, error } = await supabase
+    const withMedia = await supabase
       .from("checkins")
-      .select("id, beer_name, rating, created_at, day_period, country_code, city, district, location_text, price_try, note, latitude, longitude, media_url, media_type")
+      .select(CHECKINS_SELECT_WITH_MEDIA)
       .eq("user_id", session.user.id)
       .gte("created_at", start)
       .lt("created_at", end)
       .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error(error);
+    if (!withMedia.error) {
+      setCheckins((withMedia.data as any) ?? []);
       return;
     }
-    setCheckins((data as any) ?? []);
+    if (!isMissingMediaColumnError(withMedia.error)) {
+      console.error(withMedia.error);
+      return;
+    }
+    const fallback = await supabase
+      .from("checkins")
+      .select(CHECKINS_SELECT_BASE)
+      .eq("user_id", session.user.id)
+      .gte("created_at", start)
+      .lt("created_at", end)
+      .order("created_at", { ascending: false });
+    if (fallback.error) {
+      console.error(fallback.error);
+      return;
+    }
+    setCheckins((((fallback.data as any[]) ?? []).map((c) => ({ ...c, media_url: null, media_type: null })) as any) ?? []);
   }
 
   async function loadFavorites() {
@@ -1732,7 +1748,7 @@ export default function Home() {
     });
     setSuggestionBusy(false);
     if (error) {
-      alert(`Oneri gonderilemedi: ${error.message}`);
+      alert(`${tx(lang, "Oneri gonderilemedi", "Suggestion failed")}: ${error.message}`);
       return;
     }
     trackEvent({
@@ -1834,7 +1850,7 @@ export default function Home() {
     const { error } = await supabase.rpc("refresh_all_user_badges");
     setBadgeRefreshBusy(false);
     if (error) {
-      alert(`Rozetler yenilenemedi: ${error.message}`);
+      alert(`${tx(lang, "Rozetler yenilenemedi", "Badges refresh failed")}: ${error.message}`);
       return;
     }
     await loadMyBadges();
@@ -1976,7 +1992,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     const targets = isBackDate && batchBeerNames.length > 0 ? batchBeerNames : name ? [name] : [];
     if (!targets.length) return;
     if (dateISO > today) {
-      alert("Bugunden sonraki tarihe log atilamaz.");
+      alert(tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."));
       return;
     }
     if (isBackDate && targets.length > 1 && !batchConfirmed) {
@@ -2020,7 +2036,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           media_url: normalizedMediaUrl || "",
           media_type: normalizedMediaType || "",
         }));
-        const { error } = await supabase.from("checkins").insert(rows);
+        let { error } = await supabase.from("checkins").insert(rows);
+        if (error && isMissingMediaColumnError(error)) {
+          const rowsWithoutMedia = rows.map(({ media_url, media_type, ...rest }) => rest);
+          const retry = await supabase.from("checkins").insert(rowsWithoutMedia);
+          error = retry.error;
+        }
 
         if (!error) {
           const favoriteTargets = Array.from(
@@ -2136,17 +2157,17 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     return (
       <main className="min-h-screen p-4 max-w-md mx-auto">
         <h1 className="text-2xl font-bold">Birader</h1>
-        <p className="text-sm opacity-80 mt-1">Bugün ne içtin?</p>
+        <p className="text-sm opacity-80 mt-1">{tx(lang, "Bugün ne içtin?", "What did you drink today?")}</p>
 
         <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
           <div className="flex items-center justify-between">
-            <div className="text-sm opacity-80">{authMode === "login" ? "Giriş" : "Kayıt ol"}</div>
+            <div className="text-sm opacity-80">{authMode === "login" ? tx(lang, "Giriş", "Sign in") : tx(lang, "Kayıt ol", "Sign up")}</div>
             <button
               className="text-xs underline opacity-70"
               onClick={() => setAuthMode((m) => (m === "login" ? "signup" : "login"))}
               type="button"
             >
-              {authMode === "login" ? "Kayıt ol" : "Giriş yap"}
+              {authMode === "login" ? tx(lang, "Kayıt ol", "Sign up") : tx(lang, "Giriş yap", "Sign in")}
             </button>
           </div>
 
@@ -2155,7 +2176,9 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               value={authIdentifier}
               onChange={(e) => setAuthIdentifier(e.target.value)}
               placeholder={
-                authMode === "login" ? "kullanıcı adı veya e-posta" : "e-posta (ör. ati@birader.app)"
+                authMode === "login"
+                  ? tx(lang, "kullanıcı adı veya e-posta", "username or e-mail")
+                  : tx(lang, "e-posta (ör. ati@birader.app)", "e-mail (e.g. ati@birader.app)")
               }
               className="w-full rounded-2xl bg-black/20 border border-white/10 px-3 py-3 outline-none"
               autoCapitalize="none"
@@ -2190,7 +2213,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     checked={signupTermsAccepted}
                     onChange={(e) => setSignupTermsAccepted(e.target.checked)}
                   />
-                  Kullanim kosullarini kabul ediyorum (zorunlu).
+                  {tx(lang, "Kullanim kosullarini kabul ediyorum (zorunlu).", "I accept terms of use (required).")}
                 </label>
                 <label className="flex items-start gap-2 text-xs opacity-80">
                   <input
@@ -2198,7 +2221,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     checked={signupPrivacyAccepted}
                     onChange={(e) => setSignupPrivacyAccepted(e.target.checked)}
                   />
-                  KVKK / gizlilik aydinlatmasini kabul ediyorum (zorunlu).
+                  {tx(lang, "KVKK / gizlilik aydinlatmasini kabul ediyorum (zorunlu).", "I accept privacy policy (required).")}
                 </label>
                 <label className="flex items-start gap-2 text-xs opacity-80">
                   <input
@@ -2206,7 +2229,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     checked={signupCommercialAccepted}
                     onChange={(e) => setSignupCommercialAccepted(e.target.checked)}
                   />
-                  Ticari elektronik ileti onay metnini okudum (zorunlu).
+                  {tx(lang, "Ticari elektronik ileti onay metnini okudum (zorunlu).", "I accept commercial consent text (required).")}
                 </label>
                 <label className="flex items-start gap-2 text-xs opacity-75">
                   <input
@@ -2214,14 +2237,14 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     checked={signupMarketingOptIn}
                     onChange={(e) => setSignupMarketingOptIn(e.target.checked)}
                   />
-                  Kampanya/duyuru iletisi almak istiyorum (opsiyonel).
+                  {tx(lang, "Kampanya/duyuru iletisi almak istiyorum (opsiyonel).", "I want marketing messages (optional).")}
                 </label>
               </>
             ) : null}
             <input
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="şifre"
+              placeholder={tx(lang, "şifre", "password")}
               type="password"
               className="w-full rounded-2xl bg-black/20 border border-white/10 px-3 py-3 outline-none"
             />
@@ -2232,12 +2255,15 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             disabled={authBusy}
             className="mt-3 w-full rounded-2xl bg-white text-black py-3 font-semibold active:scale-[0.99] disabled:opacity-50"
           >
-            {authBusy ? "..." : authMode === "login" ? "Giriş yap" : "Hesap oluştur"}
+            {authBusy ? "..." : authMode === "login" ? tx(lang, "Giriş yap", "Sign in") : tx(lang, "Hesap oluştur", "Create account")}
           </button>
 
           <p className="mt-3 text-xs opacity-60">
-            Not: Kayıt e-posta ile yapılır. Girişte e-posta veya kullanıcı adı kullanabilirsin.
-            Eski <code>@birader.local</code> hesaplar girişte otomatik desteklenir.
+            {tx(
+              lang,
+              "Not: Kayıt e-posta ile yapılır. Girişte e-posta veya kullanıcı adı kullanabilirsin. Eski @birader.local hesaplar girişte otomatik desteklenir.",
+              "Note: Signup uses e-mail. You can sign in with e-mail or username. Legacy @birader.local accounts are auto-supported."
+            )}
           </p>
         </div>
 
@@ -2247,6 +2273,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           onSelectDay={(d) => setSelectedDay(d)}
           colorFrom={gridColorFrom}
           colorTo={gridColorTo}
+          lang={lang}
         />
 
         <DayModal
@@ -2254,6 +2281,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           day={selectedDay ?? ""}
           checkins={dayCheckins}
           beerOptions={allBeerLabels}
+          lang={lang}
           onOpenLogForDay={(d) => {
             setDateISO(d);
             setActiveSection("log");
@@ -2264,7 +2292,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           onClose={() => setSelectedDay(null)}
           onAdd={async ({ day, beer_name, rating }) => {
             if (day > today) {
-              alert("Bugunden sonraki tarihe log atilamaz.");
+              alert(tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."));
               return;
             }
             if (!beginLogMutation()) return;
@@ -2339,7 +2367,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             <div className="h-8 w-8 overflow-hidden rounded-full border border-white/20 bg-black/40">
               {headerAvatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={headerAvatarUrl} alt="profil avatar" className="h-full w-full object-cover" />
+                <img src={headerAvatarUrl} alt={tx(lang, "profil avatar", "profile avatar")} className="h-full w-full object-cover" />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-[10px] opacity-70">
                   :)
@@ -2348,7 +2376,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             </div>
             <div className="max-w-[120px] truncate text-xs text-amber-100">
               {(headerProfile?.display_name || "").trim() ||
-                `@${headerProfile?.username || usernameFromEmail(session?.user?.email) || "kullanici"}`}
+                `@${headerProfile?.username || usernameFromEmail(session?.user?.email) || tx(lang, "kullanici", "user")}`}
             </div>
           </Link>
 
@@ -2362,7 +2390,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             href="/yardim"
             className="rounded-md border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/80"
           >
-            Yardim
+            {t(lang, "nav_help")}
           </Link>
         </div>
       </div>
@@ -2371,7 +2399,9 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         <div className="flex items-center justify-between gap-2">
           <div>
             <div className="text-xs text-amber-200/85">Birader Mobile</div>
-            <div className="text-[11px] opacity-70">iOS/Android uygulama linkleri ve web app kurulumu</div>
+            <div className="text-[11px] opacity-70">
+              {tx(lang, "iOS/Android uygulama linkleri ve web app kurulumu", "iOS/Android app links and web app install")}
+            </div>
           </div>
           {pwaPromptEvent ? (
             <button
@@ -2405,7 +2435,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         ) : null}
         {referralLink ? (
           <div className="mt-2 rounded-lg border border-white/10 bg-black/25 p-2">
-            <div className="text-[11px] opacity-70">Davet linkin</div>
+            <div className="text-[11px] opacity-70">{tx(lang, "Davet linkin", "Your invite link")}</div>
             <div className="mt-1 flex items-center gap-2">
               <input
                 value={referralLink}
@@ -2420,7 +2450,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 }}
                 className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
               >
-                Kopyala
+                {tx(lang, "Kopyala", "Copy")}
               </button>
             </div>
           </div>
@@ -2435,7 +2465,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             }}
             className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
           >
-            {lang === "en" ? "Start tutorial" : "Tutorial baslat"}
+            {tx(lang, "Tutorial baslat", "Start tutorial")}
           </button>
         </div>
       </section>
@@ -2444,7 +2474,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
         <div className="mb-2 flex items-center justify-between">
           <div className="text-sm text-amber-200">{t(lang, "heading_log")}</div>
-          <div className="text-xs opacity-70">Adım {logStep}/4</div>
+          <div className="text-xs opacity-70">{tx(lang, "Adim", "Step")} {logStep}/4</div>
         </div>
         <div className="mb-4 grid grid-cols-4 gap-2">
           {["Format", "Bira", "Detay", "Onay"].map((label, idx) => {
@@ -2474,7 +2504,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
         {logStep === 1 ? (
           <div>
-            <div className="mb-2 text-xs opacity-70">Sunum tarzını seç</div>
+            <div className="mb-2 text-xs opacity-70">{tx(lang, "Sunum tarzini sec", "Choose serving style")}</div>
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
@@ -2486,8 +2516,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   format === "Fici" ? "border-amber-300/35 bg-amber-500/10" : "border-white/10 bg-black/20"
                 }`}
               >
-                <div className="text-lg font-semibold">Fıçı</div>
-                <div className="mt-1 text-xs opacity-70">Bar / draft deneyimi</div>
+                <div className="text-lg font-semibold">{tx(lang, "Fici", "Draft")}</div>
+                <div className="mt-1 text-xs opacity-70">{tx(lang, "Bar / draft deneyimi", "Bar / draft experience")}</div>
               </button>
               <button
                 type="button"
@@ -2499,8 +2529,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   format === "Şişe/Kutu" ? "border-amber-300/35 bg-amber-500/10" : "border-white/10 bg-black/20"
                 }`}
               >
-                <div className="text-lg font-semibold">Şişe / Kutu</div>
-                <div className="mt-1 text-xs opacity-70">Market / paket seçimleri</div>
+                <div className="text-lg font-semibold">{tx(lang, "Sise / Kutu", "Bottle / Can")}</div>
+                <div className="mt-1 text-xs opacity-70">{tx(lang, "Market / paket secimleri", "Market / package options")}</div>
               </button>
             </div>
           </div>
@@ -2508,7 +2538,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
         {logStep === 2 ? (
           <div>
-            <div className="mb-2 text-xs opacity-70">Biranı seç</div>
+            <div className="mb-2 text-xs opacity-70">{tx(lang, "Birani sec", "Choose your beer")}</div>
             <ComboboxBeer
               formatLabel={format === "Fici" ? "Fıçı" : "Şişe/Kutu"}
               query={beerQuery}
@@ -2517,6 +2547,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               options={beerLabelsForFormat}
               value={beerName}
               onChange={setBeerName}
+              lang={lang}
             />
           </div>
         ) : null}
@@ -2524,7 +2555,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         {logStep === 3 ? (
           <div>
             <div className="mb-3">
-              <label className="block text-xs opacity-70 mb-2">Tarih</label>
+              <label className="block text-xs opacity-70 mb-2">{tx(lang, "Tarih", "Date")}</label>
               <div className="relative">
                 <button
                   type="button"
@@ -2533,7 +2564,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 >
                   <div className="flex items-center justify-between">
                     <span>{dateISO}</span>
-                    <span className="text-white/55">Takvim</span>
+                    <span className="text-white/55">{tx(lang, "Takvim", "Calendar")}</span>
                   </div>
                 </button>
                 {dateOpen ? (
@@ -2554,7 +2585,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                           setDateOpen(false);
                         }}
                       >
-                        Bugün
+                        {tx(lang, "Bugun", "Today")}
                       </button>
                     </div>
                   </div>
@@ -2563,7 +2594,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             </div>
 
             <div className="mb-3">
-              <label className="mb-2 block text-xs opacity-70">Günün vakti / Time of day</label>
+              <label className="mb-2 block text-xs opacity-70">{tx(lang, "Gunun vakti", "Time of day")}</label>
               <select
                 value={dayPeriod}
                 onChange={(e) => setDayPeriod(e.target.value as DayPeriod)}
@@ -2571,14 +2602,14 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               >
                 {DAY_PERIOD_OPTIONS.map((p) => (
                   <option key={p.value} value={p.value}>
-                    {p.tr} / {p.en}
+                    {lang === "en" ? p.en : p.tr}
                   </option>
                 ))}
               </select>
             </div>
 
             <div className="mb-3">
-              <label className="block text-xs opacity-70 mb-2">Puan</label>
+              <label className="block text-xs opacity-70 mb-2">{tx(lang, "Puan", "Rating")}</label>
               <button
                 type="button"
                 onClick={() => setRating((r) => (r === null ? 3.5 : null))}
@@ -2586,13 +2617,13 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   rating === null ? "border-white/30 bg-white/15" : "border-white/10 bg-black/20"
                 }`}
               >
-                {rating === null ? "Puansız log (açık)" : "Puansız log"}
+                {rating === null ? tx(lang, "Puansiz log (acik)", "Unrated log (on)") : tx(lang, "Puansiz log", "Unrated log")}
               </button>
               <StarRatingHalf value={rating} onChange={setRating} />
             </div>
 
             <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
-              <div className="text-xs opacity-80">Opsiyonel detaylar</div>
+              <div className="text-xs opacity-80">{tx(lang, "Opsiyonel detaylar", "Optional details")}</div>
               <div className="mt-2 grid gap-2">
                 <div className="grid grid-cols-2 gap-2">
                   <select
@@ -2622,7 +2653,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   <input
                     value={locationSuggestQuery}
                     onChange={(e) => setLocationSuggestQuery(e.target.value)}
-                    placeholder="Il/ilce onerisi ara (örn: kadikoy, besiktas)"
+                    placeholder={tx(lang, "Il/ilce onerisi ara (orn: kadikoy, besiktas)", "Search city/district suggestion (e.g. kadikoy, besiktas)")}
                     className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
                   />
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -2653,14 +2684,14 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   <input
                     value={customDistrict}
                     onChange={(e) => setCustomDistrict(e.target.value)}
-                    placeholder="Ilce adini yaz"
+                    placeholder={tx(lang, "Ilce adini yaz", "Type district name")}
                     className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
                   />
                 ) : null}
                 <input
                   value={locationText}
                   onChange={(e) => setLocationText(e.target.value)}
-                  placeholder="Mekan/konum notu (opsiyonel)"
+                  placeholder={tx(lang, "Mekan/konum notu (opsiyonel)", "Venue/location note (optional)")}
                   className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
                 />
                 <input
@@ -2672,14 +2703,14 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 <input
                   value={priceText}
                   onChange={(e) => setPriceText(e.target.value)}
-                  placeholder="Fiyat (TL)"
+                  placeholder={tx(lang, "Fiyat (TL)", "Price (TRY)")}
                   inputMode="decimal"
                   className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
                 />
                 <textarea
                   value={logNote}
                   onChange={(e) => setLogNote(e.target.value.slice(0, 220))}
-                  placeholder="Yorum (konum/fiyat/atmosfer notu)"
+                  placeholder={tx(lang, "Yorum (konum/fiyat/atmosfer notu)", "Comment (location/price/atmosphere note)")}
                   rows={3}
                   className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
                 />
@@ -2689,14 +2720,14 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             {isBackDate ? (
               <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs opacity-80">Eski tarih için çoklu log</div>
+                  <div className="text-xs opacity-80">{tx(lang, "Eski tarih icin coklu log", "Bulk log for past dates")}</div>
                 </div>
                 <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
                   <input
                     value={batchCountInput}
                     onChange={(e) => setBatchCountInput(e.target.value.replace(/[^0-9]/g, ""))}
                     inputMode="numeric"
-                    placeholder="Adet"
+                    placeholder={tx(lang, "Adet", "Count")}
                     className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
                   />
                   <button
@@ -2728,15 +2759,15 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       {b} ×
                     </button>
                   ))}
-                  {!batchBeerNames.length ? <div className="text-xs opacity-60">Henüz listede bira yok.</div> : null}
+                  {!batchBeerNames.length ? <div className="text-xs opacity-60">{tx(lang, "Henuz listede bira yok.", "No beers in list yet.")}</div> : null}
                 </div>
                 {batchBeerNames.length > 1 ? (
                   <div className="mt-3 text-xs opacity-70">
-                    Toplu kayit onayi son adimda alinacak.
+                    {tx(lang, "Toplu kayit onayi son adimda alinacak.", "Bulk save confirmation will be requested at the final step.")}
                   </div>
                 ) : null}
                 <div className="mt-2 text-xs opacity-65">
-                  Not: Toplu kayitlar puansiz birakilip sonradan guncellenebilir.
+                  {tx(lang, "Not: Toplu kayitlar puansiz birakilip sonradan guncellenebilir.", "Note: Bulk logs can be left unrated and updated later.")}
                 </div>
               </div>
             ) : null}
@@ -2746,12 +2777,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         {logStep === 4 ? (
           <div>
             <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
-              <div className="text-xs opacity-70">Log özeti</div>
-              <div className="mt-1 text-sm font-semibold">{beerName || "Bira seçilmedi"}</div>
+              <div className="text-xs opacity-70">{tx(lang, "Log ozeti", "Log summary")}</div>
+              <div className="mt-1 text-sm font-semibold">{beerName || tx(lang, "Bira secilmedi", "No beer selected")}</div>
               <div className="mt-1 text-xs opacity-75">Format: {format}</div>
-              <div className="text-xs opacity-75">Tarih: {dateISO}</div>
-              <div className="text-xs opacity-75">Puan: {rating === null ? "Puansız" : `${rating}⭐`}</div>
-              <div className="text-xs opacity-75">Konum: {city}{resolvedDistrict ? ` / ${resolvedDistrict}` : ""}</div>
+              <div className="text-xs opacity-75">{tx(lang, "Tarih", "Date")}: {dateISO}</div>
+              <div className="text-xs opacity-75">{tx(lang, "Puan", "Rating")}: {rating === null ? tx(lang, "Puansiz", "Unrated") : `${rating}⭐`}</div>
+              <div className="text-xs opacity-75">{tx(lang, "Konum", "Location")}: {city}{resolvedDistrict ? ` / ${resolvedDistrict}` : ""}</div>
             </div>
 
             <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
@@ -2761,13 +2792,13 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   checked={favoriteOnSave}
                   onChange={(e) => setFavoriteOnSave(e.target.checked)}
                 />
-                Bu logdaki birayi favorilere ekle
+                {tx(lang, "Bu logdaki birayi favorilere ekle", "Add this beer to favorites")}
               </label>
               {favoriteOnSave &&
               favorites.length >= 3 &&
               !favorites.some((f) => f.beer_name === favoriteCandidate) ? (
                 <div className="mt-2">
-                  <label className="mb-1 block text-xs opacity-70">Degisecek favori</label>
+                  <label className="mb-1 block text-xs opacity-70">{tx(lang, "Degisecek favori", "Favorite to replace")}</label>
                   <select
                     value={replaceFavoriteRank ?? ""}
                     onChange={(e) => setReplaceFavoriteRank(Number(e.target.value))}
@@ -2791,7 +2822,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     checked={batchConfirmed}
                     onChange={(e) => setBatchConfirmed(e.target.checked)}
                   />
-                  Eminim, {batchBeerNames.length} adet kaydi toplu olarak ekle
+                  {tx(lang, "Eminim", "I'm sure")}, {batchBeerNames.length} {tx(lang, "adet kaydi toplu olarak ekle", "records will be added in bulk")}
                 </label>
               </div>
             ) : null}
@@ -2805,7 +2836,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               }
               className="w-full rounded-2xl bg-white text-black py-3 font-semibold active:scale-[0.99] disabled:opacity-50"
             >
-              {isBackDate && batchBeerNames.length > 0 ? `${batchBeerNames.length} birayı kaydet` : "Kaydet"}
+              {isBackDate && batchBeerNames.length > 0 ? `${batchBeerNames.length} ${tx(lang, "birayi kaydet", "save beers")}` : tx(lang, "Kaydet", "Save")}
             </button>
           </div>
         ) : null}
@@ -2817,7 +2848,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             disabled={logStep === 1}
             className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs disabled:opacity-40"
           >
-            Geri
+            {tx(lang, "Geri", "Back")}
           </button>
           <button
             type="button"
@@ -2832,7 +2863,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             }
             className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs disabled:opacity-40"
           >
-            {logStep === 4 ? "Son" : "Ileri"}
+            {logStep === 4 ? tx(lang, "Son", "Last") : tx(lang, "Ileri", "Next")}
           </button>
         </div>
       </section>
@@ -2840,7 +2871,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
       {activeSection === "log" ? (
       <section className="mt-6">
-        <div className="text-sm text-amber-200 mb-2">Son check-in’ler</div>
+        <div className="text-sm text-amber-200 mb-2">{tx(lang, "Son check-in'ler", "Recent check-ins")}</div>
         <div className="space-y-2">
           {checkins.slice(0, recentVisibleCount).map((c) => (
             <div key={c.id} className="rounded-3xl border border-white/10 bg-white/5 p-4">
@@ -2864,12 +2895,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     }}
                     className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
                   >
-                    Tekrar logla
+                    {tx(lang, "Tekrar logla", "Log again")}
                   </button>
                 </div>
               </div>
               <div className="text-xs opacity-70 mt-1">
-                {new Date(c.created_at).toLocaleDateString("tr-TR")} • {dayPeriodLabelTr(c.day_period, c.created_at)} /{" "}
+                {new Date(c.created_at).toLocaleDateString(lang === "en" ? "en-US" : "tr-TR")} • {dayPeriodLabelTr(c.day_period, c.created_at)} /{" "}
                 {dayPeriodLabelEn(c.day_period, c.created_at)}
               </div>
               {c.city ? (
@@ -2887,14 +2918,14 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     <video src={c.media_url || ""} controls className="h-40 w-full object-cover" />
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={c.media_url || ""} alt="checkin medya" className="h-40 w-full object-cover" />
+                    <img src={c.media_url || ""} alt={tx(lang, "checkin medya", "check-in media")} className="h-40 w-full object-cover" />
                   )}
                 </div>
               ) : null}
             </div>
           ))}
           {checkins.length === 0 ? (
-            <div className="text-sm opacity-70">Henüz check-in yok. İlkini gir.</div>
+            <div className="text-sm opacity-70">{tx(lang, "Henuz check-in yok. Ilkini gir.", "No check-ins yet. Add your first one.")}</div>
           ) : null}
         </div>
 
@@ -2905,10 +2936,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             className="mt-3 rounded-2xl border border-white/15 bg-white/10 px-4 py-2 text-sm"
           >
             {recentExpandStep === 0
-              ? "5 tane daha göster"
+              ? tx(lang, "5 tane daha goster", "Show 5 more")
               : recentExpandStep === 1
-                ? "10 tane daha göster"
-                : "Tümünü göster"}
+                ? tx(lang, "10 tane daha goster", "Show 10 more")
+                : tx(lang, "Tumunu goster", "Show all")}
           </button>
         ) : null}
       </section>
@@ -2920,6 +2951,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         sessionEmail={session.user.email}
         allBeerOptions={allBeerLabels}
         onQuickLog={quickLogFromFeed}
+        lang={lang}
       />
       ) : null}
 
@@ -2934,7 +2966,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   onChange={(e) => setHeatmapMode(e.target.value as "football" | "grid")}
                   className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
                 >
-                  <option value="football">Saha</option>
+                  <option value="football">{tx(lang, "Saha", "Field")}</option>
                   <option value="grid">Grid</option>
                 </select>
                 {heatmapMode === "grid" ? (
@@ -2944,9 +2976,9 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       onChange={(e) => setGridCellMetric(e.target.value as "color" | "count" | "avgRating")}
                       className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
                     >
-                      <option value="color">Renk</option>
-                      <option value="count">Sayi</option>
-                      <option value="avgRating">Ortalama ⭐</option>
+                      <option value="color">{tx(lang, "Renk", "Color")}</option>
+                      <option value="count">{tx(lang, "Sayi", "Count")}</option>
+                      <option value="avgRating">{tx(lang, "Ortalama ⭐", "Average ⭐")}</option>
                     </select>
                     <select
                       value={`${gridColorFrom}|${gridColorTo}`}
@@ -2973,7 +3005,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                         setGridColorFrom(next);
                         void saveHeatmapThemeToProfile(next, gridColorTo);
                       }}
-                      title="Gradient baslangic"
+                      title={tx(lang, "Gradient baslangic", "Gradient start")}
                       className="h-8 w-8 rounded border border-white/20 bg-black/20 p-0.5"
                     />
                     <input
@@ -2984,7 +3016,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                         setGridColorTo(next);
                         void saveHeatmapThemeToProfile(gridColorFrom, next);
                       }}
-                      title="Gradient bitis"
+                      title={tx(lang, "Gradient bitis", "Gradient end")}
                       className="h-8 w-8 rounded border border-white/20 bg-black/20 p-0.5"
                     />
                   </>
@@ -2992,7 +3024,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               </div>
             </div>
             {heatmapMode === "football" ? (
-              <FootballHeatmap year={year} checkins={checkins} onSelectDay={(d) => setSelectedDay(d)} />
+              <FootballHeatmap year={year} checkins={checkins} onSelectDay={(d) => setSelectedDay(d)} lang={lang} />
             ) : (
               <FieldHeatmap
                 year={year}
@@ -3001,10 +3033,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 cellMetric={gridCellMetric}
                 colorFrom={gridColorFrom}
                 colorTo={gridColorTo}
+                lang={lang}
               />
             )}
           </section>
-          <GeoHeatmap year={year} checkins={checkins} />
+          <GeoHeatmap year={year} checkins={checkins} lang={lang} />
           <MonthZoom
             open={selectedMonth !== null}
             year={year}
@@ -3013,6 +3046,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             selectedDay={selectedDay}
             onClose={() => setSelectedMonth(null)}
             onSelectDay={(d) => setSelectedDay(d)}
+            lang={lang}
           />
         </>
       ) : null}
@@ -3022,6 +3056,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       day={selectedDay ?? ""}
       checkins={dayCheckins}
       beerOptions={allBeerLabels}
+      lang={lang}
       onOpenLogForDay={(d) => {
         setDateISO(d);
         setActiveSection("log");
@@ -3031,7 +3066,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       onClose={() => setSelectedDay(null)}
       onAdd={async ({ day, beer_name, rating }) => {
         if (day > today) {
-          alert("Bugunden sonraki tarihe log atilamaz.");
+          alert(tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."));
           return;
         }
         if (!beginLogMutation()) return;
@@ -3103,34 +3138,34 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
         <div className="mb-4 grid grid-cols-2 gap-2 text-sm">
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-            Son 7g log: <span className="font-semibold">{weeklyRecap.count}</span>
+            {tx(lang, "Son 7g log", "Last 7d logs")}: <span className="font-semibold">{weeklyRecap.count}</span>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-            Son 7g ort: <span className="font-semibold">{weeklyRecap.avg.toFixed(2)}⭐</span>
+            {tx(lang, "Son 7g ort", "Last 7d avg")}: <span className="font-semibold">{weeklyRecap.avg.toFixed(2)}⭐</span>
           </div>
           <div className="col-span-2 rounded-xl border border-white/10 bg-black/20 p-2">
-            Son 7g top bira: <span className="font-semibold">{weeklyRecap.topBeer}</span>
+            {tx(lang, "Son 7g top bira", "Top beer in last 7d")}: <span className="font-semibold">{weeklyRecap.topBeer}</span>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-            Bu ay log: <span className="font-semibold">{monthComparison.currentLogs}</span>
+            {tx(lang, "Bu ay log", "This month logs")}: <span className="font-semibold">{monthComparison.currentLogs}</span>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-            Gecen aya gore:{" "}
+            {tx(lang, "Gecen aya gore", "Vs previous month")}:{" "}
             <span className={`font-semibold ${monthComparison.deltaLogs >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
               {monthComparison.deltaLogs >= 0 ? "+" : ""}
               {monthComparison.deltaLogs}
             </span>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-            Bu ay ort.: <span className="font-semibold">{monthComparison.currentAvg.toFixed(2)}⭐</span>
+            {tx(lang, "Bu ay ort.", "This month avg")}: <span className="font-semibold">{monthComparison.currentAvg.toFixed(2)}⭐</span>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-            Puansiz oran: <span className="font-semibold">%{monthComparison.unratedShare}</span>
+            {tx(lang, "Puansiz oran", "Unrated share")}: <span className="font-semibold">%{monthComparison.unratedShare}</span>
           </div>
         </div>
 
         <div className="mb-4 rounded-2xl border border-white/10 bg-black/20 p-3">
-          <div className="text-sm text-amber-200">En cok loglanan biralar (Top 5)</div>
+          <div className="text-sm text-amber-200">{tx(lang, "En cok loglanan biralar (Top 5)", "Most logged beers (Top 5)")}</div>
           <div className="mt-2 space-y-2 text-sm">
             {topBeersOverall.map((b, idx) => (
               <div key={b.beer} className="flex items-center justify-between rounded-lg border border-white/10 bg-black/25 px-2 py-1.5">
@@ -3139,18 +3174,18 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   {b.beer}
                 </div>
                 <div className="text-xs opacity-80">
-                  {b.logs} log • {b.avg.toFixed(2)}⭐
+                  {b.logs} {tx(lang, "log", "logs")} • {b.avg.toFixed(2)}⭐
                 </div>
               </div>
             ))}
-            {!topBeersOverall.length ? <div className="text-xs opacity-60">Yeterli veri yok.</div> : null}
+            {!topBeersOverall.length ? <div className="text-xs opacity-60">{tx(lang, "Yeterli veri yok.", "Not enough data.")}</div> : null}
           </div>
         </div>
 
         <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="text-sm text-amber-200">Puan dağılımı (0.5 adım)</div>
+          <div className="text-sm text-amber-200">{tx(lang, "Puan dagilimi (0.5 adim)", "Rating distribution (0.5 step)")}</div>
           <div className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs">
-            Toplam log: {ratingDistribution.total}
+            {tx(lang, "Toplam log", "Total logs")}: {ratingDistribution.total}
           </div>
         </div>
 
@@ -3170,7 +3205,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 onFocus={() => setActiveRatingBucket(b.rating)}
                 onClick={() => setActiveRatingBucket(b.rating)}
                 className="flex min-w-0 flex-col items-center justify-end"
-                title={`${b.rating.toFixed(1)}⭐ • ${b.count} log (${b.percent.toFixed(1)}%)`}
+                title={`${b.rating.toFixed(1)}⭐ • ${b.count} ${tx(lang, "log", "logs")} (${b.percent.toFixed(1)}%)`}
               >
                 <div className={`mb-1 text-[10px] transition-opacity ${isActive ? "opacity-80" : "opacity-0"}`}>
                   {b.count} ({b.percent.toFixed(0)}%)
@@ -3194,29 +3229,29 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         </div>
 
         <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-3">
-          <div className="text-sm text-amber-200">Streak ve davranis analizi</div>
+          <div className="text-sm text-amber-200">{tx(lang, "Streak ve davranis analizi", "Streak and behavior analysis")}</div>
           <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
             <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-              Aktif streak: <span className="font-semibold">{behaviorStats.currentStreak} gun</span>
+              {tx(lang, "Aktif streak", "Current streak")}: <span className="font-semibold">{behaviorStats.currentStreak} {tx(lang, "gun", "days")}</span>
             </div>
             <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-              En iyi streak: <span className="font-semibold">{behaviorStats.maxStreak} gun</span>
+              {tx(lang, "En iyi streak", "Best streak")}: <span className="font-semibold">{behaviorStats.maxStreak} {tx(lang, "gun", "days")}</span>
             </div>
             <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-              Aktif gun: <span className="font-semibold">{behaviorStats.uniqueDays}</span>
+              {tx(lang, "Aktif gun", "Active days")}: <span className="font-semibold">{behaviorStats.uniqueDays}</span>
             </div>
             <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-              Favori gun: <span className="font-semibold">{behaviorStats.dominantWeekday}</span>
+              {tx(lang, "Favori gun", "Favorite day")}: <span className="font-semibold">{behaviorStats.dominantWeekday}</span>
             </div>
             <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-              Gece orani: <span className="font-semibold">%{Math.round(behaviorStats.nightShare * 100)}</span>
+              {tx(lang, "Gece orani", "Night ratio")}: <span className="font-semibold">%{Math.round(behaviorStats.nightShare * 100)}</span>
             </div>
             <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-              Sehir cesidi: <span className="font-semibold">{behaviorStats.uniqueCities}</span>
+              {tx(lang, "Sehir cesidi", "City variety")}: <span className="font-semibold">{behaviorStats.uniqueCities}</span>
             </div>
           </div>
 
-          <div className="mt-3 text-xs opacity-70">Rozetler (beta)</div>
+          <div className="mt-3 text-xs opacity-70">{tx(lang, "Rozetler (beta)", "Badges (beta)")}</div>
           <div className="mt-2 flex flex-wrap gap-2">
             {behaviorStats.badges.map((b) => (
               <div
@@ -3228,7 +3263,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               </div>
             ))}
             {behaviorStats.badges.length === 0 ? (
-              <div className="text-xs opacity-60">Henuz rozet yok. Log arttikca acilacak.</div>
+              <div className="text-xs opacity-60">{tx(lang, "Henuz rozet yok. Log arttikca acilacak.", "No badges yet. They unlock as you log.")}</div>
             ) : null}
           </div>
 
@@ -3244,14 +3279,14 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 <div className="opacity-75">{b.title_en}</div>
               </div>
             ))}
-            {!stereotypeBadges.length ? <div className="text-xs opacity-60">Henüz stereotip rozet yok.</div> : null}
+            {!stereotypeBadges.length ? <div className="text-xs opacity-60">{tx(lang, "Henuz stereotip rozet yok.", "No stereotype badges yet.")}</div> : null}
           </div>
         </div>
 
         {canManageSuggestions ? (
           <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
             <div className="flex items-center justify-between gap-2">
-              <div className="text-sm text-amber-200">Oneri yonetimi</div>
+              <div className="text-sm text-amber-200">{tx(lang, "Oneri yonetimi", "Suggestion management")}</div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -3266,7 +3301,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   onClick={() => void loadAdminSuggestions()}
                   className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
                 >
-                  Yenile
+                  {tx(lang, "Yenile", "Refresh")}
                 </button>
               </div>
             </div>
@@ -3276,8 +3311,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 onChange={(e) => setAdminSuggestionStatusFilter(e.target.value as "all" | "new" | "in_progress" | "done")}
                 className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
               >
-                <option value="all">Durum: Tum</option>
-                <option value="new">Yeni</option>
+                <option value="all">{tx(lang, "Durum: Tum", "Status: All")}</option>
+                <option value="new">{tx(lang, "Yeni", "New")}</option>
                 <option value="in_progress">In progress</option>
                 <option value="done">Done</option>
               </select>
@@ -3286,7 +3321,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 onChange={(e) => setAdminSuggestionCategoryFilter(e.target.value)}
                 className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
               >
-                <option value="all">Kategori: Tum</option>
+                <option value="all">{tx(lang, "Kategori: Tum", "Category: All")}</option>
                 {Array.from(new Set(adminSuggestions.map((s) => s.category).filter(Boolean)))
                   .sort((a, b) => a.localeCompare(b, "tr"))
                   .map((cat) => (
@@ -3307,7 +3342,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       <div className="truncate">
                         {s.display_name?.trim() || (s.username ? `@${s.username}` : "anon")} • {s.category}
                       </div>
-                      <div>{new Date(s.created_at).toLocaleString("tr-TR")}</div>
+                      <div>{new Date(s.created_at).toLocaleString(lang === "en" ? "en-US" : "tr-TR")}</div>
                     </div>
                     <div className="mt-1 text-xs">{s.message}</div>
                     <div className="mt-2 flex items-center gap-2">
@@ -3326,28 +3361,28 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     </div>
                   </div>
                 ))}
-              {adminSuggestionsBusy ? <div className="text-xs opacity-60">Oneriler yukleniyor...</div> : null}
+              {adminSuggestionsBusy ? <div className="text-xs opacity-60">{tx(lang, "Oneriler yukleniyor...", "Loading suggestions...")}</div> : null}
               {!adminSuggestionsBusy && !adminSuggestions.length ? (
-                <div className="text-xs opacity-60">Oneri kaydi yok veya yetki bulunmuyor.</div>
+                <div className="text-xs opacity-60">{tx(lang, "Oneri kaydi yok veya yetki bulunmuyor.", "No suggestion records or no permission.")}</div>
               ) : null}
             </div>
 
             <div className="mt-4 rounded-xl border border-white/10 bg-black/25 p-2">
               <div className="flex items-center justify-between gap-2">
-                <div className="text-xs opacity-75">Moderasyon raporlari</div>
+                <div className="text-xs opacity-75">{tx(lang, "Moderasyon raporlari", "Moderation reports")}</div>
                 <button
                   type="button"
                   onClick={() => void loadAdminReports()}
                   className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
                 >
-                  Yenile
+                  {tx(lang, "Yenile", "Refresh")}
                 </button>
               </div>
               <div className="mt-2 space-y-2">
                 {adminReports.map((r) => (
                   <div key={`report-${r.id}`} className="rounded-lg border border-white/10 bg-black/30 p-2">
                     <div className="text-[11px] opacity-70">
-                      #{r.id} • {r.target_type}:{r.target_id} • {new Date(r.created_at).toLocaleString("tr-TR")}
+                      #{r.id} • {r.target_type}:{r.target_id} • {new Date(r.created_at).toLocaleString(lang === "en" ? "en-US" : "tr-TR")}
                     </div>
                     <div className="mt-1 text-xs">Reason: {r.reason || "user_reported"}</div>
                     <div className="mt-1 flex items-center gap-2">
@@ -3366,9 +3401,9 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     </div>
                   </div>
                 ))}
-                {adminReportsBusy ? <div className="text-xs opacity-60">Raporlar yukleniyor...</div> : null}
+                {adminReportsBusy ? <div className="text-xs opacity-60">{tx(lang, "Raporlar yukleniyor...", "Loading reports...")}</div> : null}
                 {!adminReportsBusy && !adminReports.length ? (
-                  <div className="text-xs opacity-60">Rapor yok.</div>
+                  <div className="text-xs opacity-60">{tx(lang, "Rapor yok.", "No reports.")}</div>
                 ) : null}
               </div>
             </div>
@@ -3382,7 +3417,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         onClick={() => setSuggestionOpen(true)}
         className="fixed bottom-20 right-4 z-40 rounded-full border border-amber-300/35 bg-amber-500/20 px-4 py-2 text-xs font-semibold text-amber-100 shadow-[0_0_20px_rgba(245,158,11,0.25)]"
       >
-        Oneri
+        {tx(lang, "Oneri", "Suggest")}
       </button>
 
       {suggestionOpen ? (
@@ -3391,15 +3426,15 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           <div className="absolute left-1/2 top-1/2 w-[92%] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/10 bg-black p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold">Oneri gonder</div>
-                <div className="text-xs opacity-70">Yazdiklarin ekibe dusecek.</div>
+                <div className="text-sm font-semibold">{tx(lang, "Oneri gonder", "Send suggestion")}</div>
+                <div className="text-xs opacity-70">{tx(lang, "Yazdiklarin ekibe dusecek.", "Your message goes to the team.")}</div>
               </div>
               <button
                 type="button"
                 onClick={() => setSuggestionOpen(false)}
                 className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs"
               >
-                Kapat
+                {tx(lang, "Kapat", "Close")}
               </button>
             </div>
 
@@ -3409,15 +3444,15 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 onChange={(e) => setSuggestionCategory(e.target.value)}
                 className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
               >
-                <option value="general">Genel</option>
+                <option value="general">{tx(lang, "Genel", "General")}</option>
                 <option value="bug">Bug</option>
                 <option value="ux">UX/UI</option>
-                <option value="feature">Yeni Ozellik</option>
+                <option value="feature">{tx(lang, "Yeni Ozellik", "New feature")}</option>
               </select>
               <textarea
                 value={suggestionMessage}
                 onChange={(e) => setSuggestionMessage(e.target.value.slice(0, 600))}
-                placeholder="Ne ekleyelim, neyi duzeltelim?"
+                placeholder={tx(lang, "Ne ekleyelim, neyi duzeltelim?", "What should we add or fix?")}
                 rows={5}
                 className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
               />
@@ -3428,7 +3463,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 disabled={suggestionBusy || !suggestionMessage.trim()}
                 className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm disabled:opacity-40"
               >
-                {suggestionBusy ? "Gonderiliyor..." : "Gonder"}
+                {suggestionBusy ? tx(lang, "Gonderiliyor...", "Sending...") : tx(lang, "Gonder", "Send")}
               </button>
             </div>
           </div>
@@ -3439,12 +3474,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/70" onClick={() => closeOnboarding(true)} />
           <div className="absolute left-1/2 top-1/2 w-[92%] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/10 bg-black p-4">
-            <div className="text-lg font-semibold">{abOnboardingVariant === "A" ? "Hizli baslangic" : "2 dakikada basla"}</div>
+            <div className="text-lg font-semibold">{abOnboardingVariant === "A" ? tx(lang, "Hizli baslangic", "Quick start") : tx(lang, "2 dakikada basla", "Start in 2 minutes")}</div>
             <div className="mt-3 space-y-2 text-sm opacity-90">
-              <div>1. `Logla` sekmesinde adim adim bira ekle.</div>
-              <div>2. Gecmis gun icin `adet` ile toplu log at, sonra puanlari duzenle.</div>
-              <div>3. `Harita`da gun/konum yogunlugunu gor.</div>
-              <div>4. `Sosyal`de takip et, akis ve leaderboard’u kullan.</div>
+              <div>{tx(lang, "1. `Log` sekmesinde adim adim bira ekle.", "1. Add beer step by step in `Log`.")}</div>
+              <div>{tx(lang, "2. Gecmis gun icin `adet` ile toplu log at, sonra puanlari duzenle.", "2. Use bulk count for past dates, then edit ratings.")}</div>
+              <div>{tx(lang, "3. `Harita`da gun/konum yogunlugunu gor.", "3. View day/location density in `Map`.")}</div>
+              <div>{tx(lang, "4. `Sosyal`de takip et, akis ve leaderboard'u kullan.", "4. Follow people and use feed/leaderboard in `Social`.")}</div>
             </div>
             <div className="mt-4 flex items-center justify-between gap-2">
               <Link
@@ -3452,14 +3487,14 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 onClick={() => closeOnboarding(true)}
                 className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs"
               >
-                Detayli yardim
+                {tx(lang, "Detayli yardim", "Detailed help")}
               </Link>
               <button
                 type="button"
                 onClick={() => closeOnboarding(true)}
                 className="rounded-xl border border-amber-300/35 bg-amber-500/20 px-3 py-2 text-xs text-amber-100"
               >
-                Basla
+                {tx(lang, "Basla", "Start")}
               </button>
             </div>
           </div>
@@ -3485,7 +3520,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             <div className="mt-2 text-lg font-semibold">{activeTutorialStep.title}</div>
             <div className="mt-2 text-sm opacity-85">{activeTutorialStep.desc}</div>
             <div className="mt-2 rounded-xl border border-white/10 bg-black/25 p-2 text-xs opacity-75">
-              {lang === "en" ? "Automatically switched to" : "Bu adim icin otomatik olarak"}{" "}
+              {tx(lang, "Bu adim icin otomatik olarak", "Automatically switched to")}{" "}
               <span className="font-semibold">{activeTutorialStep.section}</span>{" "}
               {lang === "en" ? "section." : "sekmesine gecildi."}
             </div>
@@ -3504,7 +3539,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   onClick={() => setTutorialStepIdx((i) => Math.min(tutorialSteps.length - 1, i + 1))}
                   className="rounded-xl border border-amber-300/35 bg-amber-500/20 px-3 py-2 text-xs text-amber-100"
                 >
-                  {lang === "en" ? "Next" : "Ileri"}
+                  {tx(lang, "Ileri", "Next")}
                 </button>
               ) : (
                 <button

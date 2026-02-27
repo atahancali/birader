@@ -1,4 +1,5 @@
 export type AppLang = "tr" | "en";
+export const APP_LANG_KEY = "birader:lang:v1";
 
 type Dict = Record<string, string>;
 
@@ -31,4 +32,8 @@ const EN: Dict = {
 export function t(lang: AppLang, key: string) {
   if (lang === "en") return EN[key] ?? TR[key] ?? key;
   return TR[key] ?? EN[key] ?? key;
+}
+
+export function tx(lang: AppLang, tr: string, en: string) {
+  return lang === "en" ? en : tr;
 }
