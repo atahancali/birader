@@ -211,7 +211,8 @@ function sanitizeRating(n: number | null | undefined) {
   if (n === null || n === undefined) return null;
   const v = Number(n);
   if (!Number.isFinite(v)) return null;
-  return clamp(v, 0, 5);
+  if (v <= 0) return null;
+  return Math.round(clamp(v, 0.5, 5) * 2) / 2;
 }
 
 function sanitizePrice(input: string) {
@@ -745,6 +746,7 @@ export default function Home() {
   const [adminSuggestionStatusFilter, setAdminSuggestionStatusFilter] = useState<"all" | "new" | "in_progress" | "done">("all");
   const [adminSuggestionCategoryFilter, setAdminSuggestionCategoryFilter] = useState<string>("all");
   const lastLogAttemptAtRef = useRef(0);
+  const logMutationLockRef = useRef(false);
 
   const year = useMemo(() => new Date().getFullYear(), []);
   const isBackDate = dateISO !== today;
@@ -779,7 +781,7 @@ export default function Home() {
   }
 
   function beginLogMutation() {
-    if (isLogMutating) {
+    if (logMutationLockRef.current || isLogMutating) {
       alert("Log islemi suruyor, lutfen bekle.");
       return false;
     }
@@ -791,6 +793,7 @@ export default function Home() {
       return false;
     }
     lastLogAttemptAtRef.current = now;
+    logMutationLockRef.current = true;
     setIsLogMutating(true);
     return true;
   }
@@ -1687,6 +1690,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         props: { rating: normalizedRating, beer_count: targets.length, date: dateISO },
       });
     } finally {
+      logMutationLockRef.current = false;
       setIsLogMutating(false);
     }
   }

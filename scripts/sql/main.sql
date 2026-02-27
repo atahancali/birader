@@ -143,6 +143,18 @@ grant execute on function public.delete_own_checkin(text) to authenticated;
 
 -- 003_checkins_nullable_rating
 alter table public.checkins alter column rating drop not null;
+update public.checkins set rating = null where rating is not null and rating <= 0;
+alter table public.checkins drop constraint if exists checkins_rating_nullable_half_check;
+alter table public.checkins
+add constraint checkins_rating_nullable_half_check
+check (
+  rating is null
+  or (
+    rating >= 0.5
+    and rating <= 5
+    and (rating * 2) = floor(rating * 2)
+  )
+);
 
 -- 004_checkins_geo_metadata
 alter table public.checkins add column if not exists country_code text not null default 'TR';

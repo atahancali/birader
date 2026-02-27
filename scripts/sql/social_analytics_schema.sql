@@ -22,6 +22,19 @@ alter table public.checkins add column if not exists note text not null default 
 alter table public.checkins add column if not exists latitude double precision;
 alter table public.checkins add column if not exists longitude double precision;
 alter table public.checkins add column if not exists day_period text;
+alter table public.checkins alter column rating drop not null;
+update public.checkins set rating = null where rating is not null and rating <= 0;
+alter table public.checkins drop constraint if exists checkins_rating_nullable_half_check;
+alter table public.checkins
+add constraint checkins_rating_nullable_half_check
+check (
+  rating is null
+  or (
+    rating >= 0.5
+    and rating <= 5
+    and (rating * 2) = floor(rating * 2)
+  )
+);
 alter table public.checkins drop constraint if exists checkins_day_period_check;
 alter table public.checkins
 add constraint checkins_day_period_check check (day_period is null or day_period in ('morning', 'afternoon', 'evening', 'night'));
