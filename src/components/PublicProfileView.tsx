@@ -243,6 +243,16 @@ export default function PublicProfileView({ username }: { username: string }) {
         error = fallback.error;
       }
 
+      // If URL username is stale (e.g. user renamed handle), allow own profile fallback by user_id.
+      if (!row && !error && sessionUserId) {
+        const own = await supabase
+          .from("profiles")
+          .select("user_id, username, display_name, bio, is_public, avatar_path, heatmap_color_from, heatmap_color_to")
+          .eq("user_id", sessionUserId)
+          .maybeSingle();
+        if (!own.error && own.data) row = own.data;
+      }
+
       if (error) {
         setErrorText(error.message);
         setLoading(false);
@@ -256,6 +266,9 @@ export default function PublicProfileView({ username }: { username: string }) {
       }
 
       const p = row as ProfileRow;
+      if (normalizeUsername(p.username) !== normalized) {
+        router.replace(`/u/${encodeURIComponent(p.username)}`);
+      }
       if (!p.is_public && sessionUserId !== p.user_id) {
         setErrorText("Bu profil gizli.");
         setLoading(false);
