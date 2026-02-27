@@ -11,6 +11,18 @@ export default function HelpPage() {
       </div>
 
       <section className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-semibold">0. Interaktif Tur</div>
+          <Link href="/?tutorial=1" className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs">
+            Turu Baslat
+          </Link>
+        </div>
+        <div className="mt-2 text-sm opacity-85">
+          Uygulama icinde adim adim sekme degistiren turu ac. Log, sosyal, harita, istatistik akisini tek tek gosterir.
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
         <div className="text-sm font-semibold">1. Hızlı Log</div>
         <div className="mt-2 text-sm opacity-85">`Logla` adımlarını takip et: format, bira, detay, onay.</div>
       </section>

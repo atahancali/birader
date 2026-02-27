@@ -86,10 +86,17 @@ const HEATMAP_THEME_KEY = "birader:heatmap-theme:v1";
 const LANG_KEY = "birader:lang:v1";
 const REFERRAL_KEY = "birader:pending-referral:v1";
 const OFFLINE_LOG_QUEUE_KEY = "birader:offline-log-queue:v1";
+const TUTORIAL_DONE_KEY = "birader:tutorial-done:v1";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
+
+type TutorialStep = {
+  title: string;
+  desc: string;
+  section: HomeSection;
 };
 
 type BeerItem = {
@@ -798,6 +805,8 @@ export default function Home() {
   const [pwaInstallOpen, setPwaInstallOpen] = useState(false);
   const [lang, setLang] = useState<AppLang>("tr");
   const [abOnboardingVariant, setAbOnboardingVariant] = useState<"A" | "B">("A");
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [tutorialStepIdx, setTutorialStepIdx] = useState(0);
   const [isLogMutating, setIsLogMutating] = useState(false);
   const [isAdminUser, setIsAdminUser] = useState(false);
   const [dbBadges, setDbBadges] = useState<UserBadgeRow[]>([]);
@@ -913,6 +922,11 @@ export default function Home() {
       const params = new URLSearchParams(window.location.search);
       const ref = (params.get("ref") || "").trim().toLowerCase();
       if (ref) localStorage.setItem(REFERRAL_KEY, ref);
+      const tutorialParam = (params.get("tutorial") || "").trim();
+      if (tutorialParam === "1") {
+        setTutorialStepIdx(0);
+        setTutorialOpen(true);
+      }
     } catch {}
   }, []);
 
@@ -1099,6 +1113,17 @@ export default function Home() {
       }
     } catch {}
   }, [abOnboardingVariant, session?.user?.id]);
+
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    try {
+      const done = localStorage.getItem(TUTORIAL_DONE_KEY);
+      if (!done) {
+        setTutorialOpen(true);
+        setTutorialStepIdx(0);
+      }
+    } catch {}
+  }, [session?.user?.id]);
 
   useEffect(() => {
     if (!session?.user?.id) return;
@@ -1517,6 +1542,36 @@ export default function Home() {
     if (!code) return "";
     return `https://birader.app/?ref=${encodeURIComponent(code)}`;
   }, [headerProfile?.referral_code]);
+  const tutorialSteps = useMemo<TutorialStep[]>(
+    () => [
+      {
+        title: "1) Log Wizard",
+        desc: "Format sec, bira sec, detay gir, onayla. Ilk logu 30 saniyede at.",
+        section: "log",
+      },
+      {
+        title: "2) Sosyal Akis",
+        desc: "Kullanici ara, takip et, akista yorum/begeni ile etkilesime gir.",
+        section: "social",
+      },
+      {
+        title: "3) Harita",
+        desc: "Grid veya saha moduna gec. Gune tiklayip detaylari ac.",
+        section: "heatmap",
+      },
+      {
+        title: "4) Istatistik",
+        desc: "Streak, rozet ve haftalik recap ile davranisini izle.",
+        section: "stats",
+      },
+    ],
+    []
+  );
+  const activeTutorialStep = tutorialSteps[tutorialStepIdx] || tutorialSteps[0];
+  useEffect(() => {
+    if (!tutorialOpen) return;
+    setActiveSection(activeTutorialStep.section);
+  }, [activeTutorialStep.section, tutorialOpen]);
   const recentVisibleCount = useMemo(() => {
     if (recentExpandStep <= 0) return 5;
     if (recentExpandStep === 1) return 10;
@@ -1802,6 +1857,15 @@ export default function Home() {
       } catch {}
     }
     setOnboardingOpen(false);
+  }
+
+  function closeTutorial(markDone = true) {
+    if (markDone) {
+      try {
+        localStorage.setItem(TUTORIAL_DONE_KEY, "1");
+      } catch {}
+    }
+    setTutorialOpen(false);
   }
 
 async function deleteCheckin(id: string) {
@@ -2325,6 +2389,19 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             </div>
           </div>
         ) : null}
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <div className="text-[11px] opacity-70">Uygulama turu</div>
+          <button
+            type="button"
+            onClick={() => {
+              setTutorialStepIdx(0);
+              setTutorialOpen(true);
+            }}
+            className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
+          >
+            Tutorial baslat
+          </button>
+        </div>
       </section>
 
       {activeSection === "log" ? (
@@ -3348,6 +3425,59 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               >
                 Basla
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {tutorialOpen ? (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/75" onClick={() => closeTutorial(false)} />
+          <div className="absolute left-1/2 top-1/2 w-[92%] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-amber-300/30 bg-black p-4">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs text-amber-200/85">
+                Tutorial {tutorialStepIdx + 1}/{tutorialSteps.length}
+              </div>
+              <button
+                type="button"
+                onClick={() => closeTutorial(true)}
+                className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+              >
+                Bitir
+              </button>
+            </div>
+            <div className="mt-2 text-lg font-semibold">{activeTutorialStep.title}</div>
+            <div className="mt-2 text-sm opacity-85">{activeTutorialStep.desc}</div>
+            <div className="mt-2 rounded-xl border border-white/10 bg-black/25 p-2 text-xs opacity-75">
+              Bu adim icin otomatik olarak <span className="font-semibold">{activeTutorialStep.section}</span> sekmesine
+              gecildi.
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                disabled={tutorialStepIdx <= 0}
+                onClick={() => setTutorialStepIdx((i) => Math.max(0, i - 1))}
+                className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs disabled:opacity-40"
+              >
+                Geri
+              </button>
+              {tutorialStepIdx < tutorialSteps.length - 1 ? (
+                <button
+                  type="button"
+                  onClick={() => setTutorialStepIdx((i) => Math.min(tutorialSteps.length - 1, i + 1))}
+                  className="rounded-xl border border-amber-300/35 bg-amber-500/20 px-3 py-2 text-xs text-amber-100"
+                >
+                  Ileri
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => closeTutorial(true)}
+                  className="rounded-xl border border-emerald-300/35 bg-emerald-500/20 px-3 py-2 text-xs text-emerald-100"
+                >
+                  Tamamladim
+                </button>
+              )}
             </div>
           </div>
         </div>
