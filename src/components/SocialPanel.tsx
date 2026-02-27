@@ -40,14 +40,14 @@ type DiscoverProfile = SearchProfile & {
 
 type CheckinRow = {
   beer_name: string;
-  rating: number;
+  rating: number | null;
 };
 
 type FeedCheckinRow = {
   id: string;
   user_id: string;
   beer_name: string;
-  rating: number;
+  rating: number | null;
   created_at: string;
 };
 
@@ -192,7 +192,7 @@ function typoDistance(aRaw: string, bRaw: string) {
 }
 
 function averageRating(checkins: CheckinRow[]) {
-  const rated = checkins.filter((c) => c.rating !== null && c.rating !== undefined);
+  const rated = checkins.filter((c) => c.rating !== null && c.rating !== undefined && Number(c.rating) > 0);
   if (!rated.length) return 0;
   const sum = rated.reduce((acc, c) => acc + Number(c.rating ?? 0), 0);
   return Math.round((sum / rated.length) * 100) / 100;
@@ -336,7 +336,7 @@ export default function SocialPanel({
 
     return feedItems.filter((item) => {
       if (feedScope === "following" && item.user_id !== userId && !followingIds.has(item.user_id)) return false;
-      if (feedMinRating > 0 && Number(item.rating || 0) < feedMinRating) return false;
+      if (feedMinRating > 0 && (item.rating === null || Number(item.rating) < feedMinRating)) return false;
       if (windowMs > 0) {
         const ts = new Date(item.created_at).getTime();
         if (!Number.isFinite(ts) || now - ts > windowMs) return false;
@@ -868,6 +868,18 @@ export default function SocialPanel({
 
     const rows = (checkinRows as Array<{ user_id: string; rating: number | null }> | null) ?? [];
     if (!rows.length) {
+      if (leaderScope === "followed") {
+        setLeaderRows([
+          {
+            user_id: userId,
+            username: profile?.username || fallbackBase,
+            display_name: profile?.display_name || profile?.username || fallbackBase,
+            logs: 0,
+            avgRating: 0,
+          },
+        ]);
+        return;
+      }
       setLeaderRows([]);
       return;
     }
@@ -876,7 +888,7 @@ export default function SocialPanel({
     for (const row of rows) {
       const entry = agg.get(row.user_id) ?? { logs: 0, ratedCount: 0, ratingSum: 0 };
       entry.logs += 1;
-      if (row.rating !== null && row.rating !== undefined) {
+      if (row.rating !== null && row.rating !== undefined && Number(row.rating) > 0) {
         entry.ratedCount += 1;
         entry.ratingSum += Number(row.rating);
       }
@@ -910,6 +922,16 @@ export default function SocialPanel({
         display_name: profileRef.display_name,
         logs: stats.logs,
         avgRating: Math.round((stats.ratingSum / Math.max(1, stats.ratedCount)) * 100) / 100,
+      });
+    }
+
+    if (leaderScope === "followed" && !result.some((x) => x.user_id === userId)) {
+      result.push({
+        user_id: userId,
+        username: profile?.username || fallbackBase,
+        display_name: profile?.display_name || profile?.username || fallbackBase,
+        logs: 0,
+        avgRating: 0,
       });
     }
 
@@ -2414,7 +2436,7 @@ export default function SocialPanel({
                 <div className="mt-1 text-sm font-semibold">{item.beer_name}</div>
                 <div className="mt-1 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <div className="text-xs opacity-80">{item.rating}⭐</div>
+                    <div className="text-xs opacity-80">{item.rating === null ? "Puansiz" : `${item.rating}⭐`}</div>
                     <button
                       type="button"
                       disabled={checkinLikeBusyId === String(item.id)}
@@ -2431,7 +2453,7 @@ export default function SocialPanel({
                   <button
                     type="button"
                     onClick={() => {
-                      onQuickLog?.({ beerName: item.beer_name, rating: Number(item.rating || 0) });
+                      onQuickLog?.({ beerName: item.beer_name, rating: Number(item.rating ?? 0) });
                       trackEvent({
                         eventName: "feed_quicklog_click",
                         userId,
