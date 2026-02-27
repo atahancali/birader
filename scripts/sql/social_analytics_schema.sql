@@ -473,7 +473,7 @@ revoke all on function public.refresh_all_user_badges() from public;
 grant execute on function public.refresh_my_badges() to authenticated;
 grant execute on function public.refresh_all_user_badges() to authenticated;
 
-do $$
+do $do$
 begin
   if exists (select 1 from pg_extension where extname = 'pg_cron') then
     begin
@@ -484,13 +484,13 @@ begin
     perform cron.schedule(
       'birader_refresh_user_badges_daily',
       '10 3 * * *',
-      $$select public.refresh_all_user_badges();$$
+      'select public.refresh_all_user_badges();'
     );
   end if;
 exception when others then
   null;
 end;
-$$;
+$do$;
 
 create table if not exists public.checkin_comments (
   id bigserial primary key,
