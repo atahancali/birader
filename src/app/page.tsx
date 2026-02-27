@@ -10,7 +10,7 @@ import MonthZoom from "@/components/MonthZoom";
 import FieldHeatmap from "@/components/FieldHeatmap";
 import FootballHeatmap from "@/components/FootballHeatmap";
 import GeoHeatmap from "@/components/GeoHeatmap";
-import { usernameFromEmail, usernameToCandidateEmails } from "@/lib/identity";
+import { normalizeUsername, usernameFromEmail, usernameToCandidateEmails } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
 import { TURKEY_CITIES, districtsForCity } from "@/lib/trLocations";
@@ -1087,6 +1087,31 @@ export default function Home() {
         }
 
         if (row) {
+          const sessionEmail = (session.user.email || "").trim().toLowerCase();
+          const emailUser = usernameFromEmail(sessionEmail);
+          const isBiraderAlias = /@birader\.(app|local)$/.test(sessionEmail);
+          const rowUsername = String(row.username || "").trim().toLowerCase();
+
+          // Self-heal: if auth alias username changed but profile.username is stale, sync it.
+          if (emailUser && isBiraderAlias && rowUsername && emailUser !== rowUsername) {
+            const taken = await supabase
+              .from("profiles")
+              .select("user_id")
+              .eq("username", emailUser)
+              .neq("user_id", session.user.id)
+              .maybeSingle();
+            if (!taken.error && !taken.data) {
+              const oldDisplay = String(row.display_name || "").trim();
+              const shouldSyncDisplay = !oldDisplay || normalizeUsername(oldDisplay.replace(/^@+/, "")) === rowUsername;
+              const patch: Record<string, any> = { username: emailUser };
+              if (shouldSyncDisplay) patch.display_name = emailUser;
+              const syncRes = await supabase.from("profiles").update(patch).eq("user_id", session.user.id);
+              if (!syncRes.error) {
+                row = { ...row, ...patch };
+              }
+            }
+          }
+
           setIsAdminUser(Boolean(row.is_admin));
           setHeaderProfile({
             username: row.username,
