@@ -299,6 +299,208 @@ revoke all on public.user_badges from anon;
 revoke all on public.user_badges from authenticated;
 grant select, insert, update, delete on public.user_badges to authenticated;
 
+create or replace function public.compute_and_store_user_badges(p_user_id uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_total int := 0;
+begin
+  if p_user_id is null then
+    return 0;
+  end if;
+
+  delete from public.user_badges where user_id = p_user_id;
+
+  with base as (
+    select
+      c.user_id,
+      count(*)::int as total_logs,
+      count(*) filter (where extract(dow from timezone('Europe/Istanbul', c.created_at)) = 6)::int as saturday_logs,
+      count(*) filter (
+        where c.day_period = 'night'
+           or (
+             c.day_period is null
+             and (
+               extract(hour from timezone('Europe/Istanbul', c.created_at)) >= 22
+               or extract(hour from timezone('Europe/Istanbul', c.created_at)) < 4
+             )
+           )
+      )::int as night_logs,
+      count(*) filter (where c.beer_name like '%— Fici —%')::int as draft_logs,
+      count(*) filter (where c.beer_name like '%— Şişe/Kutu —%')::int as bottle_logs,
+      count(distinct nullif(trim(c.city), ''))::int as unique_cities
+    from public.checkins c
+    where c.user_id = p_user_id
+    group by c.user_id
+  ),
+  spot as (
+    select
+      c.user_id,
+      coalesce(max(cnt), 0)::int as top_spot_count
+    from (
+      select
+        c.user_id,
+        coalesce(nullif(trim(c.city), ''), '-') || '::' || coalesce(nullif(trim(c.district), ''), '-') as spot_key,
+        count(*)::int as cnt
+      from public.checkins c
+      where c.user_id = p_user_id
+      group by c.user_id, coalesce(nullif(trim(c.city), ''), '-') || '::' || coalesce(nullif(trim(c.district), ''), '-')
+    ) c
+    group by c.user_id
+  ),
+  s as (
+    select
+      b.user_id,
+      b.total_logs,
+      b.saturday_logs,
+      b.night_logs,
+      b.draft_logs,
+      b.bottle_logs,
+      b.unique_cities,
+      coalesce(sp.top_spot_count, 0) as top_spot_count
+    from base b
+    left join spot sp on sp.user_id = b.user_id
+  ),
+  ins as (
+    insert into public.user_badges (user_id, badge_key, title_tr, title_en, detail_tr, detail_en, score, computed_at)
+    select
+      s.user_id,
+      t.badge_key,
+      t.title_tr,
+      t.title_en,
+      t.detail_tr,
+      t.detail_en,
+      t.score,
+      now()
+    from s
+    cross join lateral (
+      select
+        'sat_committee'::text as badge_key,
+        'Cumartesi Komitesi'::text as title_tr,
+        'Saturday Committee'::text as title_en,
+        format('%s Cumartesi logu', s.saturday_logs)::text as detail_tr,
+        format('%s Saturday check-ins', s.saturday_logs)::text as detail_en,
+        (s.saturday_logs * 10)::int as score
+      where s.total_logs >= 8 and s.saturday_logs >= 4 and s.saturday_logs::numeric / nullif(s.total_logs, 0) >= 0.35
+      union all
+      select
+        'night_owl',
+        'Gece Baykuşu',
+        'Night Owl',
+        format('Gece logu: %s', s.night_logs),
+        format('Night check-ins: %s', s.night_logs),
+        (s.night_logs * 10)::int
+      where s.total_logs >= 10 and s.night_logs >= 6 and s.night_logs::numeric / nullif(s.total_logs, 0) >= 0.35
+      union all
+      select
+        'draft_loyalist',
+        'Taslakçı',
+        'Draft Loyalist',
+        format('Fıçı oranı: %s%%', round((s.draft_logs::numeric / nullif(s.total_logs, 0)) * 100)),
+        format('Draft ratio: %s%%', round((s.draft_logs::numeric / nullif(s.total_logs, 0)) * 100)),
+        (s.draft_logs * 8)::int
+      where s.total_logs >= 10 and s.draft_logs >= 6 and s.draft_logs::numeric / nullif(s.total_logs, 0) >= 0.60
+      union all
+      select
+        'bottle_lover',
+        'Şişeci',
+        'Bottle Lover',
+        format('Şişe/Kutu oranı: %s%%', round((s.bottle_logs::numeric / nullif(s.total_logs, 0)) * 100)),
+        format('Bottle/can ratio: %s%%', round((s.bottle_logs::numeric / nullif(s.total_logs, 0)) * 100)),
+        (s.bottle_logs * 8)::int
+      where s.total_logs >= 10 and s.bottle_logs >= 6 and s.bottle_logs::numeric / nullif(s.total_logs, 0) >= 0.60
+      union all
+      select
+        'nomad',
+        'Pub Nomadı',
+        'Pub Nomad',
+        format('%s farklı şehir', s.unique_cities),
+        format('%s different cities', s.unique_cities),
+        (s.unique_cities * 15)::int
+      where s.unique_cities >= 4
+      union all
+      select
+        'regular',
+        'Sadık Müdavim',
+        'Local Regular',
+        format('Aynı bölge yoğunluğu: %s%%', round((s.top_spot_count::numeric / nullif(s.total_logs, 0)) * 100)),
+        format('Single-area share: %s%%', round((s.top_spot_count::numeric / nullif(s.total_logs, 0)) * 100)),
+        (s.top_spot_count * 9)::int
+      where s.total_logs >= 12 and s.top_spot_count >= 8 and s.top_spot_count::numeric / nullif(s.total_logs, 0) >= 0.45
+    ) t
+    returning 1
+  )
+  select count(*) into v_total from ins;
+
+  return coalesce(v_total, 0);
+end;
+$$;
+
+create or replace function public.refresh_my_badges()
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    return 0;
+  end if;
+  return public.compute_and_store_user_badges(auth.uid());
+end;
+$$;
+
+create or replace function public.refresh_all_user_badges()
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  r record;
+  total_count int := 0;
+begin
+  if auth.uid() is not null and not exists (
+    select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin = true
+  ) then
+    raise exception 'not allowed';
+  end if;
+
+  for r in select p.user_id from public.profiles p loop
+    total_count := total_count + public.compute_and_store_user_badges(r.user_id);
+  end loop;
+  return total_count;
+end;
+$$;
+
+revoke all on function public.compute_and_store_user_badges(uuid) from public;
+revoke all on function public.refresh_my_badges() from public;
+revoke all on function public.refresh_all_user_badges() from public;
+grant execute on function public.refresh_my_badges() to authenticated;
+grant execute on function public.refresh_all_user_badges() to authenticated;
+
+do $$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    begin
+      perform cron.unschedule(jobid) from cron.job where jobname = 'birader_refresh_user_badges_daily';
+    exception when others then
+      null;
+    end;
+    perform cron.schedule(
+      'birader_refresh_user_badges_daily',
+      '10 3 * * *',
+      $$select public.refresh_all_user_badges();$$
+    );
+  end if;
+exception when others then
+  null;
+end;
+$$;
+
 -- 009_checkin_comments_and_share_invites
 create table if not exists public.checkin_comments (
   id bigserial primary key,

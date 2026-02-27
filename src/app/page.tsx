@@ -908,6 +908,11 @@ export default function Home() {
   }, [session?.user?.id]);
 
   useEffect(() => {
+    if (!session?.user?.id) return;
+    void supabase.rpc("refresh_my_badges");
+  }, [session?.user?.id]);
+
+  useEffect(() => {
     if (favorites.length < 3) {
       setReplaceFavoriteRank(null);
       return;
