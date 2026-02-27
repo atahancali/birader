@@ -70,7 +70,7 @@ type NotificationRow = {
   id: number;
   user_id: string;
   actor_id: string | null;
-  type: "comment" | "mention" | "comment_like" | "follow";
+  type: "comment" | "mention" | "comment_like" | "checkin_like" | "follow";
   ref_id: string;
   payload?: Record<string, any> | null;
   is_read: boolean;
@@ -108,7 +108,7 @@ type OwnCheckinLite = {
 
 type FeedWindow = "all" | "24h" | "7d";
 type FeedScope = "all" | "following";
-type NotificationFilter = "all" | "unread" | "comment" | "mention" | "comment_like" | "follow";
+type NotificationFilter = "all" | "unread" | "comment" | "mention" | "comment_like" | "checkin_like" | "follow";
 type LeaderWindow = "7d" | "30d" | "90d" | "365d";
 type LeaderScope = "all" | "followed";
 
@@ -118,6 +118,11 @@ type LeaderboardRow = {
   display_name?: string | null;
   logs: number;
   avgRating: number;
+};
+
+type CheckinLikeRow = {
+  checkin_id: string;
+  user_id: string;
 };
 
 const KEYBOARD_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
@@ -252,10 +257,13 @@ export default function SocialPanel({
   const [feedMinRating, setFeedMinRating] = useState<number>(0);
   const [feedQuery, setFeedQuery] = useState("");
   const [feedCommentsByCheckin, setFeedCommentsByCheckin] = useState<Record<string, FeedComment[]>>({});
+  const [checkinLikeCountById, setCheckinLikeCountById] = useState<Record<string, number>>({});
+  const [checkinLikedByMe, setCheckinLikedByMe] = useState<Record<string, boolean>>({});
   const [commentLikeCountById, setCommentLikeCountById] = useState<Record<number, number>>({});
   const [commentLikedByMe, setCommentLikedByMe] = useState<Record<number, boolean>>({});
   const [commentDraftByCheckin, setCommentDraftByCheckin] = useState<Record<string, string>>({});
   const [commentSendingFor, setCommentSendingFor] = useState<string>("");
+  const [checkinLikeBusyId, setCheckinLikeBusyId] = useState<string>("");
   const [commentLikeBusyId, setCommentLikeBusyId] = useState<number>(0);
   const [notifications, setNotifications] = useState<NotificationView[]>([]);
   const [notifBusy, setNotifBusy] = useState(false);
@@ -461,6 +469,8 @@ export default function SocialPanel({
       if (reset) {
         setFeedItems([]);
         setFeedCommentsByCheckin({});
+        setCheckinLikeCountById({});
+        setCheckinLikedByMe({});
         setCommentLikeCountById({});
         setCommentLikedByMe({});
       }
@@ -498,6 +508,7 @@ export default function SocialPanel({
     setFeedCursorCreatedAt(rows[rows.length - 1]?.created_at ?? null);
     setFeedHasMore(rows.length === FEED_PAGE_SIZE);
     await loadCommentsForCheckins(rows.map((r) => String(r.id)));
+    await loadCheckinLikes(rows.map((r) => String(r.id)));
     trackEvent({ eventName: "feed_loaded", userId, props: { count: rows.length, reset } });
   }
 
@@ -590,6 +601,37 @@ export default function SocialPanel({
     }
     setCommentLikeCountById((prev) => ({ ...prev, ...counts }));
     setCommentLikedByMe((prev) => ({ ...prev, ...likedMap }));
+  }
+
+  async function loadCheckinLikes(checkinIds: string[]) {
+    const ids = Array.from(new Set(checkinIds.filter(Boolean)));
+    if (!ids.length) {
+      setCheckinLikeCountById({});
+      setCheckinLikedByMe({});
+      return;
+    }
+    const { data, error } = await supabase
+      .from("checkin_likes")
+      .select("checkin_id, user_id")
+      .in("checkin_id", ids)
+      .limit(5000);
+    if (error) {
+      markDbError(error.message);
+      return;
+    }
+    const counts: Record<string, number> = {};
+    const likedMap: Record<string, boolean> = {};
+    for (const cid of ids) {
+      counts[cid] = 0;
+      likedMap[cid] = false;
+    }
+    for (const row of ((data as CheckinLikeRow[] | null) ?? [])) {
+      const cid = String(row.checkin_id);
+      counts[cid] = (counts[cid] || 0) + 1;
+      if (row.user_id === userId) likedMap[cid] = true;
+    }
+    setCheckinLikeCountById((prev) => ({ ...prev, ...counts }));
+    setCheckinLikedByMe((prev) => ({ ...prev, ...likedMap }));
   }
 
   async function loadPendingInvites() {
@@ -772,6 +814,7 @@ export default function SocialPanel({
         .slice(0, 200)
     );
     await loadCommentsForCheckins([String(checkin.id)]);
+    await loadCheckinLikes([String(checkin.id)]);
     return true;
   }
 
@@ -1110,6 +1153,15 @@ export default function SocialPanel({
           const ids = feedIdsRef.current;
           if (!ids.length) return;
           void loadCommentsForCheckins(ids);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "checkin_likes" },
+        () => {
+          const ids = feedIdsRef.current;
+          if (!ids.length) return;
+          void loadCheckinLikes(ids);
         }
       )
       .on(
@@ -1567,6 +1619,50 @@ export default function SocialPanel({
     }
   }
 
+  async function toggleCheckinLike(item: FeedItem) {
+    const checkinId = String(item.id);
+    const liked = Boolean(checkinLikedByMe[checkinId]);
+    setCheckinLikeBusyId(checkinId);
+    if (liked) {
+      const { error } = await supabase
+        .from("checkin_likes")
+        .delete()
+        .eq("checkin_id", checkinId)
+        .eq("user_id", userId);
+      setCheckinLikeBusyId("");
+      if (error) {
+        markDbError(error.message);
+        return;
+      }
+      setCheckinLikedByMe((prev) => ({ ...prev, [checkinId]: false }));
+      setCheckinLikeCountById((prev) => ({ ...prev, [checkinId]: Math.max(0, Number(prev[checkinId] || 1) - 1) }));
+      return;
+    }
+
+    const { error } = await supabase.from("checkin_likes").insert({
+      checkin_id: checkinId,
+      user_id: userId,
+    });
+    setCheckinLikeBusyId("");
+    if (error) {
+      markDbError(error.message);
+      return;
+    }
+
+    setCheckinLikedByMe((prev) => ({ ...prev, [checkinId]: true }));
+    setCheckinLikeCountById((prev) => ({ ...prev, [checkinId]: Number(prev[checkinId] || 0) + 1 }));
+    if (item.user_id !== userId) {
+      const { error: notifErr } = await supabase.from("notifications").insert({
+        user_id: item.user_id,
+        actor_id: userId,
+        type: "checkin_like",
+        ref_id: checkinId,
+        payload: { checkin_id: checkinId },
+      });
+      if (notifErr) markDbError(notifErr.message);
+    }
+  }
+
   async function openNotification(item: NotificationView) {
     setNotifActionBusyId(item.id);
     if (!item.is_read) await markNotificationRead(item.id);
@@ -1890,6 +1986,7 @@ export default function SocialPanel({
                   <option value="comment">Yorum</option>
                   <option value="mention">Mention</option>
                   <option value="comment_like">Yorum begeni</option>
+                  <option value="checkin_like">Log begeni</option>
                 </select>
                 <button
                   type="button"
@@ -1928,6 +2025,7 @@ export default function SocialPanel({
                     {n.type === "comment" ? " loguna yorum yazdi." : null}
                     {n.type === "mention" ? " seni yorumda etiketledi." : null}
                     {n.type === "comment_like" ? " yorumunu begendi." : null}
+                    {n.type === "checkin_like" ? " logunu begendi." : null}
                     {n.type === "follow" ? " seni takip etmeye basladi." : null}
                   </div>
                   <div className="mt-1 text-[11px] opacity-65">{new Date(n.created_at).toLocaleString("tr-TR")}</div>
@@ -2176,7 +2274,21 @@ export default function SocialPanel({
                 </div>
                 <div className="mt-1 text-sm font-semibold">{item.beer_name}</div>
                 <div className="mt-1 flex items-center justify-between gap-2">
-                  <div className="text-xs opacity-80">{item.rating}⭐</div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-xs opacity-80">{item.rating}⭐</div>
+                    <button
+                      type="button"
+                      disabled={checkinLikeBusyId === String(item.id)}
+                      onClick={() => void toggleCheckinLike(item)}
+                      className={`rounded-lg border px-2 py-1 text-xs ${
+                        checkinLikedByMe[String(item.id)]
+                          ? "border-amber-300/35 bg-amber-500/15"
+                          : "border-white/15 bg-white/10"
+                      }`}
+                    >
+                      ♥ {checkinLikeCountById[String(item.id)] || 0}
+                    </button>
+                  </div>
                   <button
                     type="button"
                     onClick={() => {
