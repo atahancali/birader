@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { dayPeriodLabelEn, dayPeriodLabelTr } from "@/lib/dayPeriod";
 
 type Checkin = {
   id: string;
   beer_name: string;
   rating: number | null;
   created_at: string;
+  day_period?: string | null;
 };
 
 const RATINGS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
@@ -204,10 +206,7 @@ export default function DayModal({
                       <div className="min-w-0">
                         <div className="font-semibold truncate">{c.beer_name}</div>
                         <div className="text-xs opacity-60 mt-1">
-                          {new Date(c.created_at).toLocaleTimeString("tr-TR", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                          {dayPeriodLabelTr(c.day_period, c.created_at)} / {dayPeriodLabelEn(c.day_period, c.created_at)}
                         </div>
                       </div>
 

@@ -14,12 +14,15 @@ import { usernameFromEmail, usernameToCandidateEmails } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
 import { TURKEY_CITIES, districtsForCity } from "@/lib/trLocations";
+import { computeStereotypeBadges } from "@/lib/badges";
+import { DAY_PERIOD_OPTIONS, dayPeriodLabelEn, dayPeriodLabelTr, type DayPeriod } from "@/lib/dayPeriod";
 
 type Checkin = {
   id: string;
   beer_name: string;
   rating: number | null;
   created_at: string;
+  day_period?: DayPeriod | null;
   country_code?: string | null;
   city?: string | null;
   district?: string | null;
@@ -704,6 +707,7 @@ export default function Home() {
   const [locationText, setLocationText] = useState("");
   const [priceText, setPriceText] = useState("");
   const [logNote, setLogNote] = useState("");
+  const [dayPeriod, setDayPeriod] = useState<DayPeriod>("evening");
   const [activeRatingBucket, setActiveRatingBucket] = useState<number | null>(null);
   const [dateISO, setDateISO] = useState(today);
   const [dateOpen, setDateOpen] = useState(false);
@@ -824,7 +828,7 @@ export default function Home() {
 
     const { data, error } = await supabase
       .from("checkins")
-      .select("id, beer_name, rating, created_at, country_code, city, district, location_text, price_try, note, latitude, longitude")
+      .select("id, beer_name, rating, created_at, day_period, country_code, city, district, location_text, price_try, note, latitude, longitude")
       .eq("user_id", session.user.id)
       .gte("created_at", start)
       .lt("created_at", end)
@@ -1129,6 +1133,7 @@ export default function Home() {
       unratedShare: checkins.length ? Math.round((unrated / checkins.length) * 100) : 0,
     };
   }, [checkins]);
+  const stereotypeBadges = useMemo(() => computeStereotypeBadges(checkins), [checkins]);
 
   const highlightedBucketInfo = useMemo(() => {
     const idx = ratingDistribution.buckets.findIndex((b) => b.count === ratingDistribution.max);
@@ -1548,6 +1553,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           beer_name: beer,
           rating: normalizedRating,
           created_at,
+          day_period: dayPeriod,
           country_code: "TR",
           city: normalizedCity,
           district: normalizedDistrict,
@@ -1574,6 +1580,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           setLogStep(1);
           setFormatConfirmed(false);
           setCustomDistrict("");
+          setDayPeriod("evening");
           setLocationText("");
           setPriceText("");
           setLogNote("");
@@ -1597,6 +1604,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             beer_name: beer,
             rating: normalizedRating,
             created_at,
+            day_period: dayPeriod,
             country_code: "TR",
             city: normalizedCity,
             district: normalizedDistrict,
@@ -1616,6 +1624,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       setLogStep(1);
       setFormatConfirmed(false);
       setCustomDistrict("");
+      setDayPeriod("evening");
       setLocationText("");
       setPriceText("");
       setLogNote("");
@@ -1771,6 +1780,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   beer_name,
                   rating: sanitizeRating(rating),
                   created_at,
+                  day_period: dayPeriod,
                   country_code: "TR",
                   city,
                   district: resolvedDistrict,
@@ -1961,6 +1971,21 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   </div>
                 ) : null}
               </div>
+            </div>
+
+            <div className="mb-3">
+              <label className="mb-2 block text-xs opacity-70">Günün vakti / Time of day</label>
+              <select
+                value={dayPeriod}
+                onChange={(e) => setDayPeriod(e.target.value as DayPeriod)}
+                className="w-full rounded-2xl border border-white/10 bg-black/20 px-3 py-3 text-sm outline-none"
+              >
+                {DAY_PERIOD_OPTIONS.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.tr} / {p.en}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="mb-3">
@@ -2237,6 +2262,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       setBeerName(c.beer_name);
                       setBeerQuery(c.beer_name);
                       setRating(c.rating === null || c.rating === undefined ? null : Number(c.rating));
+                      setDayPeriod((c.day_period as DayPeriod) || "evening");
                       setLogStep(3);
                       window.scrollTo({ top: 0, behavior: "smooth" });
                     }}
@@ -2247,7 +2273,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 </div>
               </div>
               <div className="text-xs opacity-70 mt-1">
-                {new Date(c.created_at).toLocaleString("tr-TR")}
+                {new Date(c.created_at).toLocaleDateString("tr-TR")} • {dayPeriodLabelTr(c.day_period, c.created_at)} /{" "}
+                {dayPeriodLabelEn(c.day_period, c.created_at)}
               </div>
               {c.city ? (
                 <div className="text-xs opacity-80 mt-1">
@@ -2368,6 +2395,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               beer_name,
               rating: normalizedRating,
               created_at,
+              day_period: dayPeriod,
               country_code: "TR",
               city,
               district: resolvedDistrict,
@@ -2398,6 +2426,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               beer_name,
               rating: normalizedRating,
               created_at,
+              day_period: dayPeriod,
               country_code: "TR",
               city,
               district: resolvedDistrict,
@@ -2543,6 +2572,21 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             {behaviorStats.badges.length === 0 ? (
               <div className="text-xs opacity-60">Henuz rozet yok. Log arttikca acilacak.</div>
             ) : null}
+          </div>
+
+          <div className="mt-4 text-xs opacity-70">Stereotip rozetler / Stereotype badges</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {stereotypeBadges.map((b) => (
+              <div
+                key={b.key}
+                className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100"
+                title={`${b.detailTr} • ${b.detailEn}`}
+              >
+                <div className="font-semibold">{b.titleTr}</div>
+                <div className="opacity-75">{b.titleEn}</div>
+              </div>
+            ))}
+            {!stereotypeBadges.length ? <div className="text-xs opacity-60">Henüz stereotip rozet yok.</div> : null}
           </div>
         </div>
 

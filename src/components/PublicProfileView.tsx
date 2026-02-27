@@ -9,6 +9,8 @@ import { supabase } from "@/lib/supabase";
 import { normalizeUsername } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
+import { computeStereotypeBadges } from "@/lib/badges";
+import { dayPeriodLabelEn, dayPeriodLabelTr, type DayPeriod } from "@/lib/dayPeriod";
 
 type ProfileRow = {
   user_id: string;
@@ -24,6 +26,7 @@ type CheckinRow = {
   beer_name: string;
   rating: number | null;
   created_at: string;
+  day_period?: DayPeriod | null;
   city?: string | null;
   district?: string | null;
   location_text?: string | null;
@@ -68,6 +71,7 @@ export default function PublicProfileView({ username }: { username: string }) {
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const [year, setYear] = useState(currentYear);
   const avg = useMemo(() => avgRating(checkins), [checkins]);
+  const stereotypeBadges = useMemo(() => computeStereotypeBadges(checkins), [checkins]);
   const isOwnProfile = sessionUserId === profile?.user_id;
   const favoriteNames = useMemo(
     () => new Set(favorites.map((f) => favoriteBeerName(f.beer_name))),
@@ -186,7 +190,7 @@ export default function PublicProfileView({ username }: { username: string }) {
           .order("rank", { ascending: true }),
         supabase
           .from("checkins")
-          .select("id, beer_name, rating, created_at, city, district, location_text, price_try, note")
+          .select("id, beer_name, rating, created_at, day_period, city, district, location_text, price_try, note")
           .eq("user_id", p.user_id)
           .gte("created_at", start)
           .lt("created_at", end)
@@ -432,6 +436,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       beer_name: payload.beer_name.trim(),
       rating: payload.rating,
       created_at,
+      day_period: "evening",
     });
     if (error) {
       alert(error.message);
@@ -441,7 +446,7 @@ export default function PublicProfileView({ username }: { username: string }) {
     const end = `${year + 1}-01-01T00:00:00.000Z`;
     const { data } = await supabase
       .from("checkins")
-      .select("id, beer_name, rating, created_at, city, district, location_text, price_try, note")
+      .select("id, beer_name, rating, created_at, day_period, city, district, location_text, price_try, note")
       .eq("user_id", sessionUserId)
       .gte("created_at", start)
       .lt("created_at", end)
@@ -729,6 +734,9 @@ export default function PublicProfileView({ username }: { username: string }) {
                 <div className="text-xs">{c.rating === null ? "—" : `${c.rating}⭐`}</div>
               </div>
               <div className="mt-1 text-xs opacity-70">{new Date(c.created_at).toLocaleString("tr-TR")}</div>
+              <div className="mt-1 text-xs opacity-70">
+                {dayPeriodLabelTr(c.day_period, c.created_at)} / {dayPeriodLabelEn(c.day_period, c.created_at)}
+              </div>
               {c.city ? (
                 <div className="mt-1 text-xs opacity-80">
                   📍 {c.city}{c.district ? ` / ${c.district}` : ""}{c.location_text ? ` • ${c.location_text}` : ""}
@@ -741,6 +749,19 @@ export default function PublicProfileView({ username }: { username: string }) {
             </div>
           ))}
           {!checkins.length ? <div className="text-xs opacity-60">Bu yil check-in yok.</div> : null}
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
+        <div className="text-sm opacity-80">Stereotip rozetler / Stereotype badges</div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {stereotypeBadges.map((b) => (
+            <div key={b.key} className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+              <div className="font-semibold">{b.titleTr}</div>
+              <div className="opacity-75">{b.titleEn}</div>
+            </div>
+          ))}
+          {!stereotypeBadges.length ? <div className="text-xs opacity-60">Henüz stereotip rozet yok.</div> : null}
         </div>
       </section>
 

@@ -21,6 +21,10 @@ alter table public.checkins add column if not exists price_try numeric(10,2);
 alter table public.checkins add column if not exists note text not null default '';
 alter table public.checkins add column if not exists latitude double precision;
 alter table public.checkins add column if not exists longitude double precision;
+alter table public.checkins add column if not exists day_period text;
+alter table public.checkins drop constraint if exists checkins_day_period_check;
+alter table public.checkins
+add constraint checkins_day_period_check check (day_period is null or day_period in ('morning', 'afternoon', 'evening', 'night'));
 
 create table if not exists public.follows (
   follower_id uuid not null references auth.users(id) on delete cascade,
@@ -61,6 +65,18 @@ create table if not exists public.product_suggestions (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.user_badges (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  badge_key text not null,
+  title_tr text not null,
+  title_en text not null,
+  detail_tr text not null default '',
+  detail_en text not null default '',
+  score integer not null default 0,
+  computed_at timestamptz not null default now(),
+  primary key (user_id, badge_key)
+);
+
 create index if not exists idx_profiles_username on public.profiles (username);
 create index if not exists idx_profiles_display_name on public.profiles (display_name);
 create index if not exists idx_follows_follower on public.follows (follower_id);
@@ -72,6 +88,7 @@ create index if not exists idx_checkins_created_at on public.checkins (created_a
 create index if not exists idx_analytics_events_name_time on public.analytics_events (event_name, created_at desc);
 create index if not exists idx_analytics_events_user_time on public.analytics_events (user_id, created_at desc);
 create index if not exists idx_product_suggestions_created_at on public.product_suggestions (created_at desc);
+create index if not exists idx_user_badges_user_score on public.user_badges (user_id, score desc, computed_at desc);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -94,6 +111,7 @@ alter table public.follows enable row level security;
 alter table public.favorite_beers enable row level security;
 alter table public.analytics_events enable row level security;
 alter table public.product_suggestions enable row level security;
+alter table public.user_badges enable row level security;
 
 -- profiles: everyone can read public profiles, owner can read/write self
 alter table public.profiles add column if not exists is_admin boolean not null default false;
@@ -232,12 +250,45 @@ for update using (
   )
 );
 
+drop policy if exists user_badges_read_public_or_owner on public.user_badges;
+create policy user_badges_read_public_or_owner on public.user_badges
+for select using (
+  auth.uid() = user_id
+  or exists (
+    select 1
+    from public.profiles p
+    where p.user_id = user_badges.user_id
+      and p.is_public = true
+  )
+);
+
+drop policy if exists user_badges_admin_write on public.user_badges;
+create policy user_badges_admin_write on public.user_badges
+for all using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+) with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
 revoke all on public.analytics_events from anon;
 revoke all on public.analytics_events from authenticated;
 grant insert on public.analytics_events to authenticated;
 revoke all on public.product_suggestions from anon;
 revoke all on public.product_suggestions from authenticated;
 grant insert, select, update on public.product_suggestions to authenticated;
+revoke all on public.user_badges from anon;
+revoke all on public.user_badges from authenticated;
+grant select, insert, update, delete on public.user_badges to authenticated;
 
 create table if not exists public.checkin_comments (
   id bigserial primary key,
