@@ -9,7 +9,6 @@ import { supabase } from "@/lib/supabase";
 import { normalizeUsername } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
-import { computeStereotypeBadges } from "@/lib/badges";
 import { dayPeriodLabelEn, dayPeriodLabelTr, type DayPeriod } from "@/lib/dayPeriod";
 
 type ProfileRow = {
@@ -38,6 +37,15 @@ type FavoriteBeerRow = {
   beer_name: string;
   rank: number;
 };
+type UserBadgeRow = {
+  badge_key: string;
+  title_tr: string;
+  title_en: string;
+  detail_tr: string;
+  detail_en: string;
+  score: number;
+  computed_at: string;
+};
 
 function avgRating(checkins: CheckinRow[]) {
   const rated = checkins.filter((c) => c.rating !== null && c.rating !== undefined);
@@ -64,6 +72,7 @@ export default function PublicProfileView({ username }: { username: string }) {
   const [editIsPublic, setEditIsPublic] = useState(true);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [favoriteQuery, setFavoriteQuery] = useState("");
+  const [dbBadges, setDbBadges] = useState<UserBadgeRow[]>([]);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [heatmapMode, setHeatmapMode] = useState<"football" | "grid">("football");
   const [gridCellMetric, setGridCellMetric] = useState<"color" | "count" | "avgRating">("color");
@@ -71,7 +80,7 @@ export default function PublicProfileView({ username }: { username: string }) {
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const [year, setYear] = useState(currentYear);
   const avg = useMemo(() => avgRating(checkins), [checkins]);
-  const stereotypeBadges = useMemo(() => computeStereotypeBadges(checkins), [checkins]);
+  const stereotypeBadges = dbBadges;
   const isOwnProfile = sessionUserId === profile?.user_id;
   const favoriteNames = useMemo(
     () => new Set(favorites.map((f) => favoriteBeerName(f.beer_name))),
@@ -109,6 +118,17 @@ export default function PublicProfileView({ username }: { username: string }) {
     () => Array.from(new Set(checkins.map((c) => c.beer_name).filter(Boolean))).sort((a, b) => a.localeCompare(b, "tr")),
     [checkins]
   );
+
+  async function loadBadgesForUser(userId: string) {
+    const { data } = await supabase
+      .from("user_badges")
+      .select("badge_key, title_tr, title_en, detail_tr, detail_en, score, computed_at")
+      .eq("user_id", userId)
+      .order("score", { ascending: false })
+      .order("computed_at", { ascending: false })
+      .limit(8);
+    setDbBadges((data as UserBadgeRow[] | null) ?? []);
+  }
 
   function avatarPublicUrl(path?: string | null) {
     const clean = (path || "").trim();
@@ -182,7 +202,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       const start = `${year}-01-01T00:00:00.000Z`;
       const end = `${year + 1}-01-01T00:00:00.000Z`;
 
-      const [favoritesRes, checkinsRes, followersRes, followingRes] = await Promise.all([
+      const [favoritesRes, checkinsRes, followersRes, followingRes, badgesRes] = await Promise.all([
         supabase
           .from("favorite_beers")
           .select("beer_name, rank")
@@ -203,17 +223,26 @@ export default function PublicProfileView({ username }: { username: string }) {
           .from("follows")
           .select("following_id", { count: "exact", head: true })
           .eq("follower_id", p.user_id),
+        supabase
+          .from("user_badges")
+          .select("badge_key, title_tr, title_en, detail_tr, detail_en, score, computed_at")
+          .eq("user_id", p.user_id)
+          .order("score", { ascending: false })
+          .order("computed_at", { ascending: false })
+          .limit(8),
       ]);
 
       if (favoritesRes.error) setErrorText(favoritesRes.error.message);
       if (checkinsRes.error) setErrorText(checkinsRes.error.message);
       if (followersRes.error) setErrorText(followersRes.error.message);
       if (followingRes.error) setErrorText(followingRes.error.message);
+      if (badgesRes.error) setErrorText(badgesRes.error.message);
 
       setFavorites((favoritesRes.data as FavoriteBeerRow[] | null) ?? []);
       setCheckins((checkinsRes.data as CheckinRow[] | null) ?? []);
       setFollowers(followersRes.count ?? 0);
       setFollowing(followingRes.count ?? 0);
+      setDbBadges((badgesRes.data as UserBadgeRow[] | null) ?? []);
 
       if (sessionUserId && sessionUserId !== p.user_id) {
         const [{ data: followRow }, { data: followsMeRow }] = await Promise.all([
@@ -452,6 +481,8 @@ export default function PublicProfileView({ username }: { username: string }) {
       .lt("created_at", end)
       .order("created_at", { ascending: false });
     setCheckins((data as CheckinRow[] | null) ?? []);
+    await supabase.rpc("refresh_my_badges");
+    await loadBadgesForUser(sessionUserId);
   }
 
   async function deleteCheckinOnDay(id: string) {
@@ -462,6 +493,8 @@ export default function PublicProfileView({ username }: { username: string }) {
       return;
     }
     setCheckins((prev) => prev.filter((c) => c.id !== id));
+    await supabase.rpc("refresh_my_badges");
+    await loadBadgesForUser(sessionUserId);
   }
 
   async function updateCheckinOnDay(payload: { id: string; beer_name: string; rating: number | null }) {
@@ -478,6 +511,8 @@ export default function PublicProfileView({ username }: { username: string }) {
     setCheckins((prev) =>
       prev.map((c) => (c.id === payload.id ? { ...c, beer_name: payload.beer_name.trim(), rating: payload.rating } : c))
     );
+    await supabase.rpc("refresh_my_badges");
+    await loadBadgesForUser(sessionUserId);
   }
 
   if (loading) {
@@ -756,9 +791,9 @@ export default function PublicProfileView({ username }: { username: string }) {
         <div className="text-sm opacity-80">Stereotip rozetler / Stereotype badges</div>
         <div className="mt-2 flex flex-wrap gap-2">
           {stereotypeBadges.map((b) => (
-            <div key={b.key} className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-              <div className="font-semibold">{b.titleTr}</div>
-              <div className="opacity-75">{b.titleEn}</div>
+            <div key={b.badge_key} className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+              <div className="font-semibold">{b.title_tr}</div>
+              <div className="opacity-75">{b.title_en}</div>
             </div>
           ))}
           {!stereotypeBadges.length ? <div className="text-xs opacity-60">Henüz stereotip rozet yok.</div> : null}

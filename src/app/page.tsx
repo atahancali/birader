@@ -14,7 +14,6 @@ import { usernameFromEmail, usernameToCandidateEmails } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
 import { TURKEY_CITIES, districtsForCity } from "@/lib/trLocations";
-import { computeStereotypeBadges } from "@/lib/badges";
 import { DAY_PERIOD_OPTIONS, dayPeriodLabelEn, dayPeriodLabelTr, type DayPeriod } from "@/lib/dayPeriod";
 
 type Checkin = {
@@ -53,6 +52,15 @@ type ProductSuggestionRow = {
   created_at: string;
   username?: string | null;
   display_name?: string | null;
+};
+type UserBadgeRow = {
+  badge_key: string;
+  title_tr: string;
+  title_en: string;
+  detail_tr: string;
+  detail_en: string;
+  score: number;
+  computed_at: string;
 };
 
 type HomeSection = "log" | "social" | "heatmap" | "stats";
@@ -730,6 +738,8 @@ export default function Home() {
   const [headerProfile, setHeaderProfile] = useState<HeaderProfile | null>(null);
   const [isLogMutating, setIsLogMutating] = useState(false);
   const [isAdminUser, setIsAdminUser] = useState(false);
+  const [dbBadges, setDbBadges] = useState<UserBadgeRow[]>([]);
+  const [badgeRefreshBusy, setBadgeRefreshBusy] = useState(false);
   const [adminSuggestions, setAdminSuggestions] = useState<ProductSuggestionRow[]>([]);
   const [adminSuggestionsBusy, setAdminSuggestionsBusy] = useState(false);
   const [adminSuggestionStatusFilter, setAdminSuggestionStatusFilter] = useState<"all" | "new" | "in_progress" | "done">("all");
@@ -910,6 +920,7 @@ export default function Home() {
   useEffect(() => {
     if (!session?.user?.id) return;
     void supabase.rpc("refresh_my_badges");
+    void loadMyBadges();
   }, [session?.user?.id]);
 
   useEffect(() => {
@@ -1138,7 +1149,7 @@ export default function Home() {
       unratedShare: checkins.length ? Math.round((unrated / checkins.length) * 100) : 0,
     };
   }, [checkins]);
-  const stereotypeBadges = useMemo(() => computeStereotypeBadges(checkins), [checkins]);
+  const stereotypeBadges = dbBadges;
 
   const highlightedBucketInfo = useMemo(() => {
     const idx = ratingDistribution.buckets.findIndex((b) => b.count === ratingDistribution.max);
@@ -1434,6 +1445,35 @@ export default function Home() {
     );
   }
 
+  async function loadMyBadges() {
+    if (!session?.user?.id) {
+      setDbBadges([]);
+      return;
+    }
+    const { data, error } = await supabase
+      .from("user_badges")
+      .select("badge_key, title_tr, title_en, detail_tr, detail_en, score, computed_at")
+      .eq("user_id", session.user.id)
+      .order("score", { ascending: false })
+      .order("computed_at", { ascending: false })
+      .limit(8);
+    if (error) return;
+    setDbBadges((data as UserBadgeRow[] | null) ?? []);
+  }
+
+  async function refreshAllBadgesNow() {
+    if (!canManageSuggestions || badgeRefreshBusy) return;
+    setBadgeRefreshBusy(true);
+    const { error } = await supabase.rpc("refresh_all_user_badges");
+    setBadgeRefreshBusy(false);
+    if (error) {
+      alert(`Rozetler yenilenemedi: ${error.message}`);
+      return;
+    }
+    await loadMyBadges();
+    alert("Tum rozetler yenilendi.");
+  }
+
   async function updateSuggestionStatus(id: number, nextStatus: "new" | "in_progress" | "done") {
     if (!canManageSuggestions) return;
     const { error } = await supabase
@@ -1594,6 +1634,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           setBatchCountInput("1");
           setBatchConfirmed(false);
           await loadCheckins();
+          await supabase.rpc("refresh_my_badges");
+          await loadMyBadges();
           return;
         }
 
@@ -1637,6 +1679,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       setBatchBeerNames([]);
       setBatchCountInput("1");
       setBatchConfirmed(false);
+      await supabase.rpc("refresh_my_badges");
+      await loadMyBadges();
       trackEvent({
         eventName: "checkin_added_local",
         userId: session?.user?.id ?? null,
@@ -2583,12 +2627,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           <div className="mt-2 flex flex-wrap gap-2">
             {stereotypeBadges.map((b) => (
               <div
-                key={b.key}
+                key={b.badge_key}
                 className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100"
-                title={`${b.detailTr} • ${b.detailEn}`}
+                title={`${b.detail_tr} • ${b.detail_en}`}
               >
-                <div className="font-semibold">{b.titleTr}</div>
-                <div className="opacity-75">{b.titleEn}</div>
+                <div className="font-semibold">{b.title_tr}</div>
+                <div className="opacity-75">{b.title_en}</div>
               </div>
             ))}
             {!stereotypeBadges.length ? <div className="text-xs opacity-60">Henüz stereotip rozet yok.</div> : null}
@@ -2599,13 +2643,23 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
             <div className="flex items-center justify-between gap-2">
               <div className="text-sm text-amber-200">Oneri yonetimi</div>
-              <button
-                type="button"
-                onClick={() => void loadAdminSuggestions()}
-                className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
-              >
-                Yenile
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void refreshAllBadgesNow()}
+                  disabled={badgeRefreshBusy}
+                  className="rounded-lg border border-amber-300/35 bg-amber-500/10 px-2 py-1 text-xs disabled:opacity-60"
+                >
+                  {badgeRefreshBusy ? "Badges..." : "Badges refresh"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void loadAdminSuggestions()}
+                  className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+                >
+                  Yenile
+                </button>
+              </div>
             </div>
             <div className="mt-2 grid grid-cols-2 gap-2">
               <select
