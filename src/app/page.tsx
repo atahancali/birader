@@ -1052,39 +1052,51 @@ export default function Home() {
       loadCheckins();
       loadFavorites();
       void flushOfflineLogQueue();
-      supabase
-        .from("profiles")
-        .select("username, display_name, avatar_path, is_admin, heatmap_color_from, heatmap_color_to, referral_code")
-        .eq("user_id", session.user.id)
-        .maybeSingle()
-        .then(({ data }) => {
-          if (data) {
-            setIsAdminUser(Boolean((data as any).is_admin));
-            setHeaderProfile({
-              username: (data as any).username,
-              display_name: (data as any).display_name,
-              avatar_path: (data as any).avatar_path,
-              is_admin: Boolean((data as any).is_admin),
-              heatmap_color_from: (data as any).heatmap_color_from,
-              heatmap_color_to: (data as any).heatmap_color_to,
-              referral_code: (data as any).referral_code,
-            });
-            if ((data as any).heatmap_color_from) setGridColorFrom(String((data as any).heatmap_color_from));
-            if ((data as any).heatmap_color_to) setGridColorTo(String((data as any).heatmap_color_to));
-            void ensureReferralCode();
-          } else {
-            setIsAdminUser(false);
-            setHeaderProfile({
-              username: usernameFromEmail(session.user.email) || `user-${session.user.id.slice(0, 6)}`,
-              display_name: "",
-              avatar_path: "",
-              is_admin: false,
-              heatmap_color_from: null,
-              heatmap_color_to: null,
-              referral_code: null,
-            });
-          }
-        });
+      void (async () => {
+        let row: any = null;
+        const withTheme = await supabase
+          .from("profiles")
+          .select("username, display_name, avatar_path, is_admin, heatmap_color_from, heatmap_color_to, referral_code")
+          .eq("user_id", session.user.id)
+          .maybeSingle();
+        if (!withTheme.error) {
+          row = withTheme.data;
+        } else {
+          const fallback = await supabase
+            .from("profiles")
+            .select("username, display_name, avatar_path, is_admin, referral_code")
+            .eq("user_id", session.user.id)
+            .maybeSingle();
+          if (!fallback.error) row = fallback.data;
+        }
+
+        if (row) {
+          setIsAdminUser(Boolean(row.is_admin));
+          setHeaderProfile({
+            username: row.username,
+            display_name: row.display_name,
+            avatar_path: row.avatar_path,
+            is_admin: Boolean(row.is_admin),
+            heatmap_color_from: row.heatmap_color_from ?? null,
+            heatmap_color_to: row.heatmap_color_to ?? null,
+            referral_code: row.referral_code ?? null,
+          });
+          if (row.heatmap_color_from) setGridColorFrom(String(row.heatmap_color_from));
+          if (row.heatmap_color_to) setGridColorTo(String(row.heatmap_color_to));
+          void ensureReferralCode();
+        } else {
+          setIsAdminUser(false);
+          setHeaderProfile({
+            username: usernameFromEmail(session.user.email) || `user-${session.user.id.slice(0, 6)}`,
+            display_name: "",
+            avatar_path: "",
+            is_admin: false,
+            heatmap_color_from: null,
+            heatmap_color_to: null,
+            referral_code: null,
+          });
+        }
+      })();
     } else {
       setIsAdminUser(false);
     }
@@ -1543,29 +1555,53 @@ export default function Home() {
     return `https://birader.app/?ref=${encodeURIComponent(code)}`;
   }, [headerProfile?.referral_code]);
   const tutorialSteps = useMemo<TutorialStep[]>(
-    () => [
-      {
-        title: "1) Log Wizard",
-        desc: "Format sec, bira sec, detay gir, onayla. Ilk logu 30 saniyede at.",
-        section: "log",
-      },
-      {
-        title: "2) Sosyal Akis",
-        desc: "Kullanici ara, takip et, akista yorum/begeni ile etkilesime gir.",
-        section: "social",
-      },
-      {
-        title: "3) Harita",
-        desc: "Grid veya saha moduna gec. Gune tiklayip detaylari ac.",
-        section: "heatmap",
-      },
-      {
-        title: "4) Istatistik",
-        desc: "Streak, rozet ve haftalik recap ile davranisini izle.",
-        section: "stats",
-      },
-    ],
-    []
+    () =>
+      lang === "en"
+        ? [
+            {
+              title: "1) Log Wizard",
+              desc: "Choose format, select beer, add details, and confirm. First log in 30 seconds.",
+              section: "log",
+            },
+            {
+              title: "2) Social Feed",
+              desc: "Find users, follow them, and interact in feed with comments/likes.",
+              section: "social",
+            },
+            {
+              title: "3) Map",
+              desc: "Switch to grid or field mode. Tap a day to open details.",
+              section: "heatmap",
+            },
+            {
+              title: "4) Stats",
+              desc: "Track streak, badges and weekly recap.",
+              section: "stats",
+            },
+          ]
+        : [
+            {
+              title: "1) Log Wizard",
+              desc: "Format sec, bira sec, detay gir, onayla. Ilk logu 30 saniyede at.",
+              section: "log",
+            },
+            {
+              title: "2) Sosyal Akis",
+              desc: "Kullanici ara, takip et, akista yorum/begeni ile etkilesime gir.",
+              section: "social",
+            },
+            {
+              title: "3) Harita",
+              desc: "Grid veya saha moduna gec. Gune tiklayip detaylari ac.",
+              section: "heatmap",
+            },
+            {
+              title: "4) Istatistik",
+              desc: "Streak, rozet ve haftalik recap ile davranisini izle.",
+              section: "stats",
+            },
+          ],
+    [lang]
   );
   const activeTutorialStep = tutorialSteps[tutorialStepIdx] || tutorialSteps[0];
   useEffect(() => {
@@ -2390,7 +2426,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           </div>
         ) : null}
         <div className="mt-2 flex items-center justify-between gap-2">
-          <div className="text-[11px] opacity-70">Uygulama turu</div>
+          <div className="text-[11px] opacity-70">{lang === "en" ? "App tour" : "Uygulama turu"}</div>
           <button
             type="button"
             onClick={() => {
@@ -2399,7 +2435,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             }}
             className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
           >
-            Tutorial baslat
+            {lang === "en" ? "Start tutorial" : "Tutorial baslat"}
           </button>
         </div>
       </section>
@@ -3436,21 +3472,22 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           <div className="absolute left-1/2 top-1/2 w-[92%] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-amber-300/30 bg-black p-4">
             <div className="flex items-center justify-between gap-2">
               <div className="text-xs text-amber-200/85">
-                Tutorial {tutorialStepIdx + 1}/{tutorialSteps.length}
+                {lang === "en" ? "Tutorial" : "Tutorial"} {tutorialStepIdx + 1}/{tutorialSteps.length}
               </div>
               <button
                 type="button"
                 onClick={() => closeTutorial(true)}
                 className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
               >
-                Bitir
+                {lang === "en" ? "Finish" : "Bitir"}
               </button>
             </div>
             <div className="mt-2 text-lg font-semibold">{activeTutorialStep.title}</div>
             <div className="mt-2 text-sm opacity-85">{activeTutorialStep.desc}</div>
             <div className="mt-2 rounded-xl border border-white/10 bg-black/25 p-2 text-xs opacity-75">
-              Bu adim icin otomatik olarak <span className="font-semibold">{activeTutorialStep.section}</span> sekmesine
-              gecildi.
+              {lang === "en" ? "Automatically switched to" : "Bu adim icin otomatik olarak"}{" "}
+              <span className="font-semibold">{activeTutorialStep.section}</span>{" "}
+              {lang === "en" ? "section." : "sekmesine gecildi."}
             </div>
             <div className="mt-4 flex items-center justify-between gap-2">
               <button
@@ -3459,7 +3496,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 onClick={() => setTutorialStepIdx((i) => Math.max(0, i - 1))}
                 className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs disabled:opacity-40"
               >
-                Geri
+                {lang === "en" ? "Back" : "Geri"}
               </button>
               {tutorialStepIdx < tutorialSteps.length - 1 ? (
                 <button
@@ -3467,7 +3504,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   onClick={() => setTutorialStepIdx((i) => Math.min(tutorialSteps.length - 1, i + 1))}
                   className="rounded-xl border border-amber-300/35 bg-amber-500/20 px-3 py-2 text-xs text-amber-100"
                 >
-                  Ileri
+                  {lang === "en" ? "Next" : "Ileri"}
                 </button>
               ) : (
                 <button
@@ -3475,7 +3512,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   onClick={() => closeTutorial(true)}
                   className="rounded-xl border border-emerald-300/35 bg-emerald-500/20 px-3 py-2 text-xs text-emerald-100"
                 >
-                  Tamamladim
+                  {lang === "en" ? "Done" : "Tamamladim"}
                 </button>
               )}
             </div>

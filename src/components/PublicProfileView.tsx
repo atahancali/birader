@@ -176,11 +176,24 @@ export default function PublicProfileView({ username }: { username: string }) {
       setErrorText(null);
 
       const normalized = normalizeUsername(username);
-      const { data: row, error } = await supabase
+      let row: any = null;
+      let error: any = null;
+      const withTheme = await supabase
         .from("profiles")
         .select("user_id, username, display_name, bio, is_public, avatar_path, heatmap_color_from, heatmap_color_to")
         .eq("username", normalized)
         .maybeSingle();
+      if (!withTheme.error) {
+        row = withTheme.data;
+      } else {
+        const fallback = await supabase
+          .from("profiles")
+          .select("user_id, username, display_name, bio, is_public, avatar_path")
+          .eq("username", normalized)
+          .maybeSingle();
+        row = fallback.data;
+        error = fallback.error;
+      }
 
       if (error) {
         setErrorText(error.message);
@@ -334,7 +347,8 @@ export default function PublicProfileView({ username }: { username: string }) {
   async function saveOwnProfile() {
     if (!profile || !isOwnProfile || !sessionUserId) return;
     setSavingProfile(true);
-    const { error } = await supabase
+    let error: any = null;
+    const withTheme = await supabase
       .from("profiles")
       .update({
         display_name: editDisplayName.trim().slice(0, 32),
@@ -344,6 +358,19 @@ export default function PublicProfileView({ username }: { username: string }) {
         heatmap_color_to: gridColorTo,
       })
       .eq("user_id", sessionUserId);
+    if (!withTheme.error) {
+      error = null;
+    } else {
+      const fallback = await supabase
+        .from("profiles")
+        .update({
+          display_name: editDisplayName.trim().slice(0, 32),
+          bio: editBio.trim(),
+          is_public: editIsPublic,
+        })
+        .eq("user_id", sessionUserId);
+      error = fallback.error;
+    }
     setSavingProfile(false);
     if (error) {
       alert(error.message);
