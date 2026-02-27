@@ -33,6 +33,11 @@ type SearchProfile = {
   is_public: boolean;
 };
 
+type DiscoverProfile = SearchProfile & {
+  follower_count: number;
+  recent_logs_30d: number;
+};
+
 type CheckinRow = {
   beer_name: string;
   rating: number;
@@ -287,6 +292,8 @@ export default function SocialPanel({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchProfile[]>([]);
   const [searchBusy, setSearchBusy] = useState(false);
+  const [discoverProfiles, setDiscoverProfiles] = useState<DiscoverProfile[]>([]);
+  const [discoverBusy, setDiscoverBusy] = useState(false);
   const followingIdsRef = useRef<Set<string>>(new Set());
   const followingNameRef = useRef<Map<string, { username: string; display_name?: string | null }>>(new Map());
   const leaderboardReloadRef = useRef<(() => Promise<void>) | null>(null);
@@ -1030,7 +1037,12 @@ export default function SocialPanel({
     }
 
     await loadFollowing();
-    await Promise.all([loadOwnRecentCheckins(), loadPendingInvites(), loadNotifications(notifLimit)]);
+    await Promise.all([
+      loadDiscoverProfiles(),
+      loadOwnRecentCheckins(),
+      loadPendingInvites(),
+      loadNotifications(notifLimit),
+    ]);
     setLoading(false);
   }
 
@@ -1043,6 +1055,19 @@ export default function SocialPanel({
     if (!loading) void loadNotifications(notifLimit);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notifLimit]);
+
+  useEffect(() => {
+    const q = normalizeUsername(searchQuery);
+    if (q.length < 3) {
+      setSearchResults([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      void searchUsers();
+    }, 220);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery]);
 
   useEffect(() => {
     followingIdsRef.current = followingIds;
@@ -1438,6 +1463,76 @@ export default function SocialPanel({
 
     setSearchResults(scored);
     trackEvent({ eventName: "profile_search", userId, props: { query: q } });
+  }
+
+  async function loadDiscoverProfiles() {
+    setDiscoverBusy(true);
+    const { data: profiles, error: profileErr } = await supabase
+      .from("profiles")
+      .select("user_id, username, display_name, bio, is_public")
+      .neq("user_id", userId)
+      .eq("is_public", true)
+      .order("username", { ascending: true })
+      .limit(120);
+
+    if (profileErr) {
+      setDiscoverBusy(false);
+      markDbError(profileErr.message);
+      return;
+    }
+
+    const base = (profiles as SearchProfile[] | null) ?? [];
+    if (!base.length) {
+      setDiscoverProfiles([]);
+      setDiscoverBusy(false);
+      return;
+    }
+
+    const ids = base.map((p) => p.user_id);
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const [{ data: followerRows, error: followerErr }, { data: logRows, error: logErr }] = await Promise.all([
+      supabase.from("follows").select("following_id").in("following_id", ids),
+      supabase.from("checkins").select("user_id").in("user_id", ids).gte("created_at", since),
+    ]);
+    setDiscoverBusy(false);
+
+    if (followerErr) {
+      markDbError(followerErr.message);
+      return;
+    }
+    if (logErr) {
+      markDbError(logErr.message);
+      return;
+    }
+
+    const followerCount = new Map<string, number>();
+    for (const row of ((followerRows as Array<{ following_id: string }> | null) ?? [])) {
+      const id = String(row.following_id || "");
+      if (!id) continue;
+      followerCount.set(id, (followerCount.get(id) || 0) + 1);
+    }
+
+    const logCount = new Map<string, number>();
+    for (const row of ((logRows as Array<{ user_id: string }> | null) ?? [])) {
+      const id = String(row.user_id || "");
+      if (!id) continue;
+      logCount.set(id, (logCount.get(id) || 0) + 1);
+    }
+
+    const enriched = base
+      .map((p) => ({
+        ...p,
+        follower_count: followerCount.get(p.user_id) || 0,
+        recent_logs_30d: logCount.get(p.user_id) || 0,
+      }))
+      .sort((a, b) => {
+        if (a.recent_logs_30d !== b.recent_logs_30d) return b.recent_logs_30d - a.recent_logs_30d;
+        if (a.follower_count !== b.follower_count) return b.follower_count - a.follower_count;
+        return a.username.localeCompare(b.username, "tr");
+      })
+      .slice(0, 12);
+
+    setDiscoverProfiles(enriched);
   }
 
   async function follow(target: SearchProfile) {
@@ -1941,9 +2036,53 @@ export default function SocialPanel({
                 </div>
               );
             })}
-            {!searchBusy && searchResults.length === 0 ? (
+            {!searchBusy && normalizeUsername(searchQuery).length >= 3 && searchResults.length === 0 ? (
               <div className="text-xs opacity-60">Arama sonucu yok.</div>
             ) : null}
+          </div>
+
+          <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs opacity-70">Kullanici kesfet</div>
+              <button
+                type="button"
+                onClick={() => void loadDiscoverProfiles()}
+                className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
+              >
+                {discoverBusy ? "..." : "Yenile"}
+              </button>
+            </div>
+            <div className="mt-2 space-y-2">
+              {discoverProfiles.map((p) => {
+                const isFollowing = followingIds.has(p.user_id);
+                return (
+                  <div
+                    key={`discover-${p.user_id}`}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/25 p-2"
+                  >
+                    <div className="min-w-0">
+                      <Link href={`/u/${p.username}`} className="truncate text-sm underline">
+                        {visibleName(p)}
+                      </Link>
+                      <div className="truncate text-[11px] opacity-65">@{p.username}</div>
+                      <div className="text-[11px] opacity-70">
+                        30g log: {p.recent_logs_30d} • Takipci: {p.follower_count}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void (isFollowing ? unfollow(p) : follow(p))}
+                      className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+                    >
+                      {isFollowing ? "Takiptesin" : "Takip et"}
+                    </button>
+                  </div>
+                );
+              })}
+              {!discoverBusy && discoverProfiles.length === 0 ? (
+                <div className="text-xs opacity-60">Kesfet icin uygun profil yok.</div>
+              ) : null}
+            </div>
           </div>
         </div>
 
