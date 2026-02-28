@@ -852,6 +852,556 @@ from public.profiles p
 left join public.checkins c on c.user_id = p.user_id
 group by p.user_id, p.username, p.display_name;
 
+
+
+-- 013_audit_crm_analytics.sql
+-- Run after main.sql. Idempotent.
+
+-- =========================================================
+-- 1) Identity history (username/display name changes)
+-- =========================================================
+create table if not exists public.profile_identity_history (
+  id bigserial primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  old_username text,
+  new_username text,
+  old_display_name text,
+  new_display_name text,
+  changed_by uuid,
+  source text not null default 'app',
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_profile_identity_history_user_time
+  on public.profile_identity_history (user_id, created_at desc);
+
+alter table public.profile_identity_history enable row level security;
+
+drop policy if exists profile_identity_history_owner_read on public.profile_identity_history;
+create policy profile_identity_history_owner_read on public.profile_identity_history
+for select using (
+  auth.uid() = user_id
+  or exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
+drop policy if exists profile_identity_history_admin_write on public.profile_identity_history;
+create policy profile_identity_history_admin_write on public.profile_identity_history
+for all using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+) with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
+-- =========================================================
+-- 2) Generic SQL action log (all important actions)
+-- =========================================================
+create table if not exists public.app_action_logs (
+  id bigserial primary key,
+  user_id uuid null references auth.users(id) on delete set null,
+  action_name text not null,
+  entity_type text not null,
+  entity_id text,
+  before_data jsonb,
+  after_data jsonb,
+  context jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_app_action_logs_user_time
+  on public.app_action_logs (user_id, created_at desc);
+create index if not exists idx_app_action_logs_action_time
+  on public.app_action_logs (action_name, created_at desc);
+create index if not exists idx_app_action_logs_entity
+  on public.app_action_logs (entity_type, entity_id, created_at desc);
+
+alter table public.app_action_logs enable row level security;
+
+drop policy if exists app_action_logs_owner_read on public.app_action_logs;
+create policy app_action_logs_owner_read on public.app_action_logs
+for select using (
+  auth.uid() = user_id
+  or exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
+drop policy if exists app_action_logs_admin_write on public.app_action_logs;
+create policy app_action_logs_admin_write on public.app_action_logs
+for all using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+) with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
+-- =========================================================
+-- 3) Daily CRM snapshot (retention + segmentation)
+-- =========================================================
+create table if not exists public.user_daily_metrics (
+  snapshot_date date not null default current_date,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  username text not null default '',
+  display_name text not null default '',
+  total_checkins int not null default 0,
+  checkins_7d int not null default 0,
+  checkins_30d int not null default 0,
+  avg_rating_all numeric(4,2),
+  avg_rating_30d numeric(4,2),
+  followers_count int not null default 0,
+  following_count int not null default 0,
+  favorite_count int not null default 0,
+  unique_city_count int not null default 0,
+  current_streak_days int not null default 0,
+  max_streak_days int not null default 0,
+  last_checkin_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (snapshot_date, user_id)
+);
+
+create index if not exists idx_user_daily_metrics_user_date
+  on public.user_daily_metrics (user_id, snapshot_date desc);
+create index if not exists idx_user_daily_metrics_date
+  on public.user_daily_metrics (snapshot_date desc);
+
+alter table public.user_daily_metrics enable row level security;
+
+drop policy if exists user_daily_metrics_owner_or_admin_read on public.user_daily_metrics;
+create policy user_daily_metrics_owner_or_admin_read on public.user_daily_metrics
+for select using (
+  auth.uid() = user_id
+  or exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
+drop policy if exists user_daily_metrics_admin_write on public.user_daily_metrics;
+create policy user_daily_metrics_admin_write on public.user_daily_metrics
+for all using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+) with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
+-- =========================================================
+-- 4) Trigger functions for logging
+-- =========================================================
+create or replace function public.log_profile_identity_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  actor uuid := auth.uid();
+begin
+  if (coalesce(old.username, '') is distinct from coalesce(new.username, ''))
+     or (coalesce(old.display_name, '') is distinct from coalesce(new.display_name, '')) then
+    insert into public.profile_identity_history (
+      user_id, old_username, new_username, old_display_name, new_display_name, changed_by, source
+    ) values (
+      new.user_id,
+      old.username,
+      new.username,
+      old.display_name,
+      new.display_name,
+      actor,
+      case when actor is null then 'system' else 'app' end
+    );
+
+    insert into public.app_action_logs (
+      user_id, action_name, entity_type, entity_id, before_data, after_data, context
+    ) values (
+      new.user_id,
+      'profile_identity_changed',
+      'profile',
+      new.user_id::text,
+      jsonb_build_object('username', old.username, 'display_name', old.display_name),
+      jsonb_build_object('username', new.username, 'display_name', new.display_name),
+      jsonb_build_object('changed_by', actor)
+    );
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function public.log_checkin_row_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_action text;
+  v_user uuid;
+  v_entity_id text;
+begin
+  if tg_op = 'INSERT' then
+    v_action := 'checkin_created';
+    v_user := new.user_id;
+    v_entity_id := new.id::text;
+    insert into public.app_action_logs (
+      user_id, action_name, entity_type, entity_id, before_data, after_data, context
+    ) values (
+      v_user, v_action, 'checkin', v_entity_id, null, to_jsonb(new), '{}'::jsonb
+    );
+    return new;
+  elsif tg_op = 'UPDATE' then
+    v_action := 'checkin_updated';
+    v_user := new.user_id;
+    v_entity_id := new.id::text;
+    insert into public.app_action_logs (
+      user_id, action_name, entity_type, entity_id, before_data, after_data, context
+    ) values (
+      v_user, v_action, 'checkin', v_entity_id, to_jsonb(old), to_jsonb(new), '{}'::jsonb
+    );
+    return new;
+  else
+    v_action := 'checkin_deleted';
+    v_user := old.user_id;
+    v_entity_id := old.id::text;
+    insert into public.app_action_logs (
+      user_id, action_name, entity_type, entity_id, before_data, after_data, context
+    ) values (
+      v_user, v_action, 'checkin', v_entity_id, to_jsonb(old), null, '{}'::jsonb
+    );
+    return old;
+  end if;
+end;
+$$;
+
+create or replace function public.log_follow_row_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    insert into public.app_action_logs (
+      user_id, action_name, entity_type, entity_id, before_data, after_data, context
+    ) values (
+      new.follower_id,
+      'follow_created',
+      'follow',
+      new.follower_id::text || '->' || new.following_id::text,
+      null,
+      to_jsonb(new),
+      jsonb_build_object('target_user_id', new.following_id)
+    );
+    return new;
+  else
+    insert into public.app_action_logs (
+      user_id, action_name, entity_type, entity_id, before_data, after_data, context
+    ) values (
+      old.follower_id,
+      'follow_deleted',
+      'follow',
+      old.follower_id::text || '->' || old.following_id::text,
+      to_jsonb(old),
+      null,
+      jsonb_build_object('target_user_id', old.following_id)
+    );
+    return old;
+  end if;
+end;
+$$;
+
+create or replace function public.log_favorite_row_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_action text;
+begin
+  v_action := case
+    when tg_op = 'INSERT' then 'favorite_added'
+    when tg_op = 'UPDATE' then 'favorite_updated'
+    else 'favorite_removed'
+  end;
+
+  insert into public.app_action_logs (
+    user_id, action_name, entity_type, entity_id, before_data, after_data, context
+  ) values (
+    coalesce(new.user_id, old.user_id),
+    v_action,
+    'favorite_beer',
+    coalesce(new.user_id::text, old.user_id::text) || ':' || coalesce(new.rank::text, old.rank::text),
+    case when tg_op = 'INSERT' then null else to_jsonb(old) end,
+    case when tg_op = 'DELETE' then null else to_jsonb(new) end,
+    '{}'::jsonb
+  );
+
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_log_profile_identity_change on public.profiles;
+create trigger trg_log_profile_identity_change
+after update on public.profiles
+for each row execute function public.log_profile_identity_change();
+
+drop trigger if exists trg_log_checkin_row_change on public.checkins;
+create trigger trg_log_checkin_row_change
+after insert or update or delete on public.checkins
+for each row execute function public.log_checkin_row_change();
+
+drop trigger if exists trg_log_follow_row_change on public.follows;
+create trigger trg_log_follow_row_change
+after insert or delete on public.follows
+for each row execute function public.log_follow_row_change();
+
+drop trigger if exists trg_log_favorite_row_change on public.favorite_beers;
+create trigger trg_log_favorite_row_change
+after insert or update or delete on public.favorite_beers
+for each row execute function public.log_favorite_row_change();
+
+-- =========================================================
+-- 5) CRM snapshot refresh functions
+-- =========================================================
+create or replace function public.compute_streaks(p_user_id uuid)
+returns table(current_streak_days int, max_streak_days int)
+language sql
+stable
+as $$
+with days as (
+  select distinct (timezone('UTC', c.created_at))::date as d
+  from public.checkins c
+  where c.user_id = p_user_id
+),
+ordered as (
+  select
+    d,
+    d - (row_number() over (order by d))::int as grp
+  from days
+),
+runs as (
+  select min(d) as start_d, max(d) as end_d, count(*)::int as len
+  from ordered
+  group by grp
+),
+mx as (
+  select coalesce(max(len), 0) as max_len from runs
+),
+cur as (
+  select coalesce(max(len), 0) as current_len
+  from runs
+  where end_d = current_date
+)
+select
+  coalesce((select current_len from cur), 0)::int as current_streak_days,
+  coalesce((select max_len from mx), 0)::int as max_streak_days;
+$$;
+
+create or replace function public.refresh_user_daily_metrics(p_user_id uuid, p_snapshot_date date default current_date)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_profile record;
+  v_total int := 0;
+  v_7d int := 0;
+  v_30d int := 0;
+  v_avg_all numeric(4,2);
+  v_avg_30d numeric(4,2);
+  v_followers int := 0;
+  v_following int := 0;
+  v_favs int := 0;
+  v_city_count int := 0;
+  v_last_checkin timestamptz;
+  v_cur_streak int := 0;
+  v_max_streak int := 0;
+begin
+  if p_user_id is null then
+    return;
+  end if;
+
+  select p.user_id, p.username, p.display_name
+  into v_profile
+  from public.profiles p
+  where p.user_id = p_user_id;
+
+  if v_profile.user_id is null then
+    return;
+  end if;
+
+  select
+    count(*)::int,
+    count(*) filter (where c.created_at >= (p_snapshot_date::timestamptz - interval '7 days'))::int,
+    count(*) filter (where c.created_at >= (p_snapshot_date::timestamptz - interval '30 days'))::int,
+    round(avg(c.rating)::numeric, 2),
+    round(avg(c.rating) filter (where c.created_at >= (p_snapshot_date::timestamptz - interval '30 days'))::numeric, 2),
+    count(distinct nullif(trim(c.city), ''))::int,
+    max(c.created_at)
+  into v_total, v_7d, v_30d, v_avg_all, v_avg_30d, v_city_count, v_last_checkin
+  from public.checkins c
+  where c.user_id = p_user_id;
+
+  select count(*)::int into v_followers from public.follows f where f.following_id = p_user_id;
+  select count(*)::int into v_following from public.follows f where f.follower_id = p_user_id;
+  select count(*)::int into v_favs from public.favorite_beers fb where fb.user_id = p_user_id;
+
+  select s.current_streak_days, s.max_streak_days
+  into v_cur_streak, v_max_streak
+  from public.compute_streaks(p_user_id) s;
+
+  insert into public.user_daily_metrics (
+    snapshot_date,
+    user_id,
+    username,
+    display_name,
+    total_checkins,
+    checkins_7d,
+    checkins_30d,
+    avg_rating_all,
+    avg_rating_30d,
+    followers_count,
+    following_count,
+    favorite_count,
+    unique_city_count,
+    current_streak_days,
+    max_streak_days,
+    last_checkin_at,
+    updated_at
+  )
+  values (
+    p_snapshot_date,
+    p_user_id,
+    coalesce(v_profile.username, ''),
+    coalesce(v_profile.display_name, ''),
+    coalesce(v_total, 0),
+    coalesce(v_7d, 0),
+    coalesce(v_30d, 0),
+    v_avg_all,
+    v_avg_30d,
+    coalesce(v_followers, 0),
+    coalesce(v_following, 0),
+    coalesce(v_favs, 0),
+    coalesce(v_city_count, 0),
+    coalesce(v_cur_streak, 0),
+    coalesce(v_max_streak, 0),
+    v_last_checkin,
+    now()
+  )
+  on conflict (snapshot_date, user_id)
+  do update set
+    username = excluded.username,
+    display_name = excluded.display_name,
+    total_checkins = excluded.total_checkins,
+    checkins_7d = excluded.checkins_7d,
+    checkins_30d = excluded.checkins_30d,
+    avg_rating_all = excluded.avg_rating_all,
+    avg_rating_30d = excluded.avg_rating_30d,
+    followers_count = excluded.followers_count,
+    following_count = excluded.following_count,
+    favorite_count = excluded.favorite_count,
+    unique_city_count = excluded.unique_city_count,
+    current_streak_days = excluded.current_streak_days,
+    max_streak_days = excluded.max_streak_days,
+    last_checkin_at = excluded.last_checkin_at,
+    updated_at = now();
+end;
+$$;
+
+create or replace function public.refresh_all_user_daily_metrics(p_snapshot_date date default current_date)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  r record;
+  v_count int := 0;
+begin
+  if auth.uid() is not null and not exists (
+    select 1 from public.profiles p where p.user_id = auth.uid() and p.is_admin = true
+  ) then
+    raise exception 'not allowed';
+  end if;
+
+  for r in select p.user_id from public.profiles p loop
+    perform public.refresh_user_daily_metrics(r.user_id, p_snapshot_date);
+    v_count := v_count + 1;
+  end loop;
+
+  return v_count;
+end;
+$$;
+
+revoke all on function public.refresh_user_daily_metrics(uuid, date) from public;
+revoke all on function public.refresh_all_user_daily_metrics(date) from public;
+grant execute on function public.refresh_user_daily_metrics(uuid, date) to authenticated;
+grant execute on function public.refresh_all_user_daily_metrics(date) to authenticated;
+
+do $do$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    begin
+      perform cron.unschedule(jobid) from cron.job where jobname = 'birader_refresh_daily_metrics';
+    exception when others then
+      null;
+    end;
+    perform cron.schedule(
+      'birader_refresh_daily_metrics',
+      '20 3 * * *',
+      'select public.refresh_all_user_daily_metrics(current_date);'
+    );
+  end if;
+exception when others then
+  null;
+end;
+$do$;
+
+-- Optional: backfill metrics for today once
+select public.refresh_all_user_daily_metrics(current_date);
+
 -- Verification
 select
   to_regclass('public.profiles') as profiles_table,
@@ -865,4 +1415,7 @@ select
   to_regclass('public.checkin_share_invites') as checkin_share_invites_table,
   to_regclass('public.checkin_comment_likes') as checkin_comment_likes_table,
   to_regclass('public.checkin_likes') as checkin_likes_table,
-  to_regclass('public.notifications') as notifications_table;
+  to_regclass('public.notifications') as notifications_table,
+  to_regclass('public.profile_identity_history') as profile_identity_history_table,
+  to_regclass('public.app_action_logs') as app_action_logs_table,
+  to_regclass('public.user_daily_metrics') as user_daily_metrics_table;
