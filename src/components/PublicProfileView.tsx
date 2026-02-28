@@ -134,9 +134,6 @@ export default function PublicProfileView({ username }: { username: string }) {
   }, [favoriteNames, favoriteOptionPool, favoriteQuery]);
   const shownName = useMemo(() => {
     const d = (profile?.display_name || "").trim();
-    const u = (profile?.username || "").trim();
-    const dn = normalizeUsername(d.replace(/^@+/, ""));
-    if (d.startsWith("@") && dn && u && dn !== u) return `@${u}`;
     return d || `@${profile?.username || ""}`;
   }, [profile?.display_name, profile?.username]);
   const dayCheckins = useMemo(() => {
