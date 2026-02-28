@@ -77,6 +77,36 @@ type UserBadgeRow = {
   computed_at: string;
 };
 
+type GrowthWeeklyRow = {
+  week_start: string;
+  new_users: number;
+  active_users: number;
+  total_checkins: number;
+  avg_checkins_per_active_user: number;
+};
+
+type RetentionCohortRow = {
+  cohort_week: string;
+  cohort_size: number;
+  retained_w1: number;
+  retained_w4: number;
+  retained_w8: number;
+  retention_w1_pct: number;
+  retention_w4_pct: number;
+  retention_w8_pct: number;
+};
+
+type AtRiskUserRow = {
+  user_id: string;
+  username: string;
+  display_name: string;
+  last_checkin_at: string | null;
+  inactive_days: number;
+  checkins_30d: number;
+  followers_count: number;
+  current_streak_days: number;
+};
+
 type HomeSection = "log" | "social" | "heatmap" | "stats";
 type LocationSuggestion = { city: string; district: string; score: number };
 const MAX_BULK_BACKDATE_COUNT = 10;
@@ -835,6 +865,10 @@ export default function Home() {
     created_at: string;
   }>>([]);
   const [adminReportsBusy, setAdminReportsBusy] = useState(false);
+  const [adminGrowthWeekly, setAdminGrowthWeekly] = useState<GrowthWeeklyRow[]>([]);
+  const [adminRetentionCohorts, setAdminRetentionCohorts] = useState<RetentionCohortRow[]>([]);
+  const [adminAtRiskUsers, setAdminAtRiskUsers] = useState<AtRiskUserRow[]>([]);
+  const [adminAnalyticsBusy, setAdminAnalyticsBusy] = useState(false);
   const [adminSuggestionStatusFilter, setAdminSuggestionStatusFilter] = useState<"all" | "new" | "in_progress" | "done">("all");
   const [adminSuggestionCategoryFilter, setAdminSuggestionCategoryFilter] = useState<string>("all");
   const lastLogAttemptAtRef = useRef(0);
@@ -1175,6 +1209,7 @@ export default function Home() {
     if (canManageSuggestions) {
       void loadAdminSuggestions();
       void loadAdminReports();
+      void loadAdminAnalyticsPanel();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canManageSuggestions]);
@@ -1871,6 +1906,35 @@ export default function Home() {
         created_at: String(r.created_at || ""),
       }))
     );
+  }
+
+  async function loadAdminAnalyticsPanel() {
+    if (!canManageSuggestions) return;
+    setAdminAnalyticsBusy(true);
+    const [growthRes, cohortRes, riskRes] = await Promise.all([
+      supabase
+        .from("growth_weekly_overview")
+        .select("week_start, new_users, active_users, total_checkins, avg_checkins_per_active_user")
+        .order("week_start", { ascending: false })
+        .limit(8),
+      supabase
+        .from("retention_cohort_weekly")
+        .select("cohort_week, cohort_size, retained_w1, retained_w4, retained_w8, retention_w1_pct, retention_w4_pct, retention_w8_pct")
+        .order("cohort_week", { ascending: false })
+        .limit(8),
+      supabase.rpc("crm_at_risk_users", { p_inactive_days: 7, p_limit: 12 }),
+    ]);
+    setAdminAnalyticsBusy(false);
+
+    if (!growthRes.error) {
+      setAdminGrowthWeekly((growthRes.data as GrowthWeeklyRow[] | null) ?? []);
+    }
+    if (!cohortRes.error) {
+      setAdminRetentionCohorts((cohortRes.data as RetentionCohortRow[] | null) ?? []);
+    }
+    if (!riskRes.error) {
+      setAdminAtRiskUsers((riskRes.data as AtRiskUserRow[] | null) ?? []);
+    }
   }
 
   async function updateReportStatus(id: number, status: "open" | "reviewed" | "resolved") {
@@ -3350,11 +3414,61 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 </button>
                 <button
                   type="button"
+                  onClick={() => void loadAdminAnalyticsPanel()}
+                  className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+                >
+                  {adminAnalyticsBusy ? "..." : tx(lang, "Analitik yenile", "Refresh analytics")}
+                </button>
+                <button
+                  type="button"
                   onClick={() => void loadAdminSuggestions()}
                   className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
                 >
                   {tx(lang, "Yenile", "Refresh")}
                 </button>
+              </div>
+            </div>
+
+            <div className="mt-3 grid gap-3">
+              <div className="rounded-xl border border-white/10 bg-black/25 p-2">
+                <div className="text-xs opacity-75">{tx(lang, "Haftalik buyume", "Weekly growth")}</div>
+                <div className="mt-2 space-y-1">
+                  {adminGrowthWeekly.map((r) => (
+                    <div key={`gw-${r.week_start}`} className="flex items-center justify-between gap-2 text-[11px]">
+                      <div>{new Date(r.week_start).toLocaleDateString(lang === "en" ? "en-US" : "tr-TR")}</div>
+                      <div className="opacity-80">
+                        +{r.new_users} U • {r.active_users} AU • {r.total_checkins} log • {Number(r.avg_checkins_per_active_user || 0).toFixed(2)}
+                      </div>
+                    </div>
+                  ))}
+                  {!adminGrowthWeekly.length ? <div className="text-[11px] opacity-60">{tx(lang, "Veri yok.", "No data.")}</div> : null}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-black/25 p-2">
+                <div className="text-xs opacity-75">{tx(lang, "Cohort retention", "Cohort retention")}</div>
+                <div className="mt-2 space-y-1">
+                  {adminRetentionCohorts.map((r) => (
+                    <div key={`co-${r.cohort_week}`} className="flex items-center justify-between gap-2 text-[11px]">
+                      <div>{new Date(r.cohort_week).toLocaleDateString(lang === "en" ? "en-US" : "tr-TR")}</div>
+                      <div className="opacity-80">W1 %{Number(r.retention_w1_pct || 0).toFixed(1)} • W4 %{Number(r.retention_w4_pct || 0).toFixed(1)} • W8 %{Number(r.retention_w8_pct || 0).toFixed(1)}</div>
+                    </div>
+                  ))}
+                  {!adminRetentionCohorts.length ? <div className="text-[11px] opacity-60">{tx(lang, "Veri yok.", "No data.")}</div> : null}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-black/25 p-2">
+                <div className="text-xs opacity-75">{tx(lang, "Riskli kullanicilar (7g+)", "At-risk users (7d+)")}</div>
+                <div className="mt-2 space-y-1">
+                  {adminAtRiskUsers.map((u) => (
+                    <div key={`risk-${u.user_id}`} className="flex items-center justify-between gap-2 text-[11px]">
+                      <div className="truncate">{u.display_name?.trim() || `@${u.username}`}</div>
+                      <div className="opacity-80">{u.inactive_days}g • 30g:{u.checkins_30d} • f:{u.followers_count}</div>
+                    </div>
+                  ))}
+                  {!adminAtRiskUsers.length ? <div className="text-[11px] opacity-60">{tx(lang, "Riskli kullanici yok.", "No at-risk users.")}</div> : null}
+                </div>
               </div>
             </div>
             <div className="mt-2 grid grid-cols-2 gap-2">
