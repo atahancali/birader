@@ -1402,6 +1402,171 @@ $do$;
 -- Optional: backfill metrics for today once
 select public.refresh_all_user_daily_metrics(current_date);
 
+-- 014_growth_reporting_views
+drop view if exists public.growth_weekly_overview;
+create view public.growth_weekly_overview as
+with signup_weeks as (
+  select
+    date_trunc('week', p.created_at)::date as week_start,
+    count(*)::int as new_users
+  from public.profiles p
+  group by 1
+),
+checkin_weeks as (
+  select
+    date_trunc('week', c.created_at)::date as week_start,
+    count(*)::int as total_checkins,
+    count(distinct c.user_id)::int as active_users
+  from public.checkins c
+  group by 1
+)
+select
+  coalesce(sw.week_start, cw.week_start) as week_start,
+  coalesce(sw.new_users, 0) as new_users,
+  coalesce(cw.active_users, 0) as active_users,
+  coalesce(cw.total_checkins, 0) as total_checkins,
+  case
+    when coalesce(cw.active_users, 0) = 0 then 0::numeric
+    else round((cw.total_checkins::numeric / cw.active_users::numeric), 2)
+  end as avg_checkins_per_active_user
+from signup_weeks sw
+full outer join checkin_weeks cw on cw.week_start = sw.week_start
+order by 1 desc;
+
+drop view if exists public.retention_cohort_weekly;
+create view public.retention_cohort_weekly as
+with cohorts as (
+  select
+    p.user_id,
+    date_trunc('week', p.created_at)::date as cohort_week
+  from public.profiles p
+),
+cohort_sizes as (
+  select
+    cohort_week,
+    count(*)::int as cohort_size
+  from cohorts
+  group by 1
+),
+ret as (
+  select
+    c.cohort_week,
+    count(distinct case
+      when ch.created_at >= c.cohort_week::timestamptz + interval '7 days'
+       and ch.created_at <  c.cohort_week::timestamptz + interval '14 days'
+      then c.user_id end)::int as retained_w1,
+    count(distinct case
+      when ch.created_at >= c.cohort_week::timestamptz + interval '28 days'
+       and ch.created_at <  c.cohort_week::timestamptz + interval '35 days'
+      then c.user_id end)::int as retained_w4,
+    count(distinct case
+      when ch.created_at >= c.cohort_week::timestamptz + interval '56 days'
+       and ch.created_at <  c.cohort_week::timestamptz + interval '63 days'
+      then c.user_id end)::int as retained_w8
+  from cohorts c
+  left join public.checkins ch on ch.user_id = c.user_id
+  group by 1
+)
+select
+  s.cohort_week,
+  s.cohort_size,
+  coalesce(r.retained_w1, 0) as retained_w1,
+  coalesce(r.retained_w4, 0) as retained_w4,
+  coalesce(r.retained_w8, 0) as retained_w8,
+  case when s.cohort_size = 0 then 0::numeric else round((coalesce(r.retained_w1,0)::numeric / s.cohort_size::numeric) * 100, 2) end as retention_w1_pct,
+  case when s.cohort_size = 0 then 0::numeric else round((coalesce(r.retained_w4,0)::numeric / s.cohort_size::numeric) * 100, 2) end as retention_w4_pct,
+  case when s.cohort_size = 0 then 0::numeric else round((coalesce(r.retained_w8,0)::numeric / s.cohort_size::numeric) * 100, 2) end as retention_w8_pct
+from cohort_sizes s
+left join ret r on r.cohort_week = s.cohort_week
+order by s.cohort_week desc;
+
+create or replace function public.latest_user_daily_metrics()
+returns table(
+  snapshot_date date,
+  user_id uuid,
+  username text,
+  display_name text,
+  total_checkins int,
+  checkins_7d int,
+  checkins_30d int,
+  avg_rating_all numeric,
+  avg_rating_30d numeric,
+  followers_count int,
+  following_count int,
+  favorite_count int,
+  unique_city_count int,
+  current_streak_days int,
+  max_streak_days int,
+  last_checkin_at timestamptz
+)
+language sql
+stable
+as $$
+  select distinct on (m.user_id)
+    m.snapshot_date,
+    m.user_id,
+    m.username,
+    m.display_name,
+    m.total_checkins,
+    m.checkins_7d,
+    m.checkins_30d,
+    m.avg_rating_all,
+    m.avg_rating_30d,
+    m.followers_count,
+    m.following_count,
+    m.favorite_count,
+    m.unique_city_count,
+    m.current_streak_days,
+    m.max_streak_days,
+    m.last_checkin_at
+  from public.user_daily_metrics m
+  order by m.user_id, m.snapshot_date desc;
+$$;
+
+create or replace function public.crm_at_risk_users(
+  p_inactive_days int default 7,
+  p_limit int default 100
+)
+returns table(
+  user_id uuid,
+  username text,
+  display_name text,
+  last_checkin_at timestamptz,
+  inactive_days int,
+  checkins_30d int,
+  followers_count int,
+  current_streak_days int
+)
+language sql
+stable
+as $$
+  with latest as (
+    select * from public.latest_user_daily_metrics()
+  )
+  select
+    l.user_id,
+    l.username,
+    l.display_name,
+    l.last_checkin_at,
+    coalesce(floor(extract(epoch from (now() - l.last_checkin_at)) / 86400)::int, 9999) as inactive_days,
+    l.checkins_30d,
+    l.followers_count,
+    l.current_streak_days
+  from latest l
+  where l.last_checkin_at is null
+     or l.last_checkin_at < now() - make_interval(days => greatest(p_inactive_days, 1))
+  order by
+    coalesce(l.last_checkin_at, to_timestamp(0)) asc,
+    l.followers_count desc,
+    l.checkins_30d desc
+  limit greatest(p_limit, 1);
+$$;
+
+revoke all on function public.latest_user_daily_metrics() from public;
+revoke all on function public.crm_at_risk_users(int, int) from public;
+grant execute on function public.latest_user_daily_metrics() to authenticated;
+grant execute on function public.crm_at_risk_users(int, int) to authenticated;
+
 -- Verification
 select
   to_regclass('public.profiles') as profiles_table,
@@ -1418,4 +1583,6 @@ select
   to_regclass('public.notifications') as notifications_table,
   to_regclass('public.profile_identity_history') as profile_identity_history_table,
   to_regclass('public.app_action_logs') as app_action_logs_table,
-  to_regclass('public.user_daily_metrics') as user_daily_metrics_table;
+  to_regclass('public.user_daily_metrics') as user_daily_metrics_table,
+  to_regclass('public.growth_weekly_overview') as growth_weekly_overview_view,
+  to_regclass('public.retention_cohort_weekly') as retention_cohort_weekly_view;
