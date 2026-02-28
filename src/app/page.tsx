@@ -1123,6 +1123,33 @@ export default function Home() {
             }
           }
 
+        } else {
+          const fallbackUsername = usernameFromEmail(session.user.email) || `user-${session.user.id.slice(0, 6)}`;
+          const bootstrap = await supabase
+            .from("profiles")
+            .upsert(
+              {
+                user_id: session.user.id,
+                username: fallbackUsername,
+                display_name: fallbackUsername,
+                bio: "",
+                is_public: true,
+              },
+              { onConflict: "user_id" }
+            );
+          if (!bootstrap.error) {
+            const created = await supabase
+              .from("profiles")
+              .select("username, display_name, avatar_path, is_admin, heatmap_color_from, heatmap_color_to, referral_code")
+              .eq("user_id", session.user.id)
+              .maybeSingle();
+            if (!created.error && created.data) {
+              row = created.data;
+            }
+          }
+        }
+
+        if (row) {
           setIsAdminUser(Boolean(row.is_admin));
           setHeaderProfile({
             username: row.username,

@@ -7,7 +7,7 @@ import FootballHeatmap from "@/components/FootballHeatmap";
 import FieldHeatmap from "@/components/FieldHeatmap";
 import DayModal from "@/components/DayModal";
 import { supabase } from "@/lib/supabase";
-import { normalizeUsername } from "@/lib/identity";
+import { normalizeUsername, usernameFromEmail } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
 import { dayPeriodLabelEn, dayPeriodLabelTr, type DayPeriod } from "@/lib/dayPeriod";
@@ -254,6 +254,31 @@ export default function PublicProfileView({ username }: { username: string }) {
           .eq("user_id", sessionUserId)
           .maybeSingle();
         if (!own.error && own.data) row = own.data;
+      }
+
+      // If user has no profile row yet, bootstrap from current session and continue.
+      if (!row && !error && sessionUserId) {
+        const emailUser = usernameFromEmail(sessionEmail) || normalized || `user-${sessionUserId.slice(0, 6)}`;
+        const boot = await supabase
+          .from("profiles")
+          .upsert(
+            {
+              user_id: sessionUserId,
+              username: emailUser,
+              display_name: emailUser,
+              bio: "",
+              is_public: true,
+            },
+            { onConflict: "user_id" }
+          );
+        if (!boot.error) {
+          const ownCreated = await supabase
+            .from("profiles")
+            .select("user_id, username, display_name, bio, is_public, avatar_path, heatmap_color_from, heatmap_color_to")
+            .eq("user_id", sessionUserId)
+            .maybeSingle();
+          if (!ownCreated.error && ownCreated.data) row = ownCreated.data;
+        }
       }
 
       if (error) {
