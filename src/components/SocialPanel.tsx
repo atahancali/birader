@@ -379,6 +379,7 @@ export default function SocialPanel({
   const [followerProfiles, setFollowerProfiles] = useState<SearchProfile[]>([]);
   const [relationView, setRelationView] = useState<"following" | "followers">("following");
   const [relationsOpen, setRelationsOpen] = useState(false);
+  const [connectionsMenuOpen, setConnectionsMenuOpen] = useState(false);
   const [relationHighlightUserId, setRelationHighlightUserId] = useState("");
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [feedBusy, setFeedBusy] = useState(false);
@@ -2326,9 +2327,20 @@ export default function SocialPanel({
       ) : null}
 
       <div className="mt-4 grid gap-3">
-        <div className="sticky top-2 z-20 rounded-2xl border border-white/10 bg-black/80 p-3 backdrop-blur">
-          <div className="text-xs opacity-70">{tx(lang, "Baglantilar", "Connections")}</div>
-          <div className="mt-2 grid grid-cols-2 gap-2">
+        <div className="rounded-2xl border border-white/10 bg-black/40 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs opacity-70">
+              {tx(lang, "Baglantilar", "Connections")} • {followingProfiles.length}/{followerProfiles.length}
+            </div>
+            <button
+              type="button"
+              onClick={() => setConnectionsMenuOpen((v) => !v)}
+              className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
+            >
+              {connectionsMenuOpen ? tx(lang, "Gizle", "Hide") : tx(lang, "Ac", "Open")}
+            </button>
+          </div>
+          {connectionsMenuOpen ? <div className="mt-2 grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={() => {
@@ -2355,9 +2367,9 @@ export default function SocialPanel({
               <div className="text-xs opacity-70">{tx(lang, "Takipci", "Followers")}</div>
               <div className="text-lg font-semibold">{followerProfiles.length}</div>
             </button>
-          </div>
+          </div> : null}
 
-          {relationsOpen ? (
+          {connectionsMenuOpen && relationsOpen ? (
             <div className="mt-3 space-y-2">
               {(relationView === "following" ? followingProfiles : followerProfiles).map((p) => {
                 const isFollowing = followingIds.has(p.user_id);

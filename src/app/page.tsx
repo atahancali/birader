@@ -117,6 +117,7 @@ const HEATMAP_THEME_KEY = "birader:heatmap-theme:v1";
 const REFERRAL_KEY = "birader:pending-referral:v1";
 const OFFLINE_LOG_QUEUE_KEY = "birader:offline-log-queue:v1";
 const TUTORIAL_DONE_KEY = "birader:tutorial-done:v1";
+const THEME_KEY = "birader:theme:v1";
 const CHECKINS_SELECT_WITH_MEDIA =
   "id, beer_name, rating, created_at, day_period, country_code, city, district, location_text, price_try, note, latitude, longitude, media_url, media_type";
 const CHECKINS_SELECT_BASE =
@@ -132,6 +133,7 @@ type TutorialStep = {
   desc: string;
   section: HomeSection;
 };
+type AppTheme = "dark" | "light";
 
 type BeerItem = {
   brand: string;
@@ -871,6 +873,7 @@ export default function Home() {
   const [adminAnalyticsBusy, setAdminAnalyticsBusy] = useState(false);
   const [adminSuggestionStatusFilter, setAdminSuggestionStatusFilter] = useState<"all" | "new" | "in_progress" | "done">("all");
   const [adminSuggestionCategoryFilter, setAdminSuggestionCategoryFilter] = useState<string>("all");
+  const [theme, setTheme] = useState<AppTheme>("dark");
   const lastLogAttemptAtRef = useRef(0);
   const logMutationLockRef = useRef(false);
 
@@ -929,6 +932,22 @@ export default function Home() {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(THEME_KEY);
+      if (raw === "dark" || raw === "light") setTheme(raw);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch {}
+    if (typeof document !== "undefined") {
+      document.documentElement.setAttribute("data-theme", theme);
+    }
+  }, [theme]);
 
   useEffect(() => {
     const onBeforeInstallPrompt = (e: Event) => {
@@ -2271,7 +2290,34 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
   if (!session) {
     return (
-      <main className="min-h-screen p-4 max-w-md mx-auto">
+      <main className={`app-shell min-h-screen p-4 max-w-md mx-auto ${theme === "light" ? "light-ui" : "dark-ui"}`}>
+        <div className="mb-2 flex items-center justify-end gap-1">
+          <button
+            type="button"
+            onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+            className="rounded-md border border-white/15 bg-white/5 px-2 py-0.5 text-[10px]"
+          >
+            {theme === "dark" ? tx(lang, "Light", "Light") : tx(lang, "Dark", "Dark")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setLang("tr")}
+            className={`rounded-md border px-2 py-0.5 text-[10px] ${
+              lang === "tr" ? "border-amber-300/35 bg-amber-500/15" : "border-white/15 bg-white/5"
+            }`}
+          >
+            TR
+          </button>
+          <button
+            type="button"
+            onClick={() => setLang("en")}
+            className={`rounded-md border px-2 py-0.5 text-[10px] ${
+              lang === "en" ? "border-amber-300/35 bg-amber-500/15" : "border-white/15 bg-white/5"
+            }`}
+          >
+            EN
+          </button>
+        </div>
         <h1 className="text-2xl font-bold">Birader</h1>
         <p className="text-sm opacity-80 mt-1">{tx(lang, "Bugün ne içtin?", "What did you drink today?")}</p>
 
@@ -2444,7 +2490,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
   }
 
   return (
-    <main className="min-h-screen p-4 pb-24 max-w-md mx-auto">
+    <main className={`app-shell min-h-screen p-4 pb-24 max-w-md mx-auto ${theme === "light" ? "light-ui" : "dark-ui"}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <Image src="/favicon.svg" alt="Birader" width={28} height={28} className="rounded-md" />
@@ -2457,6 +2503,13 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         </div>
         <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+              className="rounded-md border border-white/15 bg-white/5 px-2 py-0.5 text-[10px]"
+            >
+              {theme === "dark" ? tx(lang, "Light", "Light") : tx(lang, "Dark", "Dark")}
+            </button>
             <button
               type="button"
               onClick={() => setLang("tr")}
