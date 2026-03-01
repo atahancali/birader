@@ -19,6 +19,19 @@ type ProfileRow = {
   avatar_path?: string | null;
 };
 
+type ServerPreferenceRow = {
+  notif_pref_follow?: boolean | null;
+  notif_pref_comment?: boolean | null;
+  notif_pref_mention?: boolean | null;
+  notif_pref_comment_like?: boolean | null;
+  notif_pref_checkin_like?: boolean | null;
+  feed_pref_scope?: string | null;
+  feed_pref_window?: string | null;
+  feed_pref_min_rating?: number | null;
+  feed_pref_format?: string | null;
+  feed_pref_only_my_city?: boolean | null;
+};
+
 type FavoriteBeerRow = {
   beer_name: string;
   rank: number;
@@ -1267,10 +1280,52 @@ export default function SocialPanel({
     setLoading(false);
   }
 
+  async function loadServerPreferences() {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select(
+        "notif_pref_follow, notif_pref_comment, notif_pref_mention, notif_pref_comment_like, notif_pref_checkin_like, feed_pref_scope, feed_pref_window, feed_pref_min_rating, feed_pref_format, feed_pref_only_my_city"
+      )
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) {
+      const msg = String(error.message || "").toLowerCase();
+      if (msg.includes("does not exist") || msg.includes("column")) return;
+      markDbError(error.message);
+      return;
+    }
+
+    const row = ((data as ServerPreferenceRow | null) ?? {}) as ServerPreferenceRow;
+    setNotifPrefs((prev) => ({
+      follow: row.notif_pref_follow ?? prev.follow,
+      comment: row.notif_pref_comment ?? prev.comment,
+      mention: row.notif_pref_mention ?? prev.mention,
+      comment_like: row.notif_pref_comment_like ?? prev.comment_like,
+      checkin_like: row.notif_pref_checkin_like ?? prev.checkin_like,
+    }));
+
+    if (row.feed_pref_scope === "all" || row.feed_pref_scope === "following") setFeedScope(row.feed_pref_scope);
+    if (row.feed_pref_window === "24h" || row.feed_pref_window === "7d" || row.feed_pref_window === "all") {
+      setFeedWindow(row.feed_pref_window);
+    }
+    if (typeof row.feed_pref_min_rating === "number") setFeedMinRating(Number(row.feed_pref_min_rating));
+    if (row.feed_pref_format === "all" || row.feed_pref_format === "draft" || row.feed_pref_format === "bottle") {
+      setFeedFormat(row.feed_pref_format);
+    }
+    if (typeof row.feed_pref_only_my_city === "boolean") setFeedOnlyMyCity(row.feed_pref_only_my_city);
+  }
+
   useEffect(() => {
     void loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
+
+  useEffect(() => {
+    if (!profile) return;
+    void loadServerPreferences();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.user_id]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1330,6 +1385,28 @@ export default function SocialPanel({
       })
     );
   }, [feedFormat, feedMinRating, feedOnlyMyCity, feedScope, feedWindow, userId]);
+
+  useEffect(() => {
+    if (!profile?.user_id) return;
+    const timer = setTimeout(() => {
+      void supabase
+        .from("profiles")
+        .update({
+          notif_pref_follow: notifPrefs.follow,
+          notif_pref_comment: notifPrefs.comment,
+          notif_pref_mention: notifPrefs.mention,
+          notif_pref_comment_like: notifPrefs.comment_like,
+          notif_pref_checkin_like: notifPrefs.checkin_like,
+          feed_pref_scope: feedScope,
+          feed_pref_window: feedWindow,
+          feed_pref_min_rating: feedMinRating,
+          feed_pref_format: feedFormat,
+          feed_pref_only_my_city: feedOnlyMyCity,
+        })
+        .eq("user_id", userId);
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [feedFormat, feedMinRating, feedOnlyMyCity, feedScope, feedWindow, notifPrefs, profile?.user_id, userId]);
 
   useEffect(() => {
     if (!loading) void loadNotifications(notifLimit);
