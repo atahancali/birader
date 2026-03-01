@@ -118,6 +118,7 @@ const REFERRAL_KEY = "birader:pending-referral:v1";
 const OFFLINE_LOG_QUEUE_KEY = "birader:offline-log-queue:v1";
 const TUTORIAL_DONE_KEY = "birader:tutorial-done:v1";
 const THEME_KEY = "birader:theme:v1";
+const BUG_BASH_KEY = "birader:admin-bugbash:v1";
 const CHECKINS_SELECT_WITH_MEDIA =
   "id, beer_name, rating, created_at, day_period, country_code, city, district, location_text, price_try, note, latitude, longitude, media_url, media_type";
 const CHECKINS_SELECT_BASE =
@@ -134,6 +135,7 @@ type TutorialStep = {
   section: HomeSection;
 };
 type AppTheme = "dark" | "light";
+type BugBashItem = { id: string; tr: string; en: string };
 
 type BeerItem = {
   brand: string;
@@ -258,6 +260,45 @@ function inferFormatFromBeerName(label: string): BeerItem["format"] {
   if (label.includes("— Fici —")) return "Fici";
   if (label.includes("— Şişe/Kutu —")) return "Şişe/Kutu";
   return "Fici";
+}
+
+const P0_BUG_BASH_ITEMS: BugBashItem[] = [
+  { id: "auth-signup-login", tr: "Kayıt ve giriş uçtan uca", en: "Signup and login end-to-end" },
+  { id: "log-create", tr: "Tekli/çoklu log kaydı", en: "Single/bulk check-in creation" },
+  { id: "log-edit-delete", tr: "Log düzenleme/silme", en: "Check-in edit/delete" },
+  { id: "future-date-block", tr: "Gelecek tarih blokesi", en: "Future date block" },
+  { id: "profile-open", tr: "Kendi profil açılışı", en: "Own profile open" },
+  { id: "public-profile-open", tr: "Başkasının profil açılışı", en: "Public profile open" },
+  { id: "social-follow", tr: "Takip et/takipten çık", en: "Follow/unfollow" },
+  { id: "feed-comment-like", tr: "Akış yorum/beğeni", en: "Feed comment/like" },
+  { id: "notifications-open", tr: "Bildirim açma ve yönlendirme", en: "Notification open and routing" },
+  { id: "heatmap-day-modal", tr: "Heatmap gün detayı", en: "Heatmap day detail modal" },
+];
+
+function badgeHintFromCheckins(rows: Checkin[]) {
+  const total = rows.length;
+  const sat = rows.filter((c) => new Date(c.created_at).getDay() === 6).length;
+  const night = rows.filter((c) => {
+    if (c.day_period === "night") return true;
+    const h = new Date(c.created_at).getHours();
+    return Number.isFinite(h) && (h >= 22 || h < 4);
+  }).length;
+  const satProgress = Math.min(total / 8, sat / 4);
+  const nightProgress = Math.min(total / 10, night / 6);
+  if (satProgress >= nightProgress) {
+    return {
+      code: "badge_sat",
+      tr: `Rozet ilerleme: Cumartesi Komitesi için ${Math.max(0, 4 - sat)} Cumartesi logu kaldı.`,
+      en: `Badge progress: ${Math.max(0, 4 - sat)} Saturday logs left for Saturday Committee.`,
+      percent: Math.round(Math.min(1, satProgress) * 100),
+    };
+  }
+  return {
+    code: "badge_night",
+    tr: `Rozet ilerleme: Gece Baykuşu için ${Math.max(0, 6 - night)} gece logu kaldı.`,
+    en: `Badge progress: ${Math.max(0, 6 - night)} night logs left for Night Owl.`,
+    percent: Math.round(Math.min(1, nightProgress) * 100),
+  };
 }
 
 function isoTodayLocal() {
@@ -873,6 +914,8 @@ export default function Home() {
   const [adminAnalyticsBusy, setAdminAnalyticsBusy] = useState(false);
   const [adminSuggestionStatusFilter, setAdminSuggestionStatusFilter] = useState<"all" | "new" | "in_progress" | "done">("all");
   const [adminSuggestionCategoryFilter, setAdminSuggestionCategoryFilter] = useState<string>("all");
+  const [bugBashChecks, setBugBashChecks] = useState<Record<string, boolean>>({});
+  const [missionNoticeDismissed, setMissionNoticeDismissed] = useState(false);
   const [theme, setTheme] = useState<AppTheme>("dark");
   const lastLogAttemptAtRef = useRef(0);
   const logMutationLockRef = useRef(false);
@@ -948,6 +991,22 @@ export default function Home() {
       document.documentElement.setAttribute("data-theme", theme);
     }
   }, [theme]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(BUG_BASH_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, boolean>;
+      setBugBashChecks(parsed || {});
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(BUG_BASH_KEY, JSON.stringify(bugBashChecks));
+    } catch {}
+  }, [bugBashChecks]);
+
 
   useEffect(() => {
     const onBeforeInstallPrompt = (e: Event) => {
@@ -1510,6 +1569,49 @@ export default function Home() {
     const topBeer = Array.from(topBeerMap.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "-";
     return { count: weekly.length, avg, topBeer };
   }, [checkins]);
+  const weeklyMission = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - 6);
+    const weeklyRows = checkins.filter((c) => {
+      const dt = new Date(c.created_at);
+      return dt >= start && dt <= now;
+    });
+    const uniqueBeer = new Set(weeklyRows.map((c) => favoriteBeerName(c.beer_name)).filter(Boolean)).size;
+    const logGoal = 5;
+    const beerGoal = 3;
+    const logLeft = Math.max(0, logGoal - weeklyRows.length);
+    const beerLeft = Math.max(0, beerGoal - uniqueBeer);
+    const completed = logLeft === 0 && beerLeft === 0;
+    return {
+      logs: weeklyRows.length,
+      uniqueBeer,
+      logGoal,
+      beerGoal,
+      logLeft,
+      beerLeft,
+      completed,
+      progressPct: Math.round(Math.min(1, (weeklyRows.length / logGoal + uniqueBeer / beerGoal) / 2) * 100),
+    };
+  }, [checkins]);
+  const adminKpis = useMemo(() => {
+    const latestGrowth = adminGrowthWeekly[0];
+    const latestCohort = adminRetentionCohorts[0];
+    return {
+      newUsers: Number(latestGrowth?.new_users || 0),
+      activeUsers: Number(latestGrowth?.active_users || 0),
+      logs: Number(latestGrowth?.total_checkins || 0),
+      avgLogsPerActive: Number(latestGrowth?.avg_checkins_per_active_user || 0),
+      w1: Number(latestCohort?.retention_w1_pct || 0),
+      w4: Number(latestCohort?.retention_w4_pct || 0),
+      w8: Number(latestCohort?.retention_w8_pct || 0),
+      riskUsers: adminAtRiskUsers.length,
+    };
+  }, [adminAtRiskUsers.length, adminGrowthWeekly, adminRetentionCohorts]);
+  useEffect(() => {
+    setMissionNoticeDismissed(false);
+  }, [weeklyMission.completed, weeklyMission.progressPct]);
   const stereotypeBadges = dbBadges;
 
   const highlightedBucketInfo = useMemo(() => {
@@ -1979,6 +2081,91 @@ export default function Home() {
     setDbBadges((data as UserBadgeRow[] | null) ?? []);
   }
 
+  async function pushSystemNotification(userId: string, code: string, messageTr: string, messageEn: string, refId = "system") {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: existsRows } = await supabase
+      .from("notifications")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("type", "system")
+      .gte("created_at", since)
+      .contains("payload", { code })
+      .limit(1);
+    if (((existsRows as Array<{ id: number }> | null) ?? []).length > 0) return;
+    await supabase.from("notifications").insert({
+      user_id: userId,
+      actor_id: null,
+      type: "system",
+      ref_id: refId,
+      payload: { code, message_tr: messageTr, message_en: messageEn },
+    });
+  }
+
+  async function createPostCheckinNudges(userId: string, beforeBadgeKeys: Set<string>) {
+    const weekStart = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: weeklyRows } = await supabase
+      .from("checkins")
+      .select("beer_name")
+      .eq("user_id", userId)
+      .gte("created_at", weekStart)
+      .limit(2000);
+    const rows = (weeklyRows as Array<{ beer_name: string }> | null) ?? [];
+    const weeklyLogs = rows.length;
+    const uniqueBeer = new Set(rows.map((r) => favoriteBeerName(r.beer_name)).filter(Boolean)).size;
+    if (weeklyLogs === 3) {
+      await pushSystemNotification(
+        userId,
+        "weekly_goal_3",
+        "Haftalik gorev ilerliyor: 5 log hedefi icin 2 log kaldi.",
+        "Weekly mission in progress: 2 logs left for the 5-log goal.",
+        "weekly-goal"
+      );
+    }
+    if (weeklyLogs >= 5 && uniqueBeer >= 3) {
+      await pushSystemNotification(
+        userId,
+        "weekly_goal_done",
+        "Haftalik gorev tamamlandi: 5 log + 3 farkli bira.",
+        "Weekly mission completed: 5 logs + 3 unique beers.",
+        "weekly-goal"
+      );
+    }
+
+    await supabase.rpc("refresh_my_badges");
+    const { data: badgeRows } = await supabase
+      .from("user_badges")
+      .select("badge_key, title_tr, title_en, detail_tr, detail_en, score, computed_at")
+      .eq("user_id", userId)
+      .order("score", { ascending: false })
+      .order("computed_at", { ascending: false })
+      .limit(8);
+    const refreshed = (badgeRows as UserBadgeRow[] | null) ?? [];
+    setDbBadges(refreshed);
+    const newlyUnlocked = refreshed.filter((b) => !beforeBadgeKeys.has(b.badge_key));
+    if (newlyUnlocked.length) {
+      const first = newlyUnlocked[0];
+      await pushSystemNotification(
+        userId,
+        `badge_unlock_${first.badge_key}`,
+        `Yeni rozet acildi: ${first.title_tr}`,
+        `New badge unlocked: ${first.title_en}`,
+        "badge-unlock"
+      );
+      return;
+    }
+
+    const { data: allRows } = await supabase
+      .from("checkins")
+      .select("beer_name, created_at, day_period, city, district")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1200);
+    const hint = badgeHintFromCheckins((allRows as Checkin[] | null) ?? []);
+    if (hint.percent >= 55 && hint.percent < 100) {
+      await pushSystemNotification(userId, hint.code, hint.tr, hint.en, "badge-progress");
+    }
+  }
+
   async function refreshAllBadgesNow() {
     if (!canManageSuggestions || badgeRefreshBusy) return;
     setBadgeRefreshBusy(true);
@@ -2147,6 +2334,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       return;
     }
     if (!beginLogMutation()) return;
+    const beforeBadgeKeys = new Set(dbBadges.map((b) => b.badge_key));
 
     try {
       const created_at =
@@ -2203,8 +2391,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           setBatchCountInput("1");
           setBatchConfirmed(false);
           await loadCheckins();
-          await supabase.rpc("refresh_my_badges");
-          await loadMyBadges();
+          await createPostCheckinNudges(session.user.id, beforeBadgeKeys);
           return;
         }
 
@@ -2275,8 +2462,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       setBatchBeerNames([]);
       setBatchCountInput("1");
       setBatchConfirmed(false);
-      await supabase.rpc("refresh_my_badges");
-      await loadMyBadges();
+      if (session?.user?.id) {
+        await createPostCheckinNudges(session.user.id, beforeBadgeKeys);
+      } else {
+        await loadMyBadges();
+      }
       trackEvent({
         eventName: "checkin_added_local",
         userId: session?.user?.id ?? null,
@@ -2479,6 +2669,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 ...prev,
               ]);
             } finally {
+              logMutationLockRef.current = false;
               setIsLogMutating(false);
             }
         }}
@@ -2563,6 +2754,39 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           </Link>
         </div>
       </div>
+
+      {!missionNoticeDismissed ? (
+        <section className="mt-3 rounded-2xl border border-amber-300/30 bg-amber-500/10 p-3">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="text-xs text-amber-200/90">
+                {weeklyMission.completed
+                  ? tx(lang, "Haftalik gorev tamamlandi", "Weekly mission completed")
+                  : tx(lang, "Haftalik gorev bildirimi", "Weekly mission update")}
+              </div>
+              <div className="mt-1 text-sm">
+                {weeklyMission.completed
+                  ? tx(lang, "5 log + 3 farkli bira hedefini tamamladin.", "You completed 5 logs + 3 unique beers.")
+                  : tx(
+                      lang,
+                      `${weeklyMission.logLeft} log ve ${weeklyMission.beerLeft} farkli bira daha gerekiyor.`,
+                      `${weeklyMission.logLeft} logs and ${weeklyMission.beerLeft} unique beers left.`
+                    )}
+              </div>
+              <div className="mt-2 h-1.5 w-full rounded-full bg-black/25">
+                <div className="h-full rounded-full bg-amber-400" style={{ width: `${Math.max(8, weeklyMission.progressPct)}%` }} />
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMissionNoticeDismissed(true)}
+              className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
+            >
+              {tx(lang, "Kapat", "Close")}
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <section className="mt-4 rounded-2xl border border-amber-300/25 bg-amber-500/5 p-3">
         <div className="flex items-center justify-between gap-2">
@@ -3239,6 +3463,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           return;
         }
         if (!beginLogMutation()) return;
+        const beforeBadgeKeys = new Set(dbBadges.map((b) => b.badge_key));
         const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
         const normalizedRating = sanitizeRating(rating);
         try {
@@ -3270,6 +3495,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               props: { rating: normalizedRating, beer_name },
             });
             await loadCheckins();
+            await createPostCheckinNudges(session.user.id, beforeBadgeKeys);
             return;
           }
 
@@ -3297,6 +3523,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             props: { rating: normalizedRating, beer_name },
           });
         } finally {
+          logMutationLockRef.current = false;
           setIsLogMutating(false);
         }
       }}
@@ -3330,6 +3557,30 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           </div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">
             {tx(lang, "Puansiz oran", "Unrated share")}: <span className="font-semibold">%{monthComparison.unratedShare}</span>
+          </div>
+        </div>
+
+        <div className="mb-4 rounded-2xl border border-amber-300/25 bg-amber-500/10 p-3">
+          <div className="text-sm text-amber-200">{tx(lang, "Haftalik gorevler", "Weekly missions")}</div>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+              {tx(lang, "Log hedefi", "Log goal")}: <span className="font-semibold">{weeklyMission.logs}/{weeklyMission.logGoal}</span>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+              {tx(lang, "Farkli bira", "Unique beers")}: <span className="font-semibold">{weeklyMission.uniqueBeer}/{weeklyMission.beerGoal}</span>
+            </div>
+          </div>
+          <div className="mt-2 h-1.5 w-full rounded-full bg-black/25">
+            <div className="h-full rounded-full bg-amber-400" style={{ width: `${Math.max(8, weeklyMission.progressPct)}%` }} />
+          </div>
+          <div className="mt-2 text-xs opacity-80">
+            {weeklyMission.completed
+              ? tx(lang, "Bu haftayi kilitledin. Yeni gorev penceresi devam edecek.", "Weekly mission done. New mission window will continue.")
+              : tx(
+                  lang,
+                  `${weeklyMission.logLeft} log ve ${weeklyMission.beerLeft} farkli bira kaldi.`,
+                  `${weeklyMission.logLeft} logs and ${weeklyMission.beerLeft} unique beers left.`
+                )}
           </div>
         </div>
 
@@ -3479,6 +3730,47 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 >
                   {tx(lang, "Yenile", "Refresh")}
                 </button>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="rounded-xl border border-white/10 bg-black/25 p-2 text-xs">
+                <div className="opacity-70">DAU</div>
+                <div className="mt-1 text-base font-semibold">{adminKpis.activeUsers}</div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/25 p-2 text-xs">
+                <div className="opacity-70">{tx(lang, "Yeni kullanici", "New users")}</div>
+                <div className="mt-1 text-base font-semibold">{adminKpis.newUsers}</div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/25 p-2 text-xs">
+                <div className="opacity-70">{tx(lang, "Toplam log", "Total logs")}</div>
+                <div className="mt-1 text-base font-semibold">{adminKpis.logs}</div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/25 p-2 text-xs">
+                <div className="opacity-70">{tx(lang, "Ret W1", "Retention W1")}</div>
+                <div className="mt-1 text-base font-semibold">%{adminKpis.w1.toFixed(1)}</div>
+              </div>
+            </div>
+
+            <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-2">
+              <div className="text-xs opacity-75">{tx(lang, "P0 bug bash checklist", "P0 bug bash checklist")}</div>
+              <div className="mt-2 grid gap-1">
+                {P0_BUG_BASH_ITEMS.map((item) => (
+                  <label key={item.id} className="flex items-center gap-2 text-[11px]">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(bugBashChecks[item.id])}
+                      onChange={(e) =>
+                        setBugBashChecks((prev) => ({
+                          ...prev,
+                          [item.id]: e.target.checked,
+                        }))
+                      }
+                      className="h-3.5 w-3.5 accent-amber-400"
+                    />
+                    <span>{lang === "en" ? item.en : item.tr}</span>
+                  </label>
+                ))}
               </div>
             </div>
 

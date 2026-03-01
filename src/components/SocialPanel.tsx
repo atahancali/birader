@@ -96,7 +96,7 @@ type NotificationRow = {
   id: number;
   user_id: string;
   actor_id: string | null;
-  type: "comment" | "mention" | "comment_like" | "checkin_like" | "follow";
+  type: "comment" | "mention" | "comment_like" | "checkin_like" | "follow" | "system";
   ref_id: string;
   payload?: Record<string, any> | null;
   is_read: boolean;
@@ -134,7 +134,7 @@ type OwnCheckinLite = {
 
 type FeedWindow = "all" | "24h" | "7d";
 type FeedScope = "all" | "following";
-type NotificationFilter = "all" | "unread" | "comment" | "mention" | "comment_like" | "checkin_like" | "follow";
+type NotificationFilter = "all" | "unread" | "comment" | "mention" | "comment_like" | "checkin_like" | "follow" | "system";
 type LeaderWindow = "7d" | "30d" | "90d" | "365d";
 type LeaderScope = "all" | "followed";
 type FeedFormat = "all" | "draft" | "bottle";
@@ -557,7 +557,10 @@ export default function SocialPanel({
           count: 1,
           latest: n,
           type: n.type,
-          actor: visibleName({ username: n.actor_username, display_name: n.actor_display_name }),
+          actor:
+            n.actor_username === "system"
+              ? tx(lang, "Birader", "Birader")
+              : visibleName({ username: n.actor_username, display_name: n.actor_display_name }),
         });
         continue;
       }
@@ -568,7 +571,7 @@ export default function SocialPanel({
     return Array.from(grouped.values()).sort(
       (a, b) => new Date(b.latest.created_at).getTime() - new Date(a.latest.created_at).getTime()
     );
-  }, [filteredNotifications]);
+  }, [filteredNotifications, lang]);
 
   function markDbError(message: string) {
     const lower = message.toLowerCase();
@@ -982,7 +985,7 @@ export default function SocialPanel({
       const actor = (n.actor_id && actorById.get(n.actor_id)) || null;
       return {
         ...n,
-        actor_username: actor?.username || "kullanici",
+        actor_username: actor?.username || "system",
         actor_display_name: actor?.display_name || "",
       };
     });
@@ -2184,6 +2187,10 @@ export default function SocialPanel({
   async function openNotification(item: NotificationView) {
     setNotifActionBusyId(item.id);
     if (!item.is_read) await markNotificationRead(item.id);
+    if (item.type === "system") {
+      setNotifActionBusyId(0);
+      return;
+    }
     if (item.type === "follow") {
       const actorUsername = String(item.actor_username || "");
       if (actorUsername && actorUsername !== "kullanici") {
@@ -2581,6 +2588,7 @@ export default function SocialPanel({
                   <option value="mention">Mention</option>
                   <option value="comment_like">{tx(lang, "Yorum begeni", "Comment like")}</option>
                   <option value="checkin_like">{tx(lang, "Log begeni", "Check-in like")}</option>
+                  <option value="system">{tx(lang, "Sistem", "System")}</option>
                 </select>
                 <button
                   type="button"
@@ -2632,18 +2640,25 @@ export default function SocialPanel({
                       } ${notifActionBusyId === n.id ? "pointer-events-none opacity-70" : ""}`}
                     >
                       <div className="text-xs">
-                        <Link
-                          href={`/u/${encodeURIComponent(n.actor_username)}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="underline"
-                        >
-                          {visibleName({ username: n.actor_username, display_name: n.actor_display_name })}
-                        </Link>
+                        {n.actor_username === "system" ? (
+                          <span className="font-semibold">{tx(lang, "Birader", "Birader")}</span>
+                        ) : (
+                          <Link
+                            href={`/u/${encodeURIComponent(n.actor_username)}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="underline"
+                          >
+                            {visibleName({ username: n.actor_username, display_name: n.actor_display_name })}
+                          </Link>
+                        )}
                         {n.type === "comment" ? " loguna yorum yazdi." : null}
                         {n.type === "mention" ? " seni yorumda etiketledi." : null}
                         {n.type === "comment_like" ? " yorumunu begendi." : null}
                         {n.type === "checkin_like" ? " logunu begendi." : null}
                         {n.type === "follow" ? " seni takip etmeye basladi." : null}
+                        {n.type === "system"
+                          ? ` ${String(((n.payload || {}) as Record<string, any>)[lang === "en" ? "message_en" : "message_tr"] || "")}`
+                          : null}
                       </div>
                       <div className="mt-1 text-[11px] opacity-65">{new Date(n.created_at).toLocaleString("tr-TR")}</div>
                     </div>

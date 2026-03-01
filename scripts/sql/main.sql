@@ -769,7 +769,7 @@ create table if not exists public.notifications (
   payload jsonb not null default '{}'::jsonb,
   is_read boolean not null default false,
   created_at timestamptz not null default now(),
-  constraint notifications_type_check check (type in ('comment', 'mention', 'comment_like', 'checkin_like', 'follow'))
+  constraint notifications_type_check check (type in ('comment', 'mention', 'comment_like', 'checkin_like', 'follow', 'system'))
 );
 
 create index if not exists idx_checkin_comment_likes_user_time on public.checkin_comment_likes (user_id, created_at desc);
@@ -836,8 +836,8 @@ for select using (auth.uid() = user_id);
 drop policy if exists notifications_insert_actor on public.notifications;
 create policy notifications_insert_actor on public.notifications
 for insert with check (
-  auth.uid() = actor_id
-  and user_id <> actor_id
+  (auth.uid() = actor_id and user_id <> actor_id)
+  or (auth.uid() = user_id and actor_id is null and type = 'system')
 );
 
 drop policy if exists notifications_update_own on public.notifications;
@@ -847,7 +847,7 @@ with check (auth.uid() = user_id);
 
 alter table public.notifications drop constraint if exists notifications_type_check;
 alter table public.notifications
-add constraint notifications_type_check check (type in ('comment', 'mention', 'comment_like', 'checkin_like', 'follow'));
+add constraint notifications_type_check check (type in ('comment', 'mention', 'comment_like', 'checkin_like', 'follow', 'system'));
 
 -- 011_profiles_legal_and_commercial_fields
 alter table public.profiles add column if not exists birth_date date;
