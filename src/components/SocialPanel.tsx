@@ -43,6 +43,10 @@ type DiscoverProfile = SearchProfile & {
 type CheckinRow = {
   beer_name: string;
   rating: number | null;
+  created_at: string;
+  day_period?: string | null;
+  city?: string | null;
+  district?: string | null;
 };
 
 type FeedCheckinRow = {
@@ -51,6 +55,8 @@ type FeedCheckinRow = {
   beer_name: string;
   rating: number | null;
   created_at: string;
+  city?: string | null;
+  district?: string | null;
 };
 
 type FeedItem = FeedCheckinRow & {
@@ -118,6 +124,8 @@ type FeedScope = "all" | "following";
 type NotificationFilter = "all" | "unread" | "comment" | "mention" | "comment_like" | "checkin_like" | "follow";
 type LeaderWindow = "7d" | "30d" | "90d" | "365d";
 type LeaderScope = "all" | "followed";
+type FeedFormat = "all" | "draft" | "bottle";
+type NotifTypeKey = "follow" | "comment" | "mention" | "comment_like" | "checkin_like";
 
 type LeaderboardRow = {
   user_id: string;
@@ -135,6 +143,109 @@ type CheckinLikeRow = {
 const KEYBOARD_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
 const FEED_PAGE_SIZE = 25;
 const NOTIF_PAGE_SIZE = 30;
+
+const NOTIF_PREFS_KEY = "birader:notif-prefs:v1";
+const FEED_PREFS_KEY = "birader:feed-prefs:v1";
+
+type BadgeProgressItem = {
+  key: string;
+  titleTr: string;
+  titleEn: string;
+  progress: number;
+  hintTr: string;
+  hintEn: string;
+  done: boolean;
+};
+
+function ratio(a: number, b: number) {
+  if (b <= 0) return 0;
+  return Math.max(0, Math.min(1, a / b));
+}
+
+function badgeProgress(checkins: CheckinRow[]) {
+  const total = checkins.length;
+  const weekdaySat = checkins.filter((c) => new Date(c.created_at).getDay() === 6).length;
+  const nightLogs = checkins.filter((c) => {
+    if (c.day_period === "night") return true;
+    const h = new Date(c.created_at).getHours();
+    return Number.isFinite(h) && (h >= 22 || h < 4);
+  }).length;
+  const draftLogs = checkins.filter((c) => c.beer_name.includes("— Fici —")).length;
+  const bottleLogs = checkins.filter((c) => c.beer_name.includes("— Şişe/Kutu —") || c.beer_name.includes("— Sise/Kutu —"))
+    .length;
+  const uniqueCities = new Set(checkins.map((c) => String(c.city || "").trim()).filter(Boolean)).size;
+  const spotMap = new Map<string, number>();
+  for (const c of checkins) {
+    const spot = `${String(c.city || "").trim()}::${String(c.district || "").trim()}`;
+    if (spot === "::") continue;
+    spotMap.set(spot, (spotMap.get(spot) || 0) + 1);
+  }
+  const topSpot = Math.max(0, ...Array.from(spotMap.values()));
+  const satShare = total ? weekdaySat / total : 0;
+  const nightShare = total ? nightLogs / total : 0;
+  const draftShare = total ? draftLogs / total : 0;
+  const bottleShare = total ? bottleLogs / total : 0;
+  const topSpotShare = total ? topSpot / total : 0;
+
+  const rows: BadgeProgressItem[] = [
+    {
+      key: "sat_committee",
+      titleTr: "Cumartesi Komitesi",
+      titleEn: "Saturday Committee",
+      progress: Math.min(ratio(total, 8), ratio(weekdaySat, 4), ratio(satShare, 0.35)),
+      hintTr: `${Math.max(0, 8 - total)} toplam log + ${Math.max(0, 4 - weekdaySat)} Cumartesi logu daha gerekiyor.`,
+      hintEn: `${Math.max(0, 8 - total)} more logs + ${Math.max(0, 4 - weekdaySat)} more Saturday logs needed.`,
+      done: total >= 8 && weekdaySat >= 4 && satShare >= 0.35,
+    },
+    {
+      key: "night_owl",
+      titleTr: "Gece Baykusu",
+      titleEn: "Night Owl",
+      progress: Math.min(ratio(total, 10), ratio(nightLogs, 6), ratio(nightShare, 0.35)),
+      hintTr: `${Math.max(0, 10 - total)} toplam log + ${Math.max(0, 6 - nightLogs)} gece logu daha gerekiyor.`,
+      hintEn: `${Math.max(0, 10 - total)} more logs + ${Math.max(0, 6 - nightLogs)} more night logs needed.`,
+      done: total >= 10 && nightLogs >= 6 && nightShare >= 0.35,
+    },
+    {
+      key: "draft_loyalist",
+      titleTr: "Taslakci",
+      titleEn: "Draft Loyalist",
+      progress: Math.min(ratio(total, 10), ratio(draftLogs, 6), ratio(draftShare, 0.60)),
+      hintTr: `${Math.max(0, 10 - total)} toplam log + ${Math.max(0, 6 - draftLogs)} fici logu daha gerekiyor.`,
+      hintEn: `${Math.max(0, 10 - total)} more logs + ${Math.max(0, 6 - draftLogs)} more draft logs needed.`,
+      done: total >= 10 && draftLogs >= 6 && draftShare >= 0.6,
+    },
+    {
+      key: "bottle_lover",
+      titleTr: "Siseci",
+      titleEn: "Bottle Lover",
+      progress: Math.min(ratio(total, 10), ratio(bottleLogs, 6), ratio(bottleShare, 0.60)),
+      hintTr: `${Math.max(0, 10 - total)} toplam log + ${Math.max(0, 6 - bottleLogs)} sise/kutu logu daha gerekiyor.`,
+      hintEn: `${Math.max(0, 10 - total)} more logs + ${Math.max(0, 6 - bottleLogs)} more bottle/can logs needed.`,
+      done: total >= 10 && bottleLogs >= 6 && bottleShare >= 0.6,
+    },
+    {
+      key: "nomad",
+      titleTr: "Pub Nomadi",
+      titleEn: "Pub Nomad",
+      progress: ratio(uniqueCities, 4),
+      hintTr: `${Math.max(0, 4 - uniqueCities)} farkli sehir daha logla.`,
+      hintEn: `Log from ${Math.max(0, 4 - uniqueCities)} more cities.`,
+      done: uniqueCities >= 4,
+    },
+    {
+      key: "regular",
+      titleTr: "Sadik Mudavim",
+      titleEn: "Local Regular",
+      progress: Math.min(ratio(total, 12), ratio(topSpot, 8), ratio(topSpotShare, 0.45)),
+      hintTr: `${Math.max(0, 12 - total)} toplam log + ayni bolgede ${Math.max(0, 8 - topSpot)} log daha gerekiyor.`,
+      hintEn: `${Math.max(0, 12 - total)} more logs + ${Math.max(0, 8 - topSpot)} more logs in same area needed.`,
+      done: total >= 12 && topSpot >= 8 && topSpotShare >= 0.45,
+    },
+  ];
+
+  return rows.sort((a, b) => Number(b.done) - Number(a.done) || b.progress - a.progress);
+}
 
 function keyboardNeighborMap() {
   const map = new Map<string, Set<string>>();
@@ -263,6 +374,8 @@ export default function SocialPanel({
   const [feedHasMore, setFeedHasMore] = useState(true);
   const [feedWindow, setFeedWindow] = useState<FeedWindow>("24h");
   const [feedScope, setFeedScope] = useState<FeedScope>("all");
+  const [feedFormat, setFeedFormat] = useState<FeedFormat>("all");
+  const [feedOnlyMyCity, setFeedOnlyMyCity] = useState(false);
   const [feedMinRating, setFeedMinRating] = useState<number>(0);
   const [feedQuery, setFeedQuery] = useState("");
   const [feedCommentsByCheckin, setFeedCommentsByCheckin] = useState<Record<string, FeedComment[]>>({});
@@ -278,6 +391,13 @@ export default function SocialPanel({
   const [notifBusy, setNotifBusy] = useState(false);
   const [notifLimit, setNotifLimit] = useState(NOTIF_PAGE_SIZE);
   const [notifFilter, setNotifFilter] = useState<NotificationFilter>("all");
+  const [notifPrefs, setNotifPrefs] = useState<Record<NotifTypeKey, boolean>>({
+    follow: true,
+    comment: true,
+    mention: true,
+    comment_like: true,
+    checkin_like: true,
+  });
   const [notifPanelOpen, setNotifPanelOpen] = useState(true);
   const [notifSummaryMode, setNotifSummaryMode] = useState(false);
   const [notifActionBusyId, setNotifActionBusyId] = useState<number>(0);
@@ -337,6 +457,16 @@ export default function SocialPanel({
     if (!q) return pool.slice(0, 30);
     return pool.filter((name) => name.toLowerCase().includes(q)).slice(0, 30);
   }, [favoriteNames, favoriteOptionPool, favoriteQuery]);
+  const primaryCity = useMemo(() => {
+    const cityCounts = new Map<string, number>();
+    for (const c of checkins) {
+      const city = String(c.city || "").trim();
+      if (!city) continue;
+      cityCounts.set(city, (cityCounts.get(city) || 0) + 1);
+    }
+    return Array.from(cityCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+  }, [checkins]);
+  const badgeProgressRows = useMemo(() => badgeProgress(checkins), [checkins]);
   const filteredFeedItems = useMemo(() => {
     const query = feedQuery.trim().toLowerCase();
     const now = Date.now();
@@ -344,6 +474,18 @@ export default function SocialPanel({
 
     return feedItems.filter((item) => {
       if (feedScope === "following" && item.user_id !== userId && !followingIds.has(item.user_id)) return false;
+      if (feedOnlyMyCity && primaryCity) {
+        const city = String(item.city || "").trim().toLowerCase();
+        if (!city || city !== primaryCity.toLowerCase()) return false;
+      }
+      if (feedFormat === "draft" && !item.beer_name.includes("— Fici —")) return false;
+      if (
+        feedFormat === "bottle" &&
+        !item.beer_name.includes("— Şişe/Kutu —") &&
+        !item.beer_name.includes("— Sise/Kutu —")
+      ) {
+        return false;
+      }
       if (feedMinRating > 0 && (item.rating === null || Number(item.rating) < feedMinRating)) return false;
       if (windowMs > 0) {
         const ts = new Date(item.created_at).getTime();
@@ -356,14 +498,36 @@ export default function SocialPanel({
         item.beer_name.toLowerCase().includes(query)
       );
     });
-  }, [feedItems, feedMinRating, feedQuery, feedScope, feedWindow, followingIds, userId]);
+  }, [feedFormat, feedItems, feedMinRating, feedOnlyMyCity, feedQuery, feedScope, feedWindow, followingIds, primaryCity, userId]);
   const followerIds = useMemo(() => new Set(followerProfiles.map((p) => p.user_id)), [followerProfiles]);
-  const unreadNotifCount = useMemo(() => notifications.filter((n) => !n.is_read).length, [notifications]);
+  const unreadNotifCount = useMemo(
+    () =>
+      notifications.filter((n) => {
+        if (!n.is_read) {
+          if (n.type === "follow" && !notifPrefs.follow) return false;
+          if (n.type === "comment" && !notifPrefs.comment) return false;
+          if (n.type === "mention" && !notifPrefs.mention) return false;
+          if (n.type === "comment_like" && !notifPrefs.comment_like) return false;
+          if (n.type === "checkin_like" && !notifPrefs.checkin_like) return false;
+          return true;
+        }
+        return false;
+      }).length,
+    [notifPrefs, notifications]
+  );
   const filteredNotifications = useMemo(() => {
-    if (notifFilter === "all") return notifications;
-    if (notifFilter === "unread") return notifications.filter((n) => !n.is_read);
-    return notifications.filter((n) => n.type === notifFilter);
-  }, [notifications, notifFilter]);
+    const prefFiltered = notifications.filter((n) => {
+      if (n.type === "follow") return notifPrefs.follow;
+      if (n.type === "comment") return notifPrefs.comment;
+      if (n.type === "mention") return notifPrefs.mention;
+      if (n.type === "comment_like") return notifPrefs.comment_like;
+      if (n.type === "checkin_like") return notifPrefs.checkin_like;
+      return true;
+    });
+    if (notifFilter === "all") return prefFiltered;
+    if (notifFilter === "unread") return prefFiltered.filter((n) => !n.is_read);
+    return prefFiltered.filter((n) => n.type === notifFilter);
+  }, [notifPrefs, notifications, notifFilter]);
   const notificationSummaries = useMemo(() => {
     const grouped = new Map<
       string,
@@ -491,7 +655,7 @@ export default function SocialPanel({
 
     let query = supabase
       .from("checkins")
-      .select("id, user_id, beer_name, rating, created_at")
+      .select("id, user_id, beer_name, rating, created_at, city, district")
       .order("created_at", { ascending: false })
       .limit(FEED_PAGE_SIZE);
     if (!reset && feedCursorCreatedAt) {
@@ -832,7 +996,7 @@ export default function SocialPanel({
 
     const { data: row, error } = await supabase
       .from("checkins")
-      .select("id, user_id, beer_name, rating, created_at")
+      .select("id, user_id, beer_name, rating, created_at, city, district")
       .eq("id", checkinId)
       .maybeSingle();
     if (error || !row) return false;
@@ -1071,7 +1235,7 @@ export default function SocialPanel({
         .order("rank", { ascending: true }),
       supabase
         .from("checkins")
-        .select("beer_name, rating")
+        .select("beer_name, rating, created_at, day_period, city, district")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
         .limit(1200),
@@ -1107,6 +1271,65 @@ export default function SocialPanel({
     void loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(`${NOTIF_PREFS_KEY}:${userId}`);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Partial<Record<NotifTypeKey, boolean>>;
+      setNotifPrefs((prev) => ({
+        follow: parsed.follow ?? prev.follow,
+        comment: parsed.comment ?? prev.comment,
+        mention: parsed.mention ?? prev.mention,
+        comment_like: parsed.comment_like ?? prev.comment_like,
+        checkin_like: parsed.checkin_like ?? prev.checkin_like,
+      }));
+    } catch {
+      // ignore preference parse errors
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(`${NOTIF_PREFS_KEY}:${userId}`, JSON.stringify(notifPrefs));
+  }, [notifPrefs, userId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(`${FEED_PREFS_KEY}:${userId}`);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        scope?: FeedScope;
+        window?: FeedWindow;
+        minRating?: number;
+        format?: FeedFormat;
+        onlyMyCity?: boolean;
+      };
+      if (parsed.scope === "all" || parsed.scope === "following") setFeedScope(parsed.scope);
+      if (parsed.window === "24h" || parsed.window === "7d" || parsed.window === "all") setFeedWindow(parsed.window);
+      if (typeof parsed.minRating === "number") setFeedMinRating(parsed.minRating);
+      if (parsed.format === "all" || parsed.format === "draft" || parsed.format === "bottle") setFeedFormat(parsed.format);
+      if (typeof parsed.onlyMyCity === "boolean") setFeedOnlyMyCity(parsed.onlyMyCity);
+    } catch {
+      // ignore preference parse errors
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      `${FEED_PREFS_KEY}:${userId}`,
+      JSON.stringify({
+        scope: feedScope,
+        window: feedWindow,
+        minRating: feedMinRating,
+        format: feedFormat,
+        onlyMyCity: feedOnlyMyCity,
+      })
+    );
+  }, [feedFormat, feedMinRating, feedOnlyMyCity, feedScope, feedWindow, userId]);
 
   useEffect(() => {
     if (!loading) void loadNotifications(notifLimit);
@@ -1165,6 +1388,30 @@ export default function SocialPanel({
     void loadLeaderboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leaderScope, leaderWindow, followingIds]);
+
+  function applyFeedPreset(preset: "discover" | "following" | "quality") {
+    if (preset === "discover") {
+      setFeedScope("all");
+      setFeedWindow("24h");
+      setFeedMinRating(0);
+      setFeedFormat("all");
+      setFeedOnlyMyCity(false);
+      return;
+    }
+    if (preset === "following") {
+      setFeedScope("following");
+      setFeedWindow("7d");
+      setFeedMinRating(0);
+      setFeedFormat("all");
+      setFeedOnlyMyCity(false);
+      return;
+    }
+    setFeedScope("all");
+    setFeedWindow("7d");
+    setFeedMinRating(3.5);
+    setFeedFormat("all");
+    setFeedOnlyMyCity(false);
+  }
 
   useEffect(() => {
     const channel = supabase
@@ -2213,6 +2460,25 @@ export default function SocialPanel({
           </div>
           {notifPanelOpen ? (
             <div className="mt-2 space-y-2">
+              <div className="grid grid-cols-2 gap-2 rounded-lg border border-white/10 bg-black/20 p-2">
+                {([
+                  ["follow", tx(lang, "Takip", "Follow")],
+                  ["comment", tx(lang, "Yorum", "Comment")],
+                  ["mention", "Mention"],
+                  ["comment_like", tx(lang, "Yorum begeni", "Comment like")],
+                  ["checkin_like", tx(lang, "Log begeni", "Check-in like")],
+                ] as Array<[NotifTypeKey, string]>).map(([key, label]) => (
+                  <label key={`notif-pref-${key}`} className="flex items-center gap-2 text-[11px]">
+                    <input
+                      type="checkbox"
+                      checked={notifPrefs[key]}
+                      onChange={(e) => setNotifPrefs((prev) => ({ ...prev, [key]: e.target.checked }))}
+                      className="h-3.5 w-3.5 accent-amber-400"
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <select
                   value={notifFilter}
@@ -2467,6 +2733,36 @@ export default function SocialPanel({
 
         <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
           <div className="flex items-center justify-between gap-3">
+            <div className="text-xs opacity-70">{tx(lang, "Rozet ilerlemen", "Badge progress")}</div>
+            <div className="text-[11px] opacity-65">
+              {badgeProgressRows.filter((x) => x.done).length}/{badgeProgressRows.length} {tx(lang, "tamam", "done")}
+            </div>
+          </div>
+          <div className="mt-2 space-y-2">
+            {badgeProgressRows.slice(0, 4).map((item) => (
+              <div key={`badge-progress-${item.key}`} className="rounded-xl border border-white/10 bg-black/25 p-2">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span>{lang === "en" ? item.titleEn : item.titleTr}</span>
+                  <span className={item.done ? "text-emerald-300" : "opacity-80"}>
+                    {item.done ? tx(lang, "Acildi", "Unlocked") : `${Math.round(item.progress * 100)}%`}
+                  </span>
+                </div>
+                <div className="mt-1 h-1.5 w-full rounded-full bg-white/10">
+                  <div
+                    className={`h-full rounded-full ${item.done ? "bg-emerald-400" : "bg-amber-400"}`}
+                    style={{ width: `${Math.max(6, Math.round(item.progress * 100))}%` }}
+                  />
+                </div>
+                {!item.done ? (
+                  <div className="mt-1 text-[11px] opacity-70">{lang === "en" ? item.hintEn : item.hintTr}</div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+          <div className="flex items-center justify-between gap-3">
             <div className="text-xs opacity-70">{tx(lang, "Sosyal akis", "Social feed")}</div>
             <button
               type="button"
@@ -2474,6 +2770,30 @@ export default function SocialPanel({
               className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
             >
               {tx(lang, "Yenile", "Refresh")}
+            </button>
+          </div>
+
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => applyFeedPreset("discover")}
+              className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
+            >
+              {tx(lang, "Kesfet", "Discover")}
+            </button>
+            <button
+              type="button"
+              onClick={() => applyFeedPreset("following")}
+              className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
+            >
+              {tx(lang, "Takip", "Following")}
+            </button>
+            <button
+              type="button"
+              onClick={() => applyFeedPreset("quality")}
+              className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
+            >
+              {tx(lang, "Kaliteli", "Quality")}
             </button>
           </div>
 
@@ -2512,6 +2832,31 @@ export default function SocialPanel({
               placeholder={tx(lang, "@kisi / bira", "@user / beer")}
               className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
             />
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-3">
+            <select
+              value={feedFormat}
+              onChange={(e) => setFeedFormat(e.target.value as FeedFormat)}
+              className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
+            >
+              <option value="all">{tx(lang, "Tum formatlar", "All formats")}</option>
+              <option value="draft">{tx(lang, "Sadece fici", "Draft only")}</option>
+              <option value="bottle">{tx(lang, "Sadece sise/kutu", "Bottle/can only")}</option>
+            </select>
+            <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs">
+              <input
+                type="checkbox"
+                checked={feedOnlyMyCity}
+                disabled={!primaryCity}
+                onChange={(e) => setFeedOnlyMyCity(e.target.checked)}
+                className="h-3.5 w-3.5 accent-amber-400"
+              />
+              <span>
+                {primaryCity
+                  ? tx(lang, `Sadece ${primaryCity}`, `Only ${primaryCity}`)
+                  : tx(lang, "Sehir verin yok", "No city data")}
+              </span>
+            </label>
           </div>
 
           <div className="mt-2 space-y-2">
