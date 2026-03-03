@@ -10,6 +10,7 @@ import MonthZoom from "@/components/MonthZoom";
 import FieldHeatmap from "@/components/FieldHeatmap";
 import FootballHeatmap from "@/components/FootballHeatmap";
 import GeoHeatmap from "@/components/GeoHeatmap";
+import BeerWheel from "@/components/BeerWheel";
 import LoadingPulse from "@/components/LoadingPulse";
 import { normalizeUsername, usernameFromEmail, usernameToCandidateEmails } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
@@ -1689,6 +1690,12 @@ export default function Home() {
     );
   }, []);
 
+  const beerWheelPool = useMemo(() => {
+    const top = topBeerLabelsByFormat[format] ?? [];
+    const merged = [...top, ...beerLabelsForFormat];
+    return Array.from(new Set(merged)).slice(0, 120);
+  }, [beerLabelsForFormat, format, topBeerLabelsByFormat]);
+
   useEffect(() => {
     // ensure beerName is valid when format changes
     const pinned = topBeerLabelsByFormat[format] ?? [];
@@ -2996,6 +3003,20 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               value={beerName}
               onChange={setBeerName}
               lang={lang}
+            />
+            <BeerWheel
+              lang={lang}
+              options={beerWheelPool}
+              topOptions={topBeerLabelsByFormat[format] ?? []}
+              onPick={(picked) => {
+                setBeerName(picked);
+                setBeerQuery(picked);
+                trackEvent({
+                  eventName: "beer_wheel_pick",
+                  userId: session?.user?.id ?? null,
+                  props: { format, beer_name: picked },
+                });
+              }}
             />
           </div>
         ) : null}
