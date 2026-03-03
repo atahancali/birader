@@ -24,7 +24,7 @@ export default function PrivacyPage() {
             <p>
               Veri sorumlusu: <strong>[COMPANY_NAME]</strong>
               <br />
-              İletişim e-postası: <strong>birader.com.app@gmail.com</strong>
+              İletişim e-postası: <strong>biraderdestek@gmail.com</strong>
             </p>
           </section>
 
@@ -80,8 +80,8 @@ export default function PrivacyPage() {
             <h2 className="font-semibold text-amber-100">8. İletişim</h2>
             <p>
               KVKK/GDPR kapsamındaki talepleriniz için:{" "}
-              <a href="mailto:birader.com.app@gmail.com" className="underline">
-                birader.com.app@gmail.com
+              <a href="mailto:biraderdestek@gmail.com" className="underline">
+                biraderdestek@gmail.com
               </a>
             </p>
           </section>
