@@ -117,6 +117,8 @@ alter table public.profiles add column if not exists feed_pref_window text not n
 alter table public.profiles add column if not exists feed_pref_min_rating numeric(3,1) not null default 0;
 alter table public.profiles add column if not exists feed_pref_format text not null default 'all';
 alter table public.profiles add column if not exists feed_pref_only_my_city boolean not null default false;
+alter table public.profiles add column if not exists onboarding_seen_at timestamptz;
+alter table public.profiles add column if not exists tutorial_done_at timestamptz;
 create index if not exists idx_profiles_display_name on public.profiles (display_name);
 create unique index if not exists idx_profiles_referral_code_unique on public.profiles (referral_code);
 

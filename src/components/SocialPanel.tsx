@@ -2617,7 +2617,7 @@ export default function SocialPanel({
                         {g.actor} • {g.type} • {g.count} {tx(lang, "adet", "items")}
                       </div>
                       <div className="mt-1 text-[11px] opacity-65">
-                        {new Date(g.latest.created_at).toLocaleString("tr-TR")}
+                        {new Date(g.latest.created_at).toLocaleString(locale)}
                       </div>
                     </button>
                   ))
@@ -2651,16 +2651,16 @@ export default function SocialPanel({
                             {visibleName({ username: n.actor_username, display_name: n.actor_display_name })}
                           </Link>
                         )}
-                        {n.type === "comment" ? " loguna yorum yazdi." : null}
-                        {n.type === "mention" ? " seni yorumda etiketledi." : null}
-                        {n.type === "comment_like" ? " yorumunu begendi." : null}
-                        {n.type === "checkin_like" ? " logunu begendi." : null}
-                        {n.type === "follow" ? " seni takip etmeye basladi." : null}
+                        {n.type === "comment" ? tx(lang, " loguna yorum yazdi.", " commented on your check-in.") : null}
+                        {n.type === "mention" ? tx(lang, " seni yorumda etiketledi.", " mentioned you in a comment.") : null}
+                        {n.type === "comment_like" ? tx(lang, " yorumunu begendi.", " liked your comment.") : null}
+                        {n.type === "checkin_like" ? tx(lang, " logunu begendi.", " liked your check-in.") : null}
+                        {n.type === "follow" ? tx(lang, " seni takip etmeye basladi.", " started following you.") : null}
                         {n.type === "system"
                           ? ` ${String(((n.payload || {}) as Record<string, any>)[lang === "en" ? "message_en" : "message_tr"] || "")}`
                           : null}
                       </div>
-                      <div className="mt-1 text-[11px] opacity-65">{new Date(n.created_at).toLocaleString("tr-TR")}</div>
+                      <div className="mt-1 text-[11px] opacity-65">{new Date(n.created_at).toLocaleString(locale)}</div>
                     </div>
                   ))}
               {notifBusy ? <div className="text-xs opacity-60">{tx(lang, "Bildirimler yukleniyor...", "Loading notifications...")}</div> : null}
@@ -2730,7 +2730,7 @@ export default function SocialPanel({
             >
               {ownRecentCheckins.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.beer_name} - {new Date(c.created_at).toLocaleString("tr-TR")}
+                  {c.beer_name} - {new Date(c.created_at).toLocaleString(locale)}
                 </option>
               ))}
             </select>
@@ -3128,7 +3128,7 @@ export default function SocialPanel({
                   onClick={() => void loadFeed(false)}
                   className="w-full rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs disabled:opacity-50"
                 >
-                  {feedLoadingMore ? "Yukleniyor..." : "Daha fazla log yukle"}
+                  {feedLoadingMore ? tx(lang, "Yukleniyor...", "Loading...") : tx(lang, "Daha fazla log yukle", "Load more check-ins")}
                 </button>
                 <div ref={feedLoadMoreRef} className="h-2 w-full" />
               </>

@@ -56,6 +56,8 @@ type HeaderProfile = {
   heatmap_color_from?: string | null;
   heatmap_color_to?: string | null;
   referral_code?: string | null;
+  onboarding_seen_at?: string | null;
+  tutorial_done_at?: string | null;
 };
 type ProductSuggestionRow = {
   id: number;
@@ -704,7 +706,7 @@ export default function Home() {
     const isEmail = looksLikeEmail(identifier);
     const emailCandidates = isEmail ? [identifier] : usernameToCandidateEmails(identifier);
     if (!emailCandidates.length) {
-      alert("Geçerli bir kullanıcı adı veya e-posta gir.");
+      alert(tx(lang, "Gecerli bir kullanici adi veya e-posta gir.", "Enter a valid username or e-mail."));
       return;
     }
 
@@ -712,11 +714,11 @@ export default function Home() {
     try {
       if (authMode === "signup") {
         if (!isEmail) {
-          alert("Kayıt için e-posta girmen gerekiyor.");
+          alert(tx(lang, "Kayit icin e-posta girmen gerekiyor.", "You need an e-mail address to sign up."));
           return;
         }
         if (!signupBirthDate) {
-          alert("Dogum tarihi zorunlu.");
+          alert(tx(lang, "Dogum tarihi zorunlu.", "Birth date is required."));
           return;
         }
         const age = ageFromBirthDate(signupBirthDate);
@@ -725,7 +727,13 @@ export default function Home() {
           return;
         }
         if (!signupTermsAccepted || !signupPrivacyAccepted || !signupCommercialAccepted) {
-          alert("Devam etmek icin yasal ve ticari onay kutularini isaretle.");
+          alert(
+            tx(
+              lang,
+              "Devam etmek icin yasal ve ticari onay kutularini isaretle.",
+              "To continue, accept legal and commercial consent checkboxes."
+            )
+          );
           return;
         }
 
@@ -750,9 +758,9 @@ export default function Home() {
         if (error) {
           const msg = (error.message || "").toLowerCase();
           if (msg.includes("rate limit")) {
-            alert("Çok sık kayıt denemesi yapıldı. 1-2 dakika bekleyip tekrar dene.");
+            alert(tx(lang, "Cok sik kayit denemesi yapildi. 1-2 dakika bekleyip tekrar dene.", "Too many signup attempts. Wait 1-2 minutes and try again."));
           } else {
-            alert(error.message || "Kayıt başarısız.");
+            alert(error.message || tx(lang, "Kayit basarisiz.", "Signup failed."));
           }
           return;
         }
@@ -781,7 +789,7 @@ export default function Home() {
         if (e2) {
           const msg = (e2.message || "").toLowerCase();
           if (msg.includes("email not confirmed")) {
-            alert("Hesap oluşturuldu. Giriş için e-postanı doğrula.");
+            alert(tx(lang, "Hesap olusturuldu. Giris icin e-postani dogrula.", "Account created. Confirm your e-mail to sign in."));
           } else {
             alert(e2.message);
           }
@@ -885,6 +893,7 @@ export default function Home() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [recentExpandStep, setRecentExpandStep] = useState(0);
   const [headerProfile, setHeaderProfile] = useState<HeaderProfile | null>(null);
+  const [profileFlagsLoaded, setProfileFlagsLoaded] = useState(false);
   const [pwaPromptEvent, setPwaPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [pwaInstallOpen, setPwaInstallOpen] = useState(false);
   const { lang, setLang } = useAppLang("tr");
@@ -945,8 +954,8 @@ export default function Home() {
       return;
     }
     if (!canOpenLogStep(step)) {
-      if (!formatConfirmed) alert("Once Adim 1'de sunum tarzini sec.");
-      else alert("Once bira secimini tamamla.");
+      if (!formatConfirmed) alert(tx(lang, "Once Adim 1'de sunum tarzini sec.", "Complete Step 1 first by selecting serving style."));
+      else alert(tx(lang, "Once bira secimini tamamla.", "Complete beer selection first."));
       return;
     }
     setLogStep(step);
@@ -954,14 +963,14 @@ export default function Home() {
 
   function beginLogMutation() {
     if (logMutationLockRef.current || isLogMutating) {
-      alert("Log islemi suruyor, lutfen bekle.");
+      alert(tx(lang, "Log islemi suruyor, lutfen bekle.", "A log action is in progress. Please wait."));
       return false;
     }
     const now = Date.now();
     const elapsed = now - lastLogAttemptAtRef.current;
     if (elapsed < LOG_SUBMIT_COOLDOWN_MS) {
       const remain = Math.ceil((LOG_SUBMIT_COOLDOWN_MS - elapsed) / 1000);
-      alert(`Cok hizli log atiyorsun. ${remain} sn bekle.`);
+      alert(tx(lang, `Cok hizli log atiyorsun. ${remain} sn bekle.`, `You're logging too fast. Wait ${remain}s.`));
       return false;
     }
     lastLogAttemptAtRef.current = now;
@@ -1184,7 +1193,7 @@ export default function Home() {
         let row: any = null;
         const withTheme = await supabase
           .from("profiles")
-          .select("username, display_name, avatar_path, is_admin, heatmap_color_from, heatmap_color_to, referral_code")
+          .select("username, display_name, avatar_path, is_admin, heatmap_color_from, heatmap_color_to, referral_code, onboarding_seen_at, tutorial_done_at")
           .eq("user_id", session.user.id)
           .maybeSingle();
         if (!withTheme.error) {
@@ -1260,6 +1269,8 @@ export default function Home() {
             heatmap_color_from: row.heatmap_color_from ?? null,
             heatmap_color_to: row.heatmap_color_to ?? null,
             referral_code: row.referral_code ?? null,
+            onboarding_seen_at: row.onboarding_seen_at ?? null,
+            tutorial_done_at: row.tutorial_done_at ?? null,
           });
           if (row.heatmap_color_from) setGridColorFrom(String(row.heatmap_color_from));
           if (row.heatmap_color_to) setGridColorTo(String(row.heatmap_color_to));
@@ -1274,11 +1285,15 @@ export default function Home() {
             heatmap_color_from: null,
             heatmap_color_to: null,
             referral_code: null,
+            onboarding_seen_at: null,
+            tutorial_done_at: null,
           });
         }
+        setProfileFlagsLoaded(true);
       })();
     } else {
       setIsAdminUser(false);
+      setProfileFlagsLoaded(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id]);
@@ -1293,8 +1308,9 @@ export default function Home() {
   }, [canManageSuggestions]);
 
   useEffect(() => {
-    if (!session?.user?.id) return;
+    if (!session?.user?.id || !profileFlagsLoaded) return;
     try {
+      if (headerProfile?.onboarding_seen_at) return;
       const seen = localStorage.getItem(ONBOARDING_SEEN_KEY);
       if (!seen) {
         setOnboardingOpen(true);
@@ -1305,18 +1321,19 @@ export default function Home() {
         });
       }
     } catch {}
-  }, [abOnboardingVariant, session?.user?.id]);
+  }, [abOnboardingVariant, headerProfile?.onboarding_seen_at, profileFlagsLoaded, session?.user?.id]);
 
   useEffect(() => {
-    if (!session?.user?.id) return;
+    if (!session?.user?.id || !profileFlagsLoaded) return;
     try {
+      if (headerProfile?.tutorial_done_at) return;
       const done = localStorage.getItem(TUTORIAL_DONE_KEY);
       if (!done) {
         setTutorialOpen(true);
         setTutorialStepIdx(0);
       }
     } catch {}
-  }, [session?.user?.id]);
+  }, [headerProfile?.tutorial_done_at, profileFlagsLoaded, session?.user?.id]);
 
   useEffect(() => {
     if (!session?.user?.id) return;
@@ -2176,7 +2193,7 @@ export default function Home() {
       return;
     }
     await loadMyBadges();
-    alert("Tum rozetler yenilendi.");
+    alert(tx(lang, "Tum rozetler yenilendi.", "All badges were refreshed."));
   }
 
   async function saveHeatmapThemeToProfile(nextFrom: string, nextTo: string) {
@@ -2218,7 +2235,7 @@ export default function Home() {
       .update({ status: nextStatus })
       .eq("id", id);
     if (error) {
-      alert(`Durum guncellenemedi: ${error.message}`);
+      alert(`${tx(lang, "Durum guncellenemedi", "Status update failed")}: ${error.message}`);
       return;
     }
     setAdminSuggestions((prev) => prev.map((r) => (r.id === id ? { ...r, status: nextStatus } : r)));
@@ -2229,6 +2246,13 @@ export default function Home() {
       try {
         localStorage.setItem(ONBOARDING_SEEN_KEY, "1");
       } catch {}
+      if (session?.user?.id) {
+        void supabase
+          .from("profiles")
+          .update({ onboarding_seen_at: new Date().toISOString() })
+          .eq("user_id", session.user.id);
+        setHeaderProfile((prev) => (prev ? { ...prev, onboarding_seen_at: new Date().toISOString() } : prev));
+      }
     }
     setOnboardingOpen(false);
   }
@@ -2238,6 +2262,13 @@ export default function Home() {
       try {
         localStorage.setItem(TUTORIAL_DONE_KEY, "1");
       } catch {}
+      if (session?.user?.id) {
+        void supabase
+          .from("profiles")
+          .update({ tutorial_done_at: new Date().toISOString() })
+          .eq("user_id", session.user.id);
+        setHeaderProfile((prev) => (prev ? { ...prev, tutorial_done_at: new Date().toISOString() } : prev));
+      }
     }
     setTutorialOpen(false);
   }
@@ -2256,7 +2287,7 @@ async function deleteCheckin(id: string) {
       return;
     }
     const reason = error?.message || "Kayit bulunamadi ya da yetki yok.";
-    alert(`Silme basarisiz: ${reason}`);
+    alert(`${tx(lang, "Silme basarisiz", "Delete failed")}: ${reason}`);
     return;
   }
 
@@ -2291,7 +2322,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       await loadCheckins();
       return;
     }
-    alert(`Guncelleme basarisiz: ${error.message}`);
+    alert(`${tx(lang, "Guncelleme basarisiz", "Update failed")}: ${error.message}`);
     return;
   }
 
@@ -2318,7 +2349,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       return;
     }
     if (isBackDate && targets.length > 1 && !batchConfirmed) {
-      alert("Toplu kayit icin once onay kutusunu isaretle.");
+      alert(tx(lang, "Toplu kayit icin once onay kutusunu isaretle.", "Tick confirmation before bulk save."));
       return;
     }
     const normalizedRating = sanitizeRating(rating);
@@ -2330,7 +2361,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     const normalizedCity = city.trim();
     const normalizedDistrict = resolvedDistrict;
     if (!normalizedDistrict) {
-      alert("Ilce sec veya Diger icin ilce adini yaz.");
+      alert(tx(lang, "Ilce sec veya Diger icin ilce adini yaz.", "Select district or type district name for Other."));
       return;
     }
     if (!beginLogMutation()) return;
@@ -3293,7 +3324,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 </div>
               </div>
               <div className="text-xs opacity-70 mt-1">
-                {new Date(c.created_at).toLocaleDateString(lang === "en" ? "en-US" : "tr-TR")} • {dayPeriodLabelTr(c.day_period, c.created_at)} /{" "}
+                {new Date(c.created_at).toLocaleDateString(lang === "en" ? "en-US" : "tr-TR")} • {(lang === "en" ? dayPeriodLabelEn(c.day_period, c.created_at) : dayPeriodLabelTr(c.day_period, c.created_at))} /{" "}
                 {dayPeriodLabelEn(c.day_period, c.created_at)}
               </div>
               {c.city ? (
