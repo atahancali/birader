@@ -107,6 +107,8 @@ export default function PublicProfileView({ username }: { username: string }) {
   const [gridCellMetric, setGridCellMetric] = useState<"color" | "count" | "avgRating">("color");
   const [gridColorFrom, setGridColorFrom] = useState<string>("#f59e0b");
   const [gridColorTo, setGridColorTo] = useState<string>("#ef4444");
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const [year, setYear] = useState(currentYear);
@@ -699,6 +701,19 @@ export default function PublicProfileView({ username }: { username: string }) {
     await loadBadgesForUser(sessionUserId);
   }
 
+  async function deleteOwnAccount() {
+    if (!sessionUserId || !isOwnProfile || deletingAccount) return;
+    setDeletingAccount(true);
+    const { data, error } = await supabase.rpc("delete_my_account");
+    if (error || data !== true) {
+      setDeletingAccount(false);
+      alert(error?.message || "Hesap silme islemi basarisiz.");
+      return;
+    }
+    await supabase.auth.signOut();
+    router.replace("/?account_deleted=1");
+  }
+
   if (loading) {
     return (
       <main className="min-h-screen max-w-md mx-auto p-4">
@@ -937,6 +952,18 @@ export default function PublicProfileView({ username }: { username: string }) {
               </button>
             </div>
           </div>
+
+          <div className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/10 p-3">
+            <div className="text-xs opacity-80">KVKK / GDPR</div>
+            <div className="mt-1 text-sm">Hesabını ve tüm verilerini kalıcı olarak silebilirsin.</div>
+            <button
+              type="button"
+              onClick={() => setDeleteModalOpen(true)}
+              className="mt-3 rounded-xl border border-red-300/45 bg-red-500/20 px-3 py-2 text-sm text-red-100"
+            >
+              Hesabımı Sil
+            </button>
+          </div>
         </section>
       ) : null}
 
@@ -1119,6 +1146,34 @@ export default function PublicProfileView({ username }: { username: string }) {
           onDelete={deleteCheckinOnDay}
           onUpdate={updateCheckinOnDay}
         />
+      ) : null}
+
+      {deleteModalOpen ? (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/80 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-white/15 bg-black/90 p-4">
+            <div className="text-base font-semibold text-amber-200">Hesabımı Sil</div>
+            <p className="mt-2 text-sm">
+              Tüm verileriniz kalıcı olarak silinecektir. Emin misiniz?
+            </p>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteModalOpen(false)}
+                className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-sm"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                onClick={() => void deleteOwnAccount()}
+                disabled={deletingAccount}
+                className="rounded-lg border border-red-300/45 bg-red-500/20 px-3 py-1.5 text-sm text-red-100 disabled:opacity-60"
+              >
+                {deletingAccount ? "Siliniyor..." : "Evet, sil"}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </main>
   );

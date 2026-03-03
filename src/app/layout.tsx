@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import ComplianceLayer from "@/components/ComplianceLayer";
+import SiteFooter from "@/components/SiteFooter";
 import "./globals.css";
 
 export const viewport: Viewport = {
@@ -42,7 +44,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="tr">
-      <body>{children}</body>
+      <body>
+        <ComplianceLayer />
+        <div className="flex min-h-screen flex-col">
+          <div className="flex-1">{children}</div>
+          <SiteFooter />
+        </div>
+      </body>
     </html>
   );
 }

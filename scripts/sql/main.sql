@@ -1801,6 +1801,46 @@ revoke all on function public.crm_at_risk_users(int, int) from public;
 grant execute on function public.latest_user_daily_metrics() to authenticated;
 grant execute on function public.crm_at_risk_users(int, int) to authenticated;
 
+create or replace function public.delete_my_account()
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+begin
+  if v_uid is null then
+    return false;
+  end if;
+
+  delete from public.notifications where user_id = v_uid or actor_id = v_uid;
+  delete from public.checkin_comment_likes where user_id = v_uid;
+  delete from public.checkin_likes where user_id = v_uid;
+  delete from public.checkin_comments where user_id = v_uid;
+  delete from public.checkin_share_invites where inviter_id = v_uid or invited_user_id = v_uid;
+  delete from public.favorite_beers where user_id = v_uid;
+  delete from public.user_badges where user_id = v_uid;
+  delete from public.analytics_events where user_id = v_uid;
+  delete from public.product_suggestions where user_id = v_uid;
+  delete from public.content_reports where reporter_id = v_uid or target_user_id = v_uid;
+  delete from public.app_action_logs where user_id = v_uid;
+  delete from public.user_daily_metrics where user_id = v_uid;
+  delete from public.follows where follower_id = v_uid or following_id = v_uid;
+  delete from public.checkins where user_id = v_uid;
+  delete from public.profile_identity_history where user_id = v_uid;
+  delete from public.profiles where user_id = v_uid;
+
+  delete from auth.users where id = v_uid;
+  return true;
+exception when others then
+  return false;
+end;
+$$;
+
+revoke all on function public.delete_my_account() from public;
+grant execute on function public.delete_my_account() to authenticated;
+
 -- Verification
 select
   to_regclass('public.profiles') as profiles_table,

@@ -650,6 +650,7 @@ function ComboboxBeer({
 
 export default function Home() {
   const [session, setSession] = useState<any>(null);
+  const [accountDeletedNotice, setAccountDeletedNotice] = useState(false);
 
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
@@ -1071,9 +1072,17 @@ export default function Home() {
       const ref = (params.get("ref") || "").trim().toLowerCase();
       if (ref) localStorage.setItem(REFERRAL_KEY, ref);
       const tutorialParam = (params.get("tutorial") || "").trim();
+      const accountDeleted = (params.get("account_deleted") || "").trim();
       if (tutorialParam === "1") {
         setTutorialStepIdx(0);
         setTutorialOpen(true);
+      }
+      if (accountDeleted === "1") {
+        setAccountDeletedNotice(true);
+        params.delete("account_deleted");
+        const q = params.toString();
+        const nextUrl = q ? `/?${q}` : "/";
+        window.history.replaceState({}, "", nextUrl);
       }
     } catch {}
   }, []);
@@ -2572,6 +2581,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         </div>
         <h1 className="text-2xl font-bold">Birader</h1>
         <p className="text-sm opacity-80 mt-1">{tx(lang, "Bugün ne içtin?", "What did you drink today?")}</p>
+
+        {accountDeletedNotice ? (
+          <div className="mt-3 rounded-2xl border border-emerald-300/30 bg-emerald-500/10 p-3 text-sm">
+            Hesabınız başarıyla silindi.
+          </div>
+        ) : null}
 
         <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
           <div className="flex items-center justify-between">
