@@ -14,8 +14,8 @@ export default function SiteFooter() {
           <Link href="/terms" className="underline underline-offset-2">
             Kullanım Koşulları
           </Link>
-          <a href="mailto:[CONTACT_EMAIL]" className="underline underline-offset-2">
-            [CONTACT_EMAIL]
+          <a href="mailto:birader.com.app@gmail.com" className="underline underline-offset-2">
+            birader.com.app@gmail.com
           </a>
         </div>
         <div className="opacity-60">© [COMPANY_NAME]</div>
