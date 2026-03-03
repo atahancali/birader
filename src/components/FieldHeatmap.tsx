@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { gradientColor } from "@/lib/heatmapTheme";
 import type { AppLang } from "@/lib/i18n";
 
@@ -7,6 +8,8 @@ type CheckinLite = { created_at: string; rating?: number | null };
 
 const DOW_TR = ["Pzt","Sal","Çar","Per","Cum","Cmt","Paz"];
 const DOW_EN = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const MONTHS_TR = ["Oca", "Sub", "Mar", "Nis", "May", "Haz", "Tem", "Agu", "Eyl", "Eki", "Kas", "Ara"];
+const MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function isoLocal(d: Date) {
   const y = d.getFullYear();
@@ -84,10 +87,38 @@ export default function FieldHeatmap({
     grid[row][col] = iso;
   }
 
+  const [accessiblePalette, setAccessiblePalette] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+  const [focusMonth, setFocusMonth] = useState<number>(new Date().getFullYear() === year ? new Date().getMonth() : 0);
+  const [hoverCell, setHoverCell] = useState<{
+    iso: string;
+    col: number;
+    count: number;
+    avgRating: number | null;
+    weekCounts: number[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (!focusMode) return;
+    const next = new Date().getFullYear() === year ? new Date().getMonth() : 0;
+    setFocusMonth(next);
+  }, [focusMode, year]);
+
   const cellSize = cellMetric === "color" ? 18 : 26;
   const todayIso = isoLocal(new Date());
   const showCurrentWeek = new Date().getFullYear() === year;
   const currentWeek = showCurrentWeek ? weekIndexFromYearStart(new Date(), year) + 1 : null;
+  const paletteFrom = accessiblePalette ? "#2563eb" : colorFrom;
+  const paletteTo = accessiblePalette ? "#f97316" : colorTo;
+  const monthLabels = lang === "en" ? MONTHS_EN : MONTHS_TR;
+  const colMonthMap = Array.from({ length: maxWeek + 1 }).map((_, col) => {
+    for (let row = 0; row < 7; row += 1) {
+      const iso = grid[row][col];
+      if (iso) return Number(iso.slice(5, 7)) - 1;
+    }
+    return -1;
+  });
+  const visibleWeekCount = colMonthMap.filter((m) => !focusMode || m === focusMonth).length;
   const statRows = Object.values(dayStats);
   const activeDays = statRows.filter((s) => s.count > 0).length;
   const maxDailyCount = statRows.reduce((m, s) => Math.max(m, s.count), 0);
@@ -134,13 +165,49 @@ export default function FieldHeatmap({
                 ))}
               </div>
 
-              <div>
+              <div className="relative">
+                {hoverCell ? (
+                  <div
+                    className="pointer-events-none absolute z-20 w-44 rounded-xl border border-white/15 bg-black/90 p-2 text-[10px] shadow-[0_8px_30px_rgba(0,0,0,0.45)]"
+                    style={{
+                      left: `${Math.max(4, Math.min(96, ((hoverCell.col + 1) / (maxWeek + 1)) * 100))}%`,
+                      top: "-94px",
+                      transform: "translateX(-50%)",
+                    }}
+                  >
+                    <div className="font-semibold">{hoverCell.iso}</div>
+                    <div className="mt-0.5 opacity-75">
+                      {lang === "en"
+                        ? `${hoverCell.count} beers • ${hoverCell.avgRating === null ? "unrated" : `${hoverCell.avgRating.toFixed(1)}⭐ avg`}`
+                        : `${hoverCell.count} bira • ${hoverCell.avgRating === null ? "puansiz" : `${hoverCell.avgRating.toFixed(1)}⭐ ort.`}`}
+                    </div>
+                    <div className="mt-1 flex h-7 items-end gap-[2px]">
+                      {hoverCell.weekCounts.map((v, idx) => {
+                        const maxVal = Math.max(1, ...hoverCell.weekCounts);
+                        const h = v <= 0 ? 4 : Math.max(6, Math.round((v / maxVal) * 26));
+                        return (
+                          <div
+                            key={`tt-w-${idx}`}
+                            className="w-2 rounded-sm"
+                            style={{
+                              height: `${h}px`,
+                              backgroundColor: v <= 0 ? "rgba(255,255,255,0.14)" : gradientColor(paletteFrom, paletteTo, Math.min(1, v / 5), 0.95),
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
                 <div
                   className="mb-1 grid min-w-max gap-0.5 text-[10px] opacity-55"
                   style={{ gridTemplateColumns: `repeat(${maxWeek + 1}, ${cellSize}px)` }}
                 >
                   {Array.from({ length: maxWeek + 1 }).map((_, col) => (
-                    <div key={`wk-${col}`} className="text-center">
+                    <div
+                      key={`wk-${col}`}
+                      className={`text-center ${focusMode && colMonthMap[col] !== focusMonth ? "opacity-20" : "opacity-90"}`}
+                    >
                       {col % 4 === 0 ? col + 1 : ""}
                     </div>
                   ))}
@@ -151,7 +218,12 @@ export default function FieldHeatmap({
                   style={{ gridTemplateColumns: `repeat(${maxWeek + 1}, ${cellSize}px)` }}
                 >
                   {Array.from({ length: maxWeek + 1 }).map((_, col) => (
-                    <div key={col} className="grid grid-rows-7 gap-1">
+                    <div
+                      key={col}
+                      className={`grid grid-rows-7 gap-1 ${
+                        focusMode && colMonthMap[col] !== focusMonth ? "opacity-35" : "opacity-100"
+                      }`}
+                    >
                       {Array.from({ length: 7 }).map((_, row) => {
                         const iso = grid[row][col];
                         const stat = iso ? dayStats[iso] : undefined;
@@ -171,12 +243,29 @@ export default function FieldHeatmap({
                               ? "-"
                               : avgRating.toFixed(1)
                             : "";
+                        const isOutOfFocus = focusMode && iso && colMonthMap[col] !== focusMonth;
+                        const radiusPx = !iso ? 6 : count <= 0 ? 6 : Math.round(5 + colorRatio * 9);
+                        const weekCounts = Array.from({ length: 7 }).map((__, wRow) => {
+                          const wIso = grid[wRow][col];
+                          if (!wIso) return 0;
+                          return dayStats[wIso]?.count || 0;
+                        });
 
                         return (
                           <button
                             key={`${row}-${col}`}
                             disabled={!iso || isFuture || readOnly}
                             onClick={() => !readOnly && iso && !isFuture && onSelectDay(iso)}
+                            onMouseEnter={() => {
+                              if (!iso) return;
+                              setHoverCell({ iso, col, count, avgRating, weekCounts });
+                            }}
+                            onMouseLeave={() => setHoverCell(null)}
+                            onFocus={() => {
+                              if (!iso) return;
+                              setHoverCell({ iso, col, count, avgRating, weekCounts });
+                            }}
+                            onBlur={() => setHoverCell(null)}
                             title={
                               iso
                                 ? lang === "en"
@@ -201,7 +290,7 @@ export default function FieldHeatmap({
                                   ? "rgba(255,255,255,0.025)"
                                   : count <= 0
                                   ? "rgba(255,255,255,0.035)"
-                                  : gradientColor(colorFrom, colorTo, colorRatio, 0.9),
+                                  : gradientColor(paletteFrom, paletteTo, colorRatio, 0.9),
                               borderColor:
                                 !iso
                                   ? "rgba(255,255,255,0.03)"
@@ -219,6 +308,8 @@ export default function FieldHeatmap({
                                   ? "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.10) 0.8px, transparent 1px), linear-gradient(145deg, rgba(255,255,255,0.03), rgba(255,255,255,0))"
                                   : "none",
                               backgroundSize: iso && count <= 0 && !isFuture ? "6px 6px, 100% 100%" : "auto",
+                              borderRadius: `${radiusPx}px`,
+                              filter: isOutOfFocus ? "saturate(0.65) brightness(0.82)" : "none",
                             }}
                           >
                             {iso && count > 0 && cellMetric !== "color" ? textValue : ""}
@@ -246,12 +337,67 @@ export default function FieldHeatmap({
         <aside className="rounded-2xl border border-white/10 bg-black/25 p-3">
           <div className="text-[11px] opacity-70">{lang === "en" ? "Legend" : "Lejant"}</div>
           <div className="mt-2 space-y-2">
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+              <div className="text-[10px] opacity-70">{lang === "en" ? "Palette mode" : "Palet modu"}</div>
+              <div className="mt-1 grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setAccessiblePalette(false)}
+                  className={`rounded-md border px-2 py-1 text-[10px] ${
+                    !accessiblePalette ? "border-amber-300/35 bg-amber-500/15" : "border-white/15 bg-white/5"
+                  }`}
+                >
+                  {lang === "en" ? "Default" : "Standart"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAccessiblePalette(true)}
+                  className={`rounded-md border px-2 py-1 text-[10px] ${
+                    accessiblePalette ? "border-amber-300/35 bg-amber-500/15" : "border-white/15 bg-white/5"
+                  }`}
+                >
+                  {lang === "en" ? "Colorblind" : "Renk dostu"}
+                </button>
+              </div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+              <div className="flex items-center justify-between gap-2 text-[10px]">
+                <span className="opacity-70">{lang === "en" ? "Focus mode" : "Odak modu"}</span>
+                <button
+                  type="button"
+                  onClick={() => setFocusMode((v) => !v)}
+                  className={`rounded-md border px-2 py-0.5 ${
+                    focusMode ? "border-amber-300/35 bg-amber-500/15" : "border-white/15 bg-white/5"
+                  }`}
+                >
+                  {focusMode ? (lang === "en" ? "On" : "Acik") : (lang === "en" ? "Off" : "Kapali")}
+                </button>
+              </div>
+              {focusMode ? (
+                <div className="mt-1">
+                  <select
+                    value={focusMonth}
+                    onChange={(e) => setFocusMonth(Number(e.target.value))}
+                    className="w-full rounded-md border border-white/15 bg-black/30 px-2 py-1 text-[10px] outline-none"
+                  >
+                    {monthLabels.map((m, i) => (
+                      <option key={`focus-month-${m}`} value={i}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="mt-1 text-[10px] opacity-65">
+                    {lang === "en" ? `${visibleWeekCount} weeks visible` : `${visibleWeekCount} hafta gorunur`}
+                  </div>
+                </div>
+              ) : null}
+            </div>
             <div className="flex items-center gap-1">
               {legendStops.map((t) => (
                 <div
                   key={`legend-${t}`}
                   className="h-3 flex-1 rounded border border-white/10"
-                  style={{ backgroundColor: t === 0 ? "rgba(255,255,255,0.035)" : gradientColor(colorFrom, colorTo, t, 0.9) }}
+                  style={{ backgroundColor: t === 0 ? "rgba(255,255,255,0.035)" : gradientColor(paletteFrom, paletteTo, t, 0.9) }}
                 />
               ))}
             </div>
