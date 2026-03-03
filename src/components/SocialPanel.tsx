@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import LoadingPulse from "@/components/LoadingPulse";
+import WeeklyTickerBar, { type WeeklyTickerItem } from "@/components/WeeklyTickerBar";
 import { supabase } from "@/lib/supabase";
 import { normalizeUsername, usernameFromEmail } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
@@ -153,6 +154,18 @@ type LeaderboardRow = {
 type CheckinLikeRow = {
   checkin_id: string;
   user_id: string;
+};
+
+type WeeklyHighlightRow = {
+  item_key: string;
+  label_tr: string;
+  label_en: string;
+  value_tr: string;
+  value_en: string;
+  meta_tr: string;
+  meta_en: string;
+  href: string;
+  priority: number;
 };
 
 const KEYBOARD_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
@@ -495,6 +508,9 @@ export default function SocialPanel({
   const [leaderScope, setLeaderScope] = useState<LeaderScope>("all");
   const [leaderRows, setLeaderRows] = useState<LeaderboardRow[]>([]);
   const [leaderBusy, setLeaderBusy] = useState(false);
+  const [weeklyScope, setWeeklyScope] = useState<"all" | "followed">("all");
+  const [weeklyBusy, setWeeklyBusy] = useState(false);
+  const [weeklyItems, setWeeklyItems] = useState<WeeklyTickerItem[]>([]);
   const locale = lang === "en" ? "en-US" : "tr-TR";
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -1119,6 +1135,37 @@ export default function SocialPanel({
     }
   }
 
+  async function loadWeeklyHighlights() {
+    setWeeklyBusy(true);
+    const { data, error } = await supabase.rpc("get_weekly_highlights", {
+      p_scope: weeklyScope,
+    });
+    setWeeklyBusy(false);
+
+    if (error) {
+      markDbError(error.message);
+      return;
+    }
+
+    const rows = ((data as WeeklyHighlightRow[] | null) ?? [])
+      .slice()
+      .sort((a, b) => Number(a.priority || 99) - Number(b.priority || 99));
+    const mapped: WeeklyTickerItem[] = rows.map((row) => ({
+      key: row.item_key || `${row.label_tr || row.label_en || "item"}-${row.priority || 99}`,
+      label: lang === "en" ? row.label_en || row.label_tr : row.label_tr || row.label_en,
+      value: lang === "en" ? row.value_en || row.value_tr : row.value_tr || row.value_en,
+      meta: lang === "en" ? row.meta_en || row.meta_tr : row.meta_tr || row.meta_en,
+      href: (row.href || "").trim() || "/",
+    }));
+    setWeeklyItems(mapped);
+
+    trackEvent({
+      eventName: "weekly_highlights_loaded",
+      userId,
+      props: { scope: weeklyScope, count: mapped.length },
+    });
+  }
+
   async function loadLeaderboard() {
     const now = new Date();
     const start = new Date(now);
@@ -1537,6 +1584,12 @@ export default function SocialPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leaderScope, leaderWindow, followingIds]);
 
+  useEffect(() => {
+    if (loading) return;
+    void loadWeeklyHighlights();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, weeklyScope, followingIds, lang]);
+
   function applyFeedPreset(preset: "discover" | "following" | "quality") {
     if (preset === "discover") {
       setFeedScope("all");
@@ -1595,6 +1648,7 @@ export default function SocialPanel({
             return next;
           });
           void leaderboardReloadRef.current?.();
+          void loadWeeklyHighlights();
         }
       )
       .on(
@@ -1628,6 +1682,7 @@ export default function SocialPanel({
               .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
           );
           void leaderboardReloadRef.current?.();
+          void loadWeeklyHighlights();
         }
       )
       .on(
@@ -1638,6 +1693,7 @@ export default function SocialPanel({
           if (!oldRow?.id) return;
           setFeedItems((prev) => prev.filter((x) => x.id !== oldRow.id));
           void leaderboardReloadRef.current?.();
+          void loadWeeklyHighlights();
         }
       )
       .on(
@@ -1656,6 +1712,7 @@ export default function SocialPanel({
           const ids = feedIdsRef.current;
           if (!ids.length) return;
           void loadCheckinLikes(ids);
+          void loadWeeklyHighlights();
         }
       )
       .on(
@@ -2401,6 +2458,17 @@ export default function SocialPanel({
       ) : null}
 
       <div className="mt-4 grid gap-3">
+        <div className="sticky top-2 z-20">
+          <WeeklyTickerBar
+            lang={lang}
+            scope={weeklyScope}
+            onScopeChange={setWeeklyScope}
+            onRefresh={() => void loadWeeklyHighlights()}
+            items={weeklyItems}
+            busy={weeklyBusy}
+          />
+        </div>
+
         <div className="rounded-2xl border border-white/10 bg-black/40 p-3">
           <div className="flex items-center justify-between gap-2">
             <div className="text-xs opacity-70">

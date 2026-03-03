@@ -570,6 +570,218 @@ revoke all on function public.refresh_all_user_badges() from public;
 grant execute on function public.refresh_my_badges() to authenticated;
 grant execute on function public.refresh_all_user_badges() to authenticated;
 
+create or replace function public.get_weekly_highlights(p_scope text default 'all')
+returns table (
+  item_key text,
+  label_tr text,
+  label_en text,
+  value_tr text,
+  value_en text,
+  meta_tr text,
+  meta_en text,
+  href text,
+  priority smallint
+)
+language sql
+security definer
+set search_path = public
+as $$
+  with params as (
+    select
+      auth.uid() as uid,
+      case when lower(coalesce(p_scope, 'all')) = 'followed' then 'followed' else 'all' end as scope,
+      date_trunc('week', timezone('Europe/Istanbul', now())) as week_start_local,
+      date_trunc('week', timezone('Europe/Istanbul', now())) - interval '7 day' as prev_week_start_local
+  ),
+  visible_profiles as (
+    select p.user_id, p.username, p.display_name
+    from public.profiles p
+    join params pa on true
+    where pa.uid is not null
+      and (p.user_id = pa.uid or p.is_public = true)
+  ),
+  follow_ids as (
+    select pa.uid as user_id
+    from params pa
+    where pa.uid is not null
+    union
+    select f.following_id as user_id
+    from public.follows f
+    join params pa on pa.uid = f.follower_id
+  ),
+  scope_profiles as (
+    select vp.user_id, vp.username, vp.display_name
+    from visible_profiles vp
+    join params pa on true
+    where pa.scope = 'all'
+       or vp.user_id in (select fi.user_id from follow_ids fi)
+  ),
+  week_checkins as (
+    select
+      c.id::text as checkin_id,
+      c.user_id,
+      c.beer_name,
+      c.created_at,
+      sp.username,
+      sp.display_name
+    from public.checkins c
+    join scope_profiles sp on sp.user_id = c.user_id
+    join params pa on true
+    where timezone('Europe/Istanbul', c.created_at) >= pa.week_start_local
+      and timezone('Europe/Istanbul', c.created_at) < (pa.week_start_local + interval '7 day')
+  ),
+  prev_week_checkins as (
+    select
+      c.user_id,
+      count(*)::int as cnt
+    from public.checkins c
+    join scope_profiles sp on sp.user_id = c.user_id
+    join params pa on true
+    where timezone('Europe/Istanbul', c.created_at) >= pa.prev_week_start_local
+      and timezone('Europe/Istanbul', c.created_at) < pa.week_start_local
+    group by c.user_id
+  ),
+  top_beer as (
+    select
+      coalesce(nullif(trim(split_part(wc.beer_name, '—', 1)), ''), trim(wc.beer_name)) as beer_base,
+      count(*)::int as cnt
+    from week_checkins wc
+    group by 1
+    order by cnt desc, beer_base asc
+    limit 1
+  ),
+  week_like_counts as (
+    select
+      l.checkin_id,
+      count(*)::int as like_count
+    from public.checkin_likes l
+    join week_checkins wc on wc.checkin_id = l.checkin_id
+    join params pa on true
+    where timezone('Europe/Istanbul', l.created_at) >= pa.week_start_local
+      and timezone('Europe/Istanbul', l.created_at) < (pa.week_start_local + interval '7 day')
+    group by l.checkin_id
+  ),
+  top_liked_checkin as (
+    select
+      wc.checkin_id,
+      wc.username,
+      wc.display_name,
+      coalesce(nullif(trim(split_part(wc.beer_name, '—', 1)), ''), trim(wc.beer_name)) as beer_base,
+      wlc.like_count
+    from week_like_counts wlc
+    join week_checkins wc on wc.checkin_id = wlc.checkin_id
+    order by wlc.like_count desc, wc.created_at desc
+    limit 1
+  ),
+  active_users as (
+    select
+      wc.user_id,
+      wc.username,
+      wc.display_name,
+      count(*)::int as cnt
+    from week_checkins wc
+    group by wc.user_id, wc.username, wc.display_name
+  ),
+  top_active_user as (
+    select
+      au.user_id,
+      au.username,
+      au.display_name,
+      au.cnt
+    from active_users au
+    order by au.cnt desc, au.username asc
+    limit 1
+  ),
+  rising_users as (
+    select
+      au.user_id,
+      au.username,
+      au.display_name,
+      au.cnt as curr_cnt,
+      coalesce(pw.cnt, 0)::int as prev_cnt,
+      case
+        when au.cnt <= coalesce(pw.cnt, 0) then null::numeric
+        when coalesce(pw.cnt, 0) = 0 then 100::numeric
+        else round(((au.cnt - pw.cnt)::numeric * 100.0) / nullif(pw.cnt, 0), 1)
+      end as growth_pct
+    from active_users au
+    left join prev_week_checkins pw on pw.user_id = au.user_id
+  ),
+  top_rising_user as (
+    select
+      ru.user_id,
+      ru.username,
+      ru.display_name,
+      ru.curr_cnt,
+      ru.prev_cnt,
+      ru.growth_pct
+    from rising_users ru
+    where ru.growth_pct is not null
+      and ru.curr_cnt >= 2
+    order by ru.growth_pct desc, ru.curr_cnt desc, ru.username asc
+    limit 1
+  )
+  select * from (
+    select
+      'top_beer'::text as item_key,
+      'Bu hafta en cok loglanan bira'::text as label_tr,
+      'Most logged beer this week'::text as label_en,
+      tb.beer_base::text as value_tr,
+      tb.beer_base::text as value_en,
+      format('%s log', tb.cnt)::text as meta_tr,
+      format('%s logs', tb.cnt)::text as meta_en,
+      '/'::text as href,
+      1::smallint as priority
+    from top_beer tb
+
+    union all
+
+    select
+      'top_liked'::text,
+      'Bu hafta en cok begenilen'::text,
+      'Most liked this week'::text,
+      format('%s • %s', coalesce(nullif(trim(tlc.display_name), ''), '@' || tlc.username), tlc.beer_base)::text,
+      format('%s • %s', coalesce(nullif(trim(tlc.display_name), ''), '@' || tlc.username), tlc.beer_base)::text,
+      format('%s begeni', tlc.like_count)::text,
+      format('%s likes', tlc.like_count)::text,
+      ('/u/' || tlc.username)::text,
+      2::smallint
+    from top_liked_checkin tlc
+
+    union all
+
+    select
+      'top_active'::text,
+      'Bu hafta en aktif'::text,
+      'Most active this week'::text,
+      coalesce(nullif(trim(tau.display_name), ''), '@' || tau.username)::text,
+      coalesce(nullif(trim(tau.display_name), ''), '@' || tau.username)::text,
+      format('%s log', tau.cnt)::text,
+      format('%s logs', tau.cnt)::text,
+      ('/u/' || tau.username)::text,
+      3::smallint
+    from top_active_user tau
+
+    union all
+
+    select
+      'top_rising'::text,
+      'Bu hafta yukselen'::text,
+      'Rising this week'::text,
+      coalesce(nullif(trim(tru.display_name), ''), '@' || tru.username)::text,
+      coalesce(nullif(trim(tru.display_name), ''), '@' || tru.username)::text,
+      format('+%s%% (%s -> %s)', trim(to_char(tru.growth_pct, 'FM999990D0')), tru.prev_cnt, tru.curr_cnt)::text,
+      format('+%s%% (%s -> %s)', trim(to_char(tru.growth_pct, 'FM999990D0')), tru.prev_cnt, tru.curr_cnt)::text,
+      ('/u/' || tru.username)::text,
+      4::smallint
+    from top_rising_user tru
+  ) t
+  order by t.priority;
+$$;
+
+revoke all on function public.get_weekly_highlights(text) from public;
+grant execute on function public.get_weekly_highlights(text) to authenticated;
+
 do $do$
 begin
   if exists (select 1 from pg_extension where extname = 'pg_cron') then
