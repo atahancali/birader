@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import LoadingPulse from "@/components/LoadingPulse";
 import { supabase } from "@/lib/supabase";
 import { normalizeUsername, usernameFromEmail } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
 import type { AppLang } from "@/lib/i18n";
 import { tx } from "@/lib/i18n";
+import { BADGE_THRESHOLDS, badgeMetaForKey } from "@/lib/badgeMeta";
 
 type ProfileRow = {
   user_id: string;
@@ -205,55 +207,120 @@ function badgeProgress(checkins: CheckinRow[]) {
       key: "sat_committee",
       titleTr: "Cumartesi Komitesi",
       titleEn: "Saturday Committee",
-      progress: Math.min(ratio(total, 8), ratio(weekdaySat, 4), ratio(satShare, 0.35)),
-      hintTr: `${Math.max(0, 8 - total)} toplam log + ${Math.max(0, 4 - weekdaySat)} Cumartesi logu daha gerekiyor.`,
-      hintEn: `${Math.max(0, 8 - total)} more logs + ${Math.max(0, 4 - weekdaySat)} more Saturday logs needed.`,
-      done: total >= 8 && weekdaySat >= 4 && satShare >= 0.35,
+      progress: Math.min(
+        ratio(total, BADGE_THRESHOLDS.sat_committee.minTotal),
+        ratio(weekdaySat, BADGE_THRESHOLDS.sat_committee.minSpecific),
+        ratio(satShare, BADGE_THRESHOLDS.sat_committee.minShare || 0)
+      ),
+      hintTr: `${Math.max(0, BADGE_THRESHOLDS.sat_committee.minTotal - total)} toplam log + ${Math.max(
+        0,
+        BADGE_THRESHOLDS.sat_committee.minSpecific - weekdaySat
+      )} Cumartesi logu daha gerekiyor.`,
+      hintEn: `${Math.max(0, BADGE_THRESHOLDS.sat_committee.minTotal - total)} more logs + ${Math.max(
+        0,
+        BADGE_THRESHOLDS.sat_committee.minSpecific - weekdaySat
+      )} more Saturday logs needed.`,
+      done:
+        total >= BADGE_THRESHOLDS.sat_committee.minTotal &&
+        weekdaySat >= BADGE_THRESHOLDS.sat_committee.minSpecific &&
+        satShare >= (BADGE_THRESHOLDS.sat_committee.minShare || 0),
     },
     {
       key: "night_owl",
       titleTr: "Gece Baykusu",
       titleEn: "Night Owl",
-      progress: Math.min(ratio(total, 10), ratio(nightLogs, 6), ratio(nightShare, 0.35)),
-      hintTr: `${Math.max(0, 10 - total)} toplam log + ${Math.max(0, 6 - nightLogs)} gece logu daha gerekiyor.`,
-      hintEn: `${Math.max(0, 10 - total)} more logs + ${Math.max(0, 6 - nightLogs)} more night logs needed.`,
-      done: total >= 10 && nightLogs >= 6 && nightShare >= 0.35,
+      progress: Math.min(
+        ratio(total, BADGE_THRESHOLDS.night_owl.minTotal),
+        ratio(nightLogs, BADGE_THRESHOLDS.night_owl.minSpecific),
+        ratio(nightShare, BADGE_THRESHOLDS.night_owl.minShare || 0)
+      ),
+      hintTr: `${Math.max(0, BADGE_THRESHOLDS.night_owl.minTotal - total)} toplam log + ${Math.max(
+        0,
+        BADGE_THRESHOLDS.night_owl.minSpecific - nightLogs
+      )} gece logu daha gerekiyor.`,
+      hintEn: `${Math.max(0, BADGE_THRESHOLDS.night_owl.minTotal - total)} more logs + ${Math.max(
+        0,
+        BADGE_THRESHOLDS.night_owl.minSpecific - nightLogs
+      )} more night logs needed.`,
+      done:
+        total >= BADGE_THRESHOLDS.night_owl.minTotal &&
+        nightLogs >= BADGE_THRESHOLDS.night_owl.minSpecific &&
+        nightShare >= (BADGE_THRESHOLDS.night_owl.minShare || 0),
     },
     {
       key: "draft_loyalist",
       titleTr: "Taslakci",
       titleEn: "Draft Loyalist",
-      progress: Math.min(ratio(total, 10), ratio(draftLogs, 6), ratio(draftShare, 0.60)),
-      hintTr: `${Math.max(0, 10 - total)} toplam log + ${Math.max(0, 6 - draftLogs)} fici logu daha gerekiyor.`,
-      hintEn: `${Math.max(0, 10 - total)} more logs + ${Math.max(0, 6 - draftLogs)} more draft logs needed.`,
-      done: total >= 10 && draftLogs >= 6 && draftShare >= 0.6,
+      progress: Math.min(
+        ratio(total, BADGE_THRESHOLDS.draft_loyalist.minTotal),
+        ratio(draftLogs, BADGE_THRESHOLDS.draft_loyalist.minSpecific),
+        ratio(draftShare, BADGE_THRESHOLDS.draft_loyalist.minShare || 0)
+      ),
+      hintTr: `${Math.max(0, BADGE_THRESHOLDS.draft_loyalist.minTotal - total)} toplam log + ${Math.max(
+        0,
+        BADGE_THRESHOLDS.draft_loyalist.minSpecific - draftLogs
+      )} fici logu daha gerekiyor.`,
+      hintEn: `${Math.max(0, BADGE_THRESHOLDS.draft_loyalist.minTotal - total)} more logs + ${Math.max(
+        0,
+        BADGE_THRESHOLDS.draft_loyalist.minSpecific - draftLogs
+      )} more draft logs needed.`,
+      done:
+        total >= BADGE_THRESHOLDS.draft_loyalist.minTotal &&
+        draftLogs >= BADGE_THRESHOLDS.draft_loyalist.minSpecific &&
+        draftShare >= (BADGE_THRESHOLDS.draft_loyalist.minShare || 0),
     },
     {
       key: "bottle_lover",
       titleTr: "Siseci",
       titleEn: "Bottle Lover",
-      progress: Math.min(ratio(total, 10), ratio(bottleLogs, 6), ratio(bottleShare, 0.60)),
-      hintTr: `${Math.max(0, 10 - total)} toplam log + ${Math.max(0, 6 - bottleLogs)} sise/kutu logu daha gerekiyor.`,
-      hintEn: `${Math.max(0, 10 - total)} more logs + ${Math.max(0, 6 - bottleLogs)} more bottle/can logs needed.`,
-      done: total >= 10 && bottleLogs >= 6 && bottleShare >= 0.6,
+      progress: Math.min(
+        ratio(total, BADGE_THRESHOLDS.bottle_lover.minTotal),
+        ratio(bottleLogs, BADGE_THRESHOLDS.bottle_lover.minSpecific),
+        ratio(bottleShare, BADGE_THRESHOLDS.bottle_lover.minShare || 0)
+      ),
+      hintTr: `${Math.max(0, BADGE_THRESHOLDS.bottle_lover.minTotal - total)} toplam log + ${Math.max(
+        0,
+        BADGE_THRESHOLDS.bottle_lover.minSpecific - bottleLogs
+      )} sise/kutu logu daha gerekiyor.`,
+      hintEn: `${Math.max(0, BADGE_THRESHOLDS.bottle_lover.minTotal - total)} more logs + ${Math.max(
+        0,
+        BADGE_THRESHOLDS.bottle_lover.minSpecific - bottleLogs
+      )} more bottle/can logs needed.`,
+      done:
+        total >= BADGE_THRESHOLDS.bottle_lover.minTotal &&
+        bottleLogs >= BADGE_THRESHOLDS.bottle_lover.minSpecific &&
+        bottleShare >= (BADGE_THRESHOLDS.bottle_lover.minShare || 0),
     },
     {
       key: "nomad",
       titleTr: "Pub Nomadi",
       titleEn: "Pub Nomad",
-      progress: ratio(uniqueCities, 4),
-      hintTr: `${Math.max(0, 4 - uniqueCities)} farkli sehir daha logla.`,
-      hintEn: `Log from ${Math.max(0, 4 - uniqueCities)} more cities.`,
-      done: uniqueCities >= 4,
+      progress: ratio(uniqueCities, BADGE_THRESHOLDS.nomad.minSpecific),
+      hintTr: `${Math.max(0, BADGE_THRESHOLDS.nomad.minSpecific - uniqueCities)} farkli sehir daha logla.`,
+      hintEn: `Log from ${Math.max(0, BADGE_THRESHOLDS.nomad.minSpecific - uniqueCities)} more cities.`,
+      done: uniqueCities >= BADGE_THRESHOLDS.nomad.minSpecific,
     },
     {
       key: "regular",
       titleTr: "Sadik Mudavim",
       titleEn: "Local Regular",
-      progress: Math.min(ratio(total, 12), ratio(topSpot, 8), ratio(topSpotShare, 0.45)),
-      hintTr: `${Math.max(0, 12 - total)} toplam log + ayni bolgede ${Math.max(0, 8 - topSpot)} log daha gerekiyor.`,
-      hintEn: `${Math.max(0, 12 - total)} more logs + ${Math.max(0, 8 - topSpot)} more logs in same area needed.`,
-      done: total >= 12 && topSpot >= 8 && topSpotShare >= 0.45,
+      progress: Math.min(
+        ratio(total, BADGE_THRESHOLDS.regular.minTotal),
+        ratio(topSpot, BADGE_THRESHOLDS.regular.minSpecific),
+        ratio(topSpotShare, BADGE_THRESHOLDS.regular.minShare || 0)
+      ),
+      hintTr: `${Math.max(0, BADGE_THRESHOLDS.regular.minTotal - total)} toplam log + ayni bolgede ${Math.max(
+        0,
+        BADGE_THRESHOLDS.regular.minSpecific - topSpot
+      )} log daha gerekiyor.`,
+      hintEn: `${Math.max(0, BADGE_THRESHOLDS.regular.minTotal - total)} more logs + ${Math.max(
+        0,
+        BADGE_THRESHOLDS.regular.minSpecific - topSpot
+      )} more logs in same area needed.`,
+      done:
+        total >= BADGE_THRESHOLDS.regular.minTotal &&
+        topSpot >= BADGE_THRESHOLDS.regular.minSpecific &&
+        topSpotShare >= (BADGE_THRESHOLDS.regular.minShare || 0),
     },
   ];
 
@@ -2308,7 +2375,7 @@ export default function SocialPanel({
   if (loading) {
     return (
       <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
-        <div className="text-sm opacity-70">{tx(lang, "Sosyal panel yukleniyor...", "Loading social panel...")}</div>
+        <LoadingPulse lang={lang} labelTr="Sosyal panel yukleniyor..." labelEn="Loading social panel..." />
       </section>
     );
   }
@@ -2663,7 +2730,16 @@ export default function SocialPanel({
                       <div className="mt-1 text-[11px] opacity-65">{new Date(n.created_at).toLocaleString(locale)}</div>
                     </div>
                   ))}
-              {notifBusy ? <div className="text-xs opacity-60">{tx(lang, "Bildirimler yukleniyor...", "Loading notifications...")}</div> : null}
+              {notifBusy ? (
+                <LoadingPulse
+                  lang={lang}
+                  labelTr="Bildirimler yukleniyor..."
+                  labelEn="Loading notifications..."
+                  compact
+                  inline
+                  className="text-xs"
+                />
+              ) : null}
               {!notifBusy && !filteredNotifications.length ? (
                 <div className="text-xs opacity-60">{tx(lang, "Bildirim yok.", "No notifications.")}</div>
               ) : null}
@@ -2828,7 +2904,16 @@ export default function SocialPanel({
                 <div className="text-sm">{row.avgRating.toFixed(2)}⭐</div>
               </div>
             ))}
-            {leaderBusy ? <div className="text-xs opacity-60">{tx(lang, "Leaderboard yukleniyor...", "Loading leaderboard...")}</div> : null}
+            {leaderBusy ? (
+              <LoadingPulse
+                lang={lang}
+                labelTr="Leaderboard yukleniyor..."
+                labelEn="Loading leaderboard..."
+                compact
+                inline
+                className="text-xs"
+              />
+            ) : null}
             {!leaderBusy && !leaderRows.length ? (
               <div className="text-xs opacity-60">{tx(lang, "Bu filtrede leaderboard verisi yok.", "No leaderboard data for this filter.")}</div>
             ) : null}
@@ -2843,10 +2928,12 @@ export default function SocialPanel({
             </div>
           </div>
           <div className="mt-2 space-y-2">
-            {badgeProgressRows.slice(0, 4).map((item) => (
+            {badgeProgressRows.slice(0, 4).map((item) => {
+              const meta = badgeMetaForKey(item.key);
+              return (
               <div key={`badge-progress-${item.key}`} className="rounded-xl border border-white/10 bg-black/25 p-2">
                 <div className="flex items-center justify-between gap-2 text-xs">
-                  <span>{lang === "en" ? item.titleEn : item.titleTr}</span>
+                  <span>{meta.icon} {lang === "en" ? item.titleEn : item.titleTr}</span>
                   <span className={item.done ? "text-emerald-300" : "opacity-80"}>
                     {item.done ? tx(lang, "Acildi", "Unlocked") : `${Math.round(item.progress * 100)}%`}
                   </span>
@@ -2860,8 +2947,9 @@ export default function SocialPanel({
                 {!item.done ? (
                   <div className="mt-1 text-[11px] opacity-70">{lang === "en" ? item.hintEn : item.hintTr}</div>
                 ) : null}
+                <div className="mt-1 text-[10px] opacity-55">{lang === "en" ? meta.ruleEn : meta.ruleTr}</div>
               </div>
-            ))}
+            )})}
           </div>
         </div>
 
@@ -3128,7 +3216,14 @@ export default function SocialPanel({
                   onClick={() => void loadFeed(false)}
                   className="w-full rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs disabled:opacity-50"
                 >
-                  {feedLoadingMore ? tx(lang, "Yukleniyor...", "Loading...") : tx(lang, "Daha fazla log yukle", "Load more check-ins")}
+                  {feedLoadingMore ? (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="h-3 w-3 rounded-full border border-white/30 border-t-amber-300 animate-spin" />
+                      {tx(lang, "Devam ediyor...", "Continuing...")}
+                    </span>
+                  ) : (
+                    tx(lang, "Daha fazla log yukle", "Load more check-ins")
+                  )}
                 </button>
                 <div ref={feedLoadMoreRef} className="h-2 w-full" />
               </>

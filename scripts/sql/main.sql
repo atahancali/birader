@@ -472,7 +472,7 @@ begin
         format('%s Cumartesi logu', s.saturday_logs)::text as detail_tr,
         format('%s Saturday check-ins', s.saturday_logs)::text as detail_en,
         (s.saturday_logs * 10)::int as score
-      where s.total_logs >= 8 and s.saturday_logs >= 4 and s.saturday_logs::numeric / nullif(s.total_logs, 0) >= 0.35
+      where s.total_logs >= 12 and s.saturday_logs >= 5 and s.saturday_logs::numeric / nullif(s.total_logs, 0) >= 0.35
       union all
       select
         'night_owl',
@@ -481,7 +481,7 @@ begin
         format('Gece logu: %s', s.night_logs),
         format('Night check-ins: %s', s.night_logs),
         (s.night_logs * 10)::int
-      where s.total_logs >= 10 and s.night_logs >= 6 and s.night_logs::numeric / nullif(s.total_logs, 0) >= 0.35
+      where s.total_logs >= 12 and s.night_logs >= 6 and s.night_logs::numeric / nullif(s.total_logs, 0) >= 0.35
       union all
       select
         'draft_loyalist',
@@ -490,7 +490,7 @@ begin
         format('Fıçı oranı: %s%%', round((s.draft_logs::numeric / nullif(s.total_logs, 0)) * 100)),
         format('Draft ratio: %s%%', round((s.draft_logs::numeric / nullif(s.total_logs, 0)) * 100)),
         (s.draft_logs * 8)::int
-      where s.total_logs >= 10 and s.draft_logs >= 6 and s.draft_logs::numeric / nullif(s.total_logs, 0) >= 0.60
+      where s.total_logs >= 12 and s.draft_logs >= 7 and s.draft_logs::numeric / nullif(s.total_logs, 0) >= 0.55
       union all
       select
         'bottle_lover',
@@ -499,7 +499,7 @@ begin
         format('Şişe/Kutu oranı: %s%%', round((s.bottle_logs::numeric / nullif(s.total_logs, 0)) * 100)),
         format('Bottle/can ratio: %s%%', round((s.bottle_logs::numeric / nullif(s.total_logs, 0)) * 100)),
         (s.bottle_logs * 8)::int
-      where s.total_logs >= 10 and s.bottle_logs >= 6 and s.bottle_logs::numeric / nullif(s.total_logs, 0) >= 0.60
+      where s.total_logs >= 12 and s.bottle_logs >= 7 and s.bottle_logs::numeric / nullif(s.total_logs, 0) >= 0.55
       union all
       select
         'nomad',
@@ -508,7 +508,7 @@ begin
         format('%s farklı şehir', s.unique_cities),
         format('%s different cities', s.unique_cities),
         (s.unique_cities * 15)::int
-      where s.unique_cities >= 4
+      where s.unique_cities >= 5
       union all
       select
         'regular',
@@ -517,7 +517,7 @@ begin
         format('Aynı bölge yoğunluğu: %s%%', round((s.top_spot_count::numeric / nullif(s.total_logs, 0)) * 100)),
         format('Single-area share: %s%%', round((s.top_spot_count::numeric / nullif(s.total_logs, 0)) * 100)),
         (s.top_spot_count * 9)::int
-      where s.total_logs >= 12 and s.top_spot_count >= 8 and s.top_spot_count::numeric / nullif(s.total_logs, 0) >= 0.45
+      where s.total_logs >= 15 and s.top_spot_count >= 9 and s.top_spot_count::numeric / nullif(s.total_logs, 0) >= 0.45
     ) t
     returning 1
   )

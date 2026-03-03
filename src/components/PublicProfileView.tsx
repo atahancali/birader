@@ -6,12 +6,14 @@ import { useEffect, useMemo, useState } from "react";
 import FootballHeatmap from "@/components/FootballHeatmap";
 import FieldHeatmap from "@/components/FieldHeatmap";
 import DayModal from "@/components/DayModal";
+import LoadingPulse from "@/components/LoadingPulse";
 import { supabase } from "@/lib/supabase";
 import { normalizeUsername, usernameFromEmail } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
 import { dayPeriodLabelEn, dayPeriodLabelTr, type DayPeriod } from "@/lib/dayPeriod";
 import { HEATMAP_PALETTES } from "@/lib/heatmapTheme";
+import { badgeMetaForKey } from "@/lib/badgeMeta";
 import { useAppLang } from "@/lib/appLang";
 import { tx } from "@/lib/i18n";
 
@@ -700,7 +702,7 @@ export default function PublicProfileView({ username }: { username: string }) {
   if (loading) {
     return (
       <main className="min-h-screen max-w-md mx-auto p-4">
-        <div className="text-sm opacity-70">{tx(lang, "Profil yukleniyor...", "Loading profile...")}</div>
+        <LoadingPulse lang={lang} labelTr="Profil yukleniyor..." labelEn="Loading profile..." />
       </main>
     );
   }
@@ -787,7 +789,14 @@ export default function PublicProfileView({ username }: { username: string }) {
               ) : null}
             </div>
             <label className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs cursor-pointer">
-              {avatarUploading ? tx(lang, "Yukleniyor...", "Uploading...") : tx(lang, "Avatar yukle", "Upload avatar")}
+              {avatarUploading ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="h-3 w-3 rounded-full border border-white/30 border-t-amber-300 animate-spin" />
+                  {tx(lang, "Aktariliyor...", "Uploading...")}
+                </span>
+              ) : (
+                tx(lang, "Avatar yukle", "Upload avatar")
+              )}
               <input
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
@@ -1075,13 +1084,25 @@ export default function PublicProfileView({ username }: { username: string }) {
 
       <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
         <div className="text-sm opacity-80">{tx(lang, "Stereotip rozetler", "Stereotype badges")}</div>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {stereotypeBadges.map((b) => (
-            <div key={b.badge_key} className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-              <div className="font-semibold">{b.title_tr}</div>
-              <div className="opacity-75">{b.title_en}</div>
-            </div>
-          ))}
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          {stereotypeBadges.map((b) => {
+            const meta = badgeMetaForKey(b.badge_key);
+            return (
+              <div
+                key={b.badge_key}
+                className="rounded-xl border border-white/10 px-3 py-2 text-xs"
+                style={{
+                  backgroundImage: `linear-gradient(140deg, ${meta.colorFrom}33, ${meta.colorTo}22)`,
+                }}
+              >
+                <div className="font-semibold">
+                  {meta.icon} {lang === "en" ? b.title_en : b.title_tr}
+                </div>
+                <div className="mt-1 opacity-75">{lang === "en" ? b.detail_en : b.detail_tr}</div>
+                <div className="mt-1 text-[10px] opacity-60">{lang === "en" ? meta.ruleEn : meta.ruleTr}</div>
+              </div>
+            );
+          })}
           {!stereotypeBadges.length ? <div className="text-xs opacity-60">{tx(lang, "Henüz stereotip rozet yok.", "No stereotype badges yet.")}</div> : null}
         </div>
       </section>

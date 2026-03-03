@@ -10,19 +10,25 @@ import MonthZoom from "@/components/MonthZoom";
 import FieldHeatmap from "@/components/FieldHeatmap";
 import FootballHeatmap from "@/components/FootballHeatmap";
 import GeoHeatmap from "@/components/GeoHeatmap";
+import LoadingPulse from "@/components/LoadingPulse";
 import { normalizeUsername, usernameFromEmail, usernameToCandidateEmails } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
 import { TURKEY_CITIES, districtsForCity } from "@/lib/trLocations";
 import { DAY_PERIOD_OPTIONS, dayPeriodLabelEn, dayPeriodLabelTr, type DayPeriod } from "@/lib/dayPeriod";
 import { HEATMAP_PALETTES } from "@/lib/heatmapTheme";
+import { BADGE_THRESHOLDS, badgeMetaForKey } from "@/lib/badgeMeta";
 import { getExperimentVariant } from "@/lib/ab";
 import { t, tx } from "@/lib/i18n";
 import { useAppLang } from "@/lib/appLang";
 
 const SocialPanel = dynamic(() => import("@/components/SocialPanel"), {
   ssr: false,
-  loading: () => <div className="mt-6 text-xs opacity-60">Sosyal yukleniyor... / Loading social...</div>,
+  loading: () => (
+    <div className="mt-6">
+      <LoadingPulse labelTr="Sosyal yukleniyor..." labelEn="Loading social..." compact />
+    </div>
+  ),
 });
 
 type Checkin = {
@@ -285,20 +291,38 @@ function badgeHintFromCheckins(rows: Checkin[]) {
     const h = new Date(c.created_at).getHours();
     return Number.isFinite(h) && (h >= 22 || h < 4);
   }).length;
-  const satProgress = Math.min(total / 8, sat / 4);
-  const nightProgress = Math.min(total / 10, night / 6);
+  const satProgress = Math.min(
+    total / BADGE_THRESHOLDS.sat_committee.minTotal,
+    sat / BADGE_THRESHOLDS.sat_committee.minSpecific
+  );
+  const nightProgress = Math.min(
+    total / BADGE_THRESHOLDS.night_owl.minTotal,
+    night / BADGE_THRESHOLDS.night_owl.minSpecific
+  );
   if (satProgress >= nightProgress) {
     return {
       code: "badge_sat",
-      tr: `Rozet ilerleme: Cumartesi Komitesi için ${Math.max(0, 4 - sat)} Cumartesi logu kaldı.`,
-      en: `Badge progress: ${Math.max(0, 4 - sat)} Saturday logs left for Saturday Committee.`,
+      tr: `Rozet ilerleme: Cumartesi Komitesi için ${Math.max(
+        0,
+        BADGE_THRESHOLDS.sat_committee.minSpecific - sat
+      )} Cumartesi logu kaldı.`,
+      en: `Badge progress: ${Math.max(
+        0,
+        BADGE_THRESHOLDS.sat_committee.minSpecific - sat
+      )} Saturday logs left for Saturday Committee.`,
       percent: Math.round(Math.min(1, satProgress) * 100),
     };
   }
   return {
     code: "badge_night",
-    tr: `Rozet ilerleme: Gece Baykuşu için ${Math.max(0, 6 - night)} gece logu kaldı.`,
-    en: `Badge progress: ${Math.max(0, 6 - night)} night logs left for Night Owl.`,
+    tr: `Rozet ilerleme: Gece Baykuşu için ${Math.max(
+      0,
+      BADGE_THRESHOLDS.night_owl.minSpecific - night
+    )} gece logu kaldı.`,
+    en: `Badge progress: ${Math.max(
+      0,
+      BADGE_THRESHOLDS.night_owl.minSpecific - night
+    )} night logs left for Night Owl.`,
     percent: Math.round(Math.min(1, nightProgress) * 100),
   };
 }
@@ -3703,33 +3727,48 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           </div>
 
           <div className="mt-3 text-xs opacity-70">{tx(lang, "Rozetler (beta)", "Badges (beta)")}</div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {behaviorStats.badges.map((b) => (
-              <div
-                key={b.key}
-                className="rounded-full border border-amber-300/35 bg-amber-500/15 px-3 py-1 text-xs text-amber-100"
-                title={b.detail}
-              >
-                {b.title}
-              </div>
-            ))}
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {behaviorStats.badges.map((b) => {
+              const meta = badgeMetaForKey(b.key);
+              return (
+                <div
+                  key={b.key}
+                  className="rounded-xl border border-white/10 p-2 text-xs"
+                  style={{
+                    backgroundImage: `linear-gradient(135deg, ${meta.colorFrom}33, ${meta.colorTo}22)`,
+                  }}
+                  title={b.detail}
+                >
+                  <div className="font-semibold">{meta.icon} {b.title}</div>
+                  <div className="mt-1 opacity-80">{b.detail}</div>
+                  <div className="mt-1 text-[10px] opacity-60">{lang === "en" ? meta.ruleEn : meta.ruleTr}</div>
+                </div>
+              );
+            })}
             {behaviorStats.badges.length === 0 ? (
               <div className="text-xs opacity-60">{tx(lang, "Henuz rozet yok. Log arttikca acilacak.", "No badges yet. They unlock as you log.")}</div>
             ) : null}
           </div>
 
           <div className="mt-4 text-xs opacity-70">Stereotip rozetler / Stereotype badges</div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {stereotypeBadges.map((b) => (
-              <div
-                key={b.badge_key}
-                className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100"
-                title={`${b.detail_tr} • ${b.detail_en}`}
-              >
-                <div className="font-semibold">{b.title_tr}</div>
-                <div className="opacity-75">{b.title_en}</div>
-              </div>
-            ))}
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {stereotypeBadges.map((b) => {
+              const meta = badgeMetaForKey(b.badge_key);
+              return (
+                <div
+                  key={b.badge_key}
+                  className="rounded-xl border border-white/10 p-2 text-xs"
+                  title={`${b.detail_tr} • ${b.detail_en}`}
+                  style={{
+                    backgroundImage: `linear-gradient(140deg, ${meta.colorFrom}33, ${meta.colorTo}22)`,
+                  }}
+                >
+                  <div className="font-semibold">{meta.icon} {lang === "en" ? b.title_en : b.title_tr}</div>
+                  <div className="mt-1 opacity-75">{lang === "en" ? b.detail_en : b.detail_tr}</div>
+                  <div className="mt-1 text-[10px] opacity-60">{lang === "en" ? meta.ruleEn : meta.ruleTr}</div>
+                </div>
+              );
+            })}
             {!stereotypeBadges.length ? <div className="text-xs opacity-60">{tx(lang, "Henuz stereotip rozet yok.", "No stereotype badges yet.")}</div> : null}
           </div>
         </div>
@@ -3903,7 +3942,16 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     </div>
                   </div>
                 ))}
-              {adminSuggestionsBusy ? <div className="text-xs opacity-60">{tx(lang, "Oneriler yukleniyor...", "Loading suggestions...")}</div> : null}
+              {adminSuggestionsBusy ? (
+                <LoadingPulse
+                  lang={lang}
+                  labelTr="Oneriler yukleniyor..."
+                  labelEn="Loading suggestions..."
+                  compact
+                  inline
+                  className="text-xs"
+                />
+              ) : null}
               {!adminSuggestionsBusy && !adminSuggestions.length ? (
                 <div className="text-xs opacity-60">{tx(lang, "Oneri kaydi yok veya yetki bulunmuyor.", "No suggestion records or no permission.")}</div>
               ) : null}
@@ -3943,7 +3991,16 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     </div>
                   </div>
                 ))}
-                {adminReportsBusy ? <div className="text-xs opacity-60">{tx(lang, "Raporlar yukleniyor...", "Loading reports...")}</div> : null}
+                {adminReportsBusy ? (
+                  <LoadingPulse
+                    lang={lang}
+                    labelTr="Raporlar yukleniyor..."
+                    labelEn="Loading reports..."
+                    compact
+                    inline
+                    className="text-xs"
+                  />
+                ) : null}
                 {!adminReportsBusy && !adminReports.length ? (
                   <div className="text-xs opacity-60">{tx(lang, "Rapor yok.", "No reports.")}</div>
                 ) : null}
