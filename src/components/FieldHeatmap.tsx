@@ -184,8 +184,24 @@ export default function FieldHeatmap({
                                 : isFuture
                                 ? "rgba(255,255,255,0.025)"
                                 : count <= 0
-                                ? "rgba(255,255,255,0.06)"
+                                ? "rgba(255,255,255,0.035)"
                                 : gradientColor(colorFrom, colorTo, Math.min(1, count / 5), 0.9),
+                            borderColor:
+                              !iso
+                                ? "rgba(255,255,255,0.03)"
+                                : isFuture
+                                ? "rgba(255,255,255,0.05)"
+                                : count <= 0
+                                ? "rgba(255,255,255,0.12)"
+                                : "rgba(255,255,255,0.16)",
+                            boxShadow:
+                              iso && count <= 0 && !isFuture
+                                ? "inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.35)"
+                                : "none",
+                            backgroundImage:
+                              iso && count <= 0 && !isFuture
+                                ? "linear-gradient(145deg, rgba(255,255,255,0.03), rgba(255,255,255,0))"
+                                : "none",
                           }}
                         >
                           {iso && count > 0 && cellMetric !== "color" ? textValue : ""}

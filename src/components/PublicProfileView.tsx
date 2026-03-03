@@ -966,13 +966,13 @@ export default function PublicProfileView({ username }: { username: string }) {
       </section>
 
       <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
-        <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div className="text-sm opacity-80">{tx(lang, "Isi haritasi", "Heatmap")} ({year})</div>
-          <div className="flex items-center gap-2">
+          <div className="grid w-full grid-cols-2 gap-2 md:w-auto md:grid-cols-[repeat(4,minmax(0,auto))] md:items-center">
             <select
               value={heatmapMode}
               onChange={(e) => setHeatmapMode(e.target.value as "football" | "grid")}
-              className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
+              className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none md:min-w-[88px]"
             >
               <option value="football">{tx(lang, "Saha", "Field")}</option>
               <option value="grid">Grid</option>
@@ -982,7 +982,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                 <select
                   value={gridCellMetric}
                   onChange={(e) => setGridCellMetric(e.target.value as "color" | "count" | "avgRating")}
-                  className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
+                  className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none md:min-w-[88px]"
                 >
                 <option value="color">{tx(lang, "Renk", "Color")}</option>
                 <option value="count">{tx(lang, "Sayi", "Count")}</option>
@@ -996,7 +996,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                     setGridColorFrom(from);
                     setGridColorTo(to);
                   }}
-                  className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
+                  className="col-span-2 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none md:col-span-1 md:min-w-[132px]"
                 >
                   {HEATMAP_PALETTES.map((p) => (
                     <option key={`hm-theme-${p.key}`} value={`${p.from}|${p.to}`}>
@@ -1009,7 +1009,7 @@ export default function PublicProfileView({ username }: { username: string }) {
             <select
               value={year}
               onChange={(e) => setYear(Number(e.target.value))}
-              className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
+              className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none md:min-w-[88px]"
             >
               {[currentYear, currentYear - 1, currentYear - 2].map((y) => (
                 <option key={y} value={y}>
