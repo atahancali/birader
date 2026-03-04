@@ -11,7 +11,7 @@ export default function HealthNoticeBar() {
         {tx(
           lang,
           "Alkol sağlığa zararlıdır. Sorumlu tüketin. 18 yaş altındakilere alkol satışı ve sunumu yasaktır.",
-          "Drink responsibly. Sale and service of alcohol to persons under 18 is prohibited."
+          "Drink responsibly. Sale and service of alcohol to people under 18 is prohibited."
         )}
       </div>
     </div>
