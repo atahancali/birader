@@ -1,7 +1,7 @@
 -- sprint1_perf_diagnostics.sql
 -- Amac: Sprint 1 / #01 + #05 icin sosyal sorgularin darbozazlarini tespit etmek.
 -- Calistirma: Supabase SQL Editor
--- Not: Placeholder UUID degerlerini kendi kullanici ID'n ile degistir.
+-- Not: Script placeholder istemez. auth.uid() yoksa otomatik ornek kullanici secer.
 
 set statement_timeout = '30s';
 
@@ -27,7 +27,10 @@ order by table_name;
 explain (analyze, buffers, verbose)
 with p as (
   select
-    '[USER_ID_UUID]'::uuid as me,
+    coalesce(
+      auth.uid(),
+      (select user_id from public.profiles order by created_at asc limit 1)
+    ) as me,
     now() - interval '24 hours' as ts_from,
     25::int as lim
 )
@@ -54,7 +57,11 @@ limit (select lim from p);
 explain (analyze, buffers, verbose)
 with p as (
   select
-    '[USER_ID_UUID]'::uuid as me,
+    coalesce(
+      auth.uid(),
+      (select follower_id from public.follows order by created_at asc limit 1),
+      (select user_id from public.profiles order by created_at asc limit 1)
+    ) as me,
     now() - interval '24 hours' as ts_from,
     25::int as lim
 )
@@ -78,7 +85,13 @@ limit (select lim from p);
 -- =========================================================
 explain (analyze, buffers, verbose)
 with p as (
-  select '[USER_ID_UUID]'::uuid as me, 30::int as lim
+  select
+    coalesce(
+      auth.uid(),
+      (select user_id from public.notifications order by created_at desc limit 1),
+      (select user_id from public.profiles order by created_at asc limit 1)
+    ) as me,
+    30::int as lim
 )
 select
   n.id,
