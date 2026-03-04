@@ -130,6 +130,7 @@ const ONBOARDING_SEEN_KEY = "birader:onboarding:v1";
 const PENDING_COMPLIANCE_KEY = "birader:pending-compliance:v1";
 const LOG_SUBMIT_COOLDOWN_MS = 10_000;
 const HEATMAP_THEME_KEY = "birader:heatmap-theme:v1";
+const CUSTOM_GRID_THEME_VALUE = "__birader-custom-theme__";
 const REFERRAL_KEY = "birader:pending-referral:v1";
 const OFFLINE_LOG_QUEUE_KEY = "birader:offline-log-queue:v1";
 const TUTORIAL_DONE_KEY = "birader:tutorial-done:v1";
@@ -904,6 +905,14 @@ export default function Home() {
   const [gridCellMetric, setGridCellMetric] = useState<"color" | "count" | "avgRating">("color");
   const [gridColorFrom, setGridColorFrom] = useState<string>("#f59e0b");
   const [gridColorTo, setGridColorTo] = useState<string>("#ef4444");
+  const selectedGridPaletteValue = useMemo(() => {
+    const from = gridColorFrom.trim().toLowerCase();
+    const to = gridColorTo.trim().toLowerCase();
+    const preset = HEATMAP_PALETTES.find(
+      (p) => p.from.toLowerCase() === from && p.to.toLowerCase() === to
+    );
+    return preset ? `${preset.from}|${preset.to}` : CUSTOM_GRID_THEME_VALUE;
+  }, [gridColorFrom, gridColorTo]);
   const [suggestionOpen, setSuggestionOpen] = useState(false);
   const [suggestionCategory, setSuggestionCategory] = useState("general");
   const [suggestionMessage, setSuggestionMessage] = useState("");
@@ -3378,9 +3387,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       <option value="avgRating">{tx(lang, "Ortalama ⭐", "Average ⭐")}</option>
                     </select>
                     <select
-                      value={`${gridColorFrom}|${gridColorTo}`}
+                      value={selectedGridPaletteValue}
                       onChange={(e) => {
-                        const [from, to] = String(e.target.value || "").split("|");
+                        const raw = String(e.target.value || "");
+                        if (raw === CUSTOM_GRID_THEME_VALUE) return;
+                        const [from, to] = raw.split("|");
                         if (!from || !to) return;
                         setGridColorFrom(from);
                         setGridColorTo(to);
@@ -3393,29 +3404,34 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                           {p.label}
                         </option>
                       ))}
+                      <option value={CUSTOM_GRID_THEME_VALUE}>{tx(lang, "Birader Atolye (Ozel)", "Birader Atelier (Custom)")}</option>
                     </select>
-                    <input
-                      type="color"
-                      value={gridColorFrom}
-                      onChange={(e) => {
-                        const next = e.target.value;
-                        setGridColorFrom(next);
-                        void saveHeatmapThemeToProfile(next, gridColorTo);
-                      }}
-                      title={tx(lang, "Gradient baslangic", "Gradient start")}
-                      className="h-8 w-full rounded border border-white/20 bg-black/20 p-0.5"
-                    />
-                    <input
-                      type="color"
-                      value={gridColorTo}
-                      onChange={(e) => {
-                        const next = e.target.value;
-                        setGridColorTo(next);
-                        void saveHeatmapThemeToProfile(gridColorFrom, next);
-                      }}
-                      title={tx(lang, "Gradient bitis", "Gradient end")}
-                      className="h-8 w-full rounded border border-white/20 bg-black/20 p-0.5"
-                    />
+                    {selectedGridPaletteValue === CUSTOM_GRID_THEME_VALUE ? (
+                      <>
+                        <input
+                          type="color"
+                          value={gridColorFrom}
+                          onChange={(e) => {
+                            const next = e.target.value;
+                            setGridColorFrom(next);
+                            void saveHeatmapThemeToProfile(next, gridColorTo);
+                          }}
+                          title={tx(lang, "Gradient baslangic", "Gradient start")}
+                          className="h-8 w-full rounded border border-white/20 bg-black/20 p-0.5"
+                        />
+                        <input
+                          type="color"
+                          value={gridColorTo}
+                          onChange={(e) => {
+                            const next = e.target.value;
+                            setGridColorTo(next);
+                            void saveHeatmapThemeToProfile(gridColorFrom, next);
+                          }}
+                          title={tx(lang, "Gradient bitis", "Gradient end")}
+                          className="h-8 w-full rounded border border-white/20 bg-black/20 p-0.5"
+                        />
+                      </>
+                    ) : null}
                   </>
                 ) : null}
               </div>

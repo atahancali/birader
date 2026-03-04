@@ -62,6 +62,7 @@ const CHECKINS_SELECT_WITH_MEDIA =
   "id, beer_name, rating, created_at, day_period, city, district, location_text, price_try, note, media_url, media_type";
 const CHECKINS_SELECT_BASE =
   "id, beer_name, rating, created_at, day_period, city, district, location_text, price_try, note";
+const CUSTOM_GRID_THEME_VALUE = "__birader-custom-theme__";
 
 function isMissingMediaColumnError(error: any) {
   const msg = String(error?.message || "").toLowerCase();
@@ -116,6 +117,14 @@ export default function PublicProfileView({ username }: { username: string }) {
   const avg = useMemo(() => avgRating(checkins), [checkins]);
   const stereotypeBadges = dbBadges;
   const isOwnProfile = sessionUserId === profile?.user_id;
+  const selectedGridPaletteValue = useMemo(() => {
+    const from = gridColorFrom.trim().toLowerCase();
+    const to = gridColorTo.trim().toLowerCase();
+    const preset = HEATMAP_PALETTES.find(
+      (p) => p.from.toLowerCase() === from && p.to.toLowerCase() === to
+    );
+    return preset ? `${preset.from}|${preset.to}` : CUSTOM_GRID_THEME_VALUE;
+  }, [gridColorFrom, gridColorTo]);
   const favoriteNames = useMemo(
     () => new Set(favorites.map((f) => favoriteBeerName(f.beer_name))),
     [favorites]
@@ -867,9 +876,11 @@ export default function PublicProfileView({ username }: { username: string }) {
               <div className="text-xs opacity-70">{tx(lang, "Grid renk gecisi", "Grid color gradient")}</div>
               <div className="mt-2 flex items-center gap-2">
                 <select
-                  value={`${gridColorFrom}|${gridColorTo}`}
+                  value={selectedGridPaletteValue}
                   onChange={(e) => {
-                    const [from, to] = String(e.target.value || "").split("|");
+                    const raw = String(e.target.value || "");
+                    if (raw === CUSTOM_GRID_THEME_VALUE) return;
+                    const [from, to] = raw.split("|");
                     if (!from || !to) return;
                     setGridColorFrom(from);
                     setGridColorTo(to);
@@ -881,19 +892,24 @@ export default function PublicProfileView({ username }: { username: string }) {
                       {p.label}
                     </option>
                   ))}
+                  <option value={CUSTOM_GRID_THEME_VALUE}>{tx(lang, "Birader Atolye (Ozel)", "Birader Atelier (Custom)")}</option>
                 </select>
-                <input
-                  type="color"
-                  value={gridColorFrom}
-                  onChange={(e) => setGridColorFrom(e.target.value)}
-                  className="h-8 w-8 rounded border border-white/20 bg-black/20 p-0.5"
-                />
-                <input
-                  type="color"
-                  value={gridColorTo}
-                  onChange={(e) => setGridColorTo(e.target.value)}
-                  className="h-8 w-8 rounded border border-white/20 bg-black/20 p-0.5"
-                />
+                {selectedGridPaletteValue === CUSTOM_GRID_THEME_VALUE ? (
+                  <>
+                    <input
+                      type="color"
+                      value={gridColorFrom}
+                      onChange={(e) => setGridColorFrom(e.target.value)}
+                      className="h-8 w-8 rounded border border-white/20 bg-black/20 p-0.5"
+                    />
+                    <input
+                      type="color"
+                      value={gridColorTo}
+                      onChange={(e) => setGridColorTo(e.target.value)}
+                      className="h-8 w-8 rounded border border-white/20 bg-black/20 p-0.5"
+                    />
+                  </>
+                ) : null}
               </div>
             </div>
             <button
@@ -1026,9 +1042,11 @@ export default function PublicProfileView({ username }: { username: string }) {
                 <option value="avgRating">{tx(lang, "Ortalama ⭐", "Average ⭐")}</option>
                 </select>
                 <select
-                  value={`${gridColorFrom}|${gridColorTo}`}
+                  value={selectedGridPaletteValue}
                   onChange={(e) => {
-                    const [from, to] = String(e.target.value || "").split("|");
+                    const raw = String(e.target.value || "");
+                    if (raw === CUSTOM_GRID_THEME_VALUE) return;
+                    const [from, to] = raw.split("|");
                     if (!from || !to) return;
                     setGridColorFrom(from);
                     setGridColorTo(to);
@@ -1040,6 +1058,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                       {p.label}
                     </option>
                   ))}
+                  <option value={CUSTOM_GRID_THEME_VALUE}>{tx(lang, "Birader Atolye (Ozel)", "Birader Atelier (Custom)")}</option>
                 </select>
               </>
             ) : null}
