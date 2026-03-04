@@ -7,6 +7,7 @@ import FootballHeatmap from "@/components/FootballHeatmap";
 import FieldHeatmap from "@/components/FieldHeatmap";
 import DayModal from "@/components/DayModal";
 import LoadingPulse from "@/components/LoadingPulse";
+import RatingStars from "@/components/RatingStars";
 import { supabase } from "@/lib/supabase";
 import { normalizeUsername, usernameFromEmail } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
@@ -1078,7 +1079,7 @@ export default function PublicProfileView({ username }: { username: string }) {
             <div key={c.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="truncate text-sm font-semibold">{c.beer_name}</div>
-                <div className="text-xs">{c.rating === null ? "—" : `${c.rating}⭐`}</div>
+                <RatingStars value={c.rating} size="xs" />
               </div>
               <div className="mt-1 text-xs opacity-70">{new Date(c.created_at).toLocaleString("tr-TR")}</div>
               <div className="mt-1 text-xs opacity-70">

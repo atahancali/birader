@@ -77,10 +77,75 @@ h3 {
 
 .ticker-track {
   animation: ticker-scroll 38s linear infinite;
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 .ticker-wrap:hover .ticker-track {
   animation-play-state: paused;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes beer-fill {
+  0% {
+    transform: scaleY(0.12);
+    opacity: 0.9;
+  }
+  70% {
+    transform: scaleY(0.95);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleY(0.2);
+    opacity: 0.9;
+  }
+}
+
+@keyframes beer-foam {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.7;
+  }
+  50% {
+    transform: translateY(-2px);
+    opacity: 1;
+  }
+}
+
+@keyframes bubble-rise {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(-16px);
+    opacity: 0;
+  }
+}
+
+@keyframes glass-shine {
+  0%,
+  100% {
+    transform: translateX(-110%);
+    opacity: 0;
+  }
+  40%,
+  60% {
+    transform: translateX(160%);
+    opacity: 0.26;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -22,7 +22,7 @@ export default function PrivacyPage() {
           <section>
             <h2 className="font-semibold text-amber-100">1. Veri Sorumlusu</h2>
             <p>
-              Veri sorumlusu: <strong>[COMPANY_NAME]</strong>
+              Veri sorumlusu: <strong>Birader (bağımsız proje)</strong>
               <br />
               İletişim e-postası: <strong>biraderdestek@gmail.com</strong>
             </p>

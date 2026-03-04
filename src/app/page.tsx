@@ -12,6 +12,7 @@ import FootballHeatmap from "@/components/FootballHeatmap";
 import GeoHeatmap from "@/components/GeoHeatmap";
 import BeerWheel from "@/components/BeerWheel";
 import LoadingPulse from "@/components/LoadingPulse";
+import RatingStars from "@/components/RatingStars";
 import { normalizeUsername, usernameFromEmail, usernameToCandidateEmails } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
@@ -2765,7 +2766,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           <div>
             <h1 className="text-2xl font-bold text-amber-300">Birader</h1>
             <p className="text-sm text-amber-100/80">
-            {year} (v0)
+              God forbid an individual loves beer &amp; stats
             </p>
           </div>
         </div>
@@ -3265,7 +3266,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               <div className="mt-1 text-sm font-semibold">{beerName || tx(lang, "Bira secilmedi", "No beer selected")}</div>
               <div className="mt-1 text-xs opacity-75">Format: {format}</div>
               <div className="text-xs opacity-75">{tx(lang, "Tarih", "Date")}: {dateISO}</div>
-              <div className="text-xs opacity-75">{tx(lang, "Puan", "Rating")}: {rating === null ? tx(lang, "Puansiz", "Unrated") : `${rating}⭐`}</div>
+              <div className="flex items-center gap-2 text-xs opacity-75">
+                <span>{tx(lang, "Puan", "Rating")}:</span>
+                <RatingStars value={rating} size="xs" unratedLabel={tx(lang, "Puansiz", "Unrated")} />
+              </div>
               <div className="text-xs opacity-75">{tx(lang, "Konum", "Location")}: {city}{resolvedDistrict ? ` / ${resolvedDistrict}` : ""}</div>
             </div>
 
@@ -3362,7 +3366,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               <div className="flex items-center justify-between gap-2">
                 <div className="font-semibold">{c.beer_name}</div>
                 <div className="flex items-center gap-2">
-                  <div className="text-sm">{c.rating === null ? "—" : `${c.rating}⭐`}</div>
+                  <RatingStars value={c.rating} size="sm" />
                   <button
                     type="button"
                     onClick={() => {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import LoadingPulse from "@/components/LoadingPulse";
+import RatingStars from "@/components/RatingStars";
 import WeeklyTickerBar, { type WeeklyTickerItem } from "@/components/WeeklyTickerBar";
 import { supabase } from "@/lib/supabase";
 import { normalizeUsername, usernameFromEmail } from "@/lib/identity";
@@ -3140,7 +3141,7 @@ export default function SocialPanel({
                 <div className="mt-1 text-sm font-semibold">{item.beer_name}</div>
                 <div className="mt-1 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <div className="text-xs opacity-80">{item.rating === null ? tx(lang, "Puansiz", "Unrated") : `${item.rating}⭐`}</div>
+                    <RatingStars value={item.rating} size="xs" unratedLabel={tx(lang, "Puansiz", "Unrated")} className="opacity-90" />
                     <button
                       type="button"
                       disabled={checkinLikeBusyId === String(item.id)}
@@ -3263,15 +3264,12 @@ export default function SocialPanel({
             ))}
 
             {feedBusy ? (
-              <div className="space-y-2">
-                {Array.from({ length: 3 }).map((_, idx) => (
-                  <div key={`feed-skeleton-${idx}`} className="animate-pulse rounded-xl border border-white/10 bg-black/20 p-3">
-                    <div className="h-3 w-32 rounded bg-white/10" />
-                    <div className="mt-2 h-4 w-48 rounded bg-white/10" />
-                    <div className="mt-2 h-8 w-full rounded bg-white/5" />
-                  </div>
-                ))}
-              </div>
+              <LoadingPulse
+                lang={lang}
+                labelTr="Sosyal akis doluyor..."
+                labelEn="Pouring social feed..."
+                compact
+              />
             ) : null}
             {!feedBusy && !filteredFeedItems.length ? (
               <div className="text-xs opacity-60">{tx(lang, "Akista gosterilecek log yok.", "No feed logs to show.")}</div>

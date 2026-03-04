@@ -30,8 +30,8 @@ export default function WeeklyTickerBar({
   busy = false,
 }: WeeklyTickerBarProps) {
   const hasItems = items.length > 0;
-  const tickerItems = hasItems
-    ? [...items, ...items]
+  const renderItems = hasItems
+    ? items
     : [
         {
           key: "empty",
@@ -73,19 +73,15 @@ export default function WeeklyTickerBar({
         </div>
       </div>
 
-      <div className="ticker-wrap relative mt-2 overflow-hidden rounded-xl border border-white/10 bg-black/25">
+      <div className="relative mt-2 overflow-hidden rounded-xl border border-white/10 bg-black/25">
         <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-black/75 to-transparent" />
         <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-black/75 to-transparent" />
-        <div
-          className={`ticker-track flex w-max items-center gap-2 py-2 pr-2 ${
-            tickerItems.length <= 1 || busy ? "[animation-play-state:paused]" : ""
-          }`}
-        >
-          {tickerItems.map((item, idx) => (
+        <div className="no-scrollbar flex snap-x snap-mandatory items-stretch gap-2 overflow-x-auto py-2 pr-2">
+          {renderItems.map((item, idx) => (
             <Link
               key={`${item.key}-${idx}`}
               href={item.href || "/"}
-              className="inline-flex min-w-[220px] max-w-[300px] shrink-0 flex-col rounded-lg border border-white/10 bg-white/5 px-3 py-2 transition hover:border-amber-300/45 hover:bg-amber-500/10"
+              className="inline-flex min-w-[220px] max-w-[300px] shrink-0 snap-start flex-col rounded-lg border border-white/10 bg-white/5 px-3 py-2 transition hover:border-amber-300/45 hover:bg-amber-500/10"
             >
               <span className="text-[10px] uppercase tracking-wide opacity-70">{item.label}</span>
               <span className="truncate text-xs font-semibold">{item.value}</span>

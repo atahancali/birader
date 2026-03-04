@@ -2,12 +2,9 @@ import Link from "next/link";
 
 export default function SiteFooter() {
   return (
-    <footer className="mt-8 border-t border-white/10 bg-black/40 px-4 py-4 text-xs text-white/65">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-2">
-        <div className="opacity-75">
-          Alkol sağlığa zararlıdır. Sorumlu tüketin. 18 yaş altındakilara alkol satışı ve sunumu yasaktır.
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
+    <footer className="mb-20 mt-8 border-t border-white/10 bg-black/35 px-4 py-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] text-xs text-white/65">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 text-center sm:flex-row sm:items-center sm:justify-between sm:text-left">
+        <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
           <Link href="/privacy" className="underline underline-offset-2">
             Gizlilik Politikası
           </Link>
@@ -18,7 +15,7 @@ export default function SiteFooter() {
             biraderdestek@gmail.com
           </a>
         </div>
-        <div className="opacity-60">© [COMPANY_NAME]</div>
+        <div className="opacity-60">Birader (bağımsız proje)</div>
       </div>
     </footer>
   );

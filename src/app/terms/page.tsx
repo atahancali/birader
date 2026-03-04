@@ -45,8 +45,8 @@ export default function TermsPage() {
           <section>
             <h2 className="font-semibold text-amber-100">5. Fikri Mülkiyet</h2>
             <p>
-              Uygulamanın yazılımı, tasarımı, marka unsurları ve içerikleri ilgili mevzuat kapsamında korunur. İzinsiz kullanım
-              yasaktır.
+              Uygulamanın yazılımı, tasarımı ve içerikleri ilgili mevzuat kapsamında korunur. "Birader" bu aşamada proje adı
+              olarak kullanılmaktadır; tescilli marka beyanı değildir. İzinsiz kullanım yasaktır.
             </p>
           </section>
 

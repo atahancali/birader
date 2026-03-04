@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { dayPeriodLabelEn, dayPeriodLabelTr } from "@/lib/dayPeriod";
 import type { AppLang } from "@/lib/i18n";
+import RatingStars from "@/components/RatingStars";
 
 type Checkin = {
   id: string;
@@ -214,9 +215,7 @@ export default function DayModal({
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <div className="text-sm whitespace-nowrap">
-                          {c.rating === null ? "—" : `${c.rating}⭐`}
-                        </div>
+                        <RatingStars value={c.rating} size="sm" className="whitespace-nowrap" />
 
                         <button
                           type="button"
