@@ -77,6 +77,12 @@ type GuardedInsertOutcome = {
   message: string;
 };
 
+type BeerResolveOutcome = {
+  canonicalName: string;
+  matched: boolean;
+  queued: boolean;
+};
+
 type DeletedCheckinUndo = {
   id: string;
   beer_name: string;
@@ -414,15 +420,16 @@ function isMissingIdempotencyColumnError(error: any) {
   return msg.includes("does not exist") && msg.includes("idempotency_key");
 }
 
-function isMissingGuardedCheckinFunctionError(error: any) {
+function isMissingRpcFunctionError(error: any, fnName: string) {
   const msg = String(error?.message || "").toLowerCase();
-  if (!msg.includes("create_checkin_guarded")) return false;
   return (
-    msg.includes("does not exist") ||
-    msg.includes("could not find") ||
-    msg.includes("function") ||
-    msg.includes("42883")
+    msg.includes(fnName.toLowerCase()) &&
+    (msg.includes("does not exist") || msg.includes("could not find") || msg.includes("function") || msg.includes("42883"))
   );
+}
+
+function isMissingGuardedCheckinFunctionError(error: any) {
+  return isMissingRpcFunctionError(error, "create_checkin_guarded");
 }
 
 function isFavoriteLimitExceededError(error: any) {
@@ -1835,6 +1842,10 @@ export default function Home() {
       a.localeCompare(b, "tr")
     );
   }, []);
+  const knownBeerStyleLabelsLower = useMemo(
+    () => new Set(allBeerLabels.map((x) => x.trim().toLowerCase())),
+    [allBeerLabels]
+  );
 
   const beerWheelPool = useMemo(() => {
     const top = topBeerLabelsByFormat[format] ?? [];
@@ -2637,6 +2648,57 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     return { ok: true, limited: false, fallbackLegacy: false, message: "" };
   }
 
+  async function resolveBeerNameForInsert(
+    rawBeer: string,
+    context: Record<string, unknown> = {}
+  ): Promise<BeerResolveOutcome> {
+    const raw = String(rawBeer || "").trim();
+    if (!raw) return { canonicalName: "", matched: false, queued: false };
+
+    const { data, error } = await supabase.rpc("resolve_beer_name", { p_input: raw });
+    if (error) {
+      if (!isMissingRpcFunctionError(error, "resolve_beer_name")) {
+        console.error("resolve_beer_name failed:", error.message);
+      }
+      return {
+        canonicalName: raw,
+        matched: knownBeerStyleLabelsLower.has(raw.toLowerCase()),
+        queued: false,
+      };
+    }
+
+    const row = Array.isArray(data)
+      ? (data[0] as { canonical_name?: string | null; matched?: boolean } | undefined)
+      : undefined;
+    const canonicalName = String(row?.canonical_name || raw).trim() || raw;
+    const matched = Boolean(row?.matched);
+
+    if (matched || !session?.user?.id) {
+      return { canonicalName, matched, queued: false };
+    }
+
+    const queueContext = {
+      source: "log_form",
+      lang,
+      ...context,
+    };
+    const { data: queuedId, error: queueError } = await supabase.rpc("queue_custom_beer_name", {
+      p_raw: raw,
+      p_context: queueContext as any,
+    });
+    if (queueError) {
+      if (!isMissingRpcFunctionError(queueError, "queue_custom_beer_name")) {
+        console.error("queue_custom_beer_name failed:", queueError.message);
+      }
+      return { canonicalName, matched: false, queued: false };
+    }
+    return {
+      canonicalName,
+      matched: false,
+      queued: queuedId !== null && queuedId !== undefined,
+    };
+  }
+
   async function insertLegacyCheckins(rows: CheckinInsertPayload[]): Promise<{ message: string } | null> {
     if (rows.some((row) => isFutureIsoDay(String(row.created_at || "").slice(0, 10), today))) {
       return {
@@ -2672,13 +2734,13 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
   async function addCheckin() {
     const name = (beerName || "").trim();
-    const targets = isBackDate && batchBeerNames.length > 0 ? batchBeerNames : name ? [name] : [];
-    if (!targets.length) return;
+    const rawTargets = isBackDate && batchBeerNames.length > 0 ? batchBeerNames : name ? [name] : [];
+    if (!rawTargets.length) return;
     if (isFutureIsoDay(dateISO, today)) {
       alert(tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."));
       return;
     }
-    if (isBackDate && targets.length > 1 && !batchConfirmed) {
+    if (isBackDate && rawTargets.length > 1 && !batchConfirmed) {
       alert(tx(lang, "Toplu kayit icin once onay kutusunu isaretle.", "Tick confirmation before bulk save."));
       return;
     }
@@ -2698,6 +2760,32 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     const beforeBadgeKeys = new Set(dbBadges.map((b) => b.badge_key));
 
     try {
+      let queuedCustomBeers = 0;
+      let targets = rawTargets;
+      if (session?.user?.id) {
+        const resolveCache = new Map<string, BeerResolveOutcome>();
+        const resolvedTargets: string[] = [];
+        for (const rawBeer of rawTargets) {
+          const normalizedRaw = rawBeer.trim();
+          const cacheKey = normalizedRaw.toLowerCase();
+          let resolved = resolveCache.get(cacheKey);
+          if (!resolved) {
+            resolved = await resolveBeerNameForInsert(normalizedRaw, {
+              source: isBackDate ? "bulk_log_form" : "log_form",
+              day: dateISO,
+              city: normalizedCity || null,
+              district: normalizedDistrict || null,
+              batch_size: rawTargets.length,
+            });
+            resolveCache.set(cacheKey, resolved);
+            if (resolved.queued) queuedCustomBeers += 1;
+          }
+          const canonical = String(resolved.canonicalName || normalizedRaw).trim() || normalizedRaw;
+          resolvedTargets.push(canonical);
+        }
+        targets = resolvedTargets;
+      }
+
       const created_at =
         dateISO === today ? new Date().toISOString() : new Date(`${dateISO}T12:00:00.000Z`).toISOString();
 
@@ -2754,7 +2842,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           trackEvent({
             eventName: "checkin_added",
             userId: session.user.id,
-            props: { rating: normalizedRating, beer_count: targets.length, date: dateISO },
+            props: { rating: normalizedRating, beer_count: targets.length, date: dateISO, queued_custom_beers: queuedCustomBeers },
           });
           setDateISO(today);
           setRating(null);
@@ -2773,6 +2861,15 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           rotateLogSubmitIntent();
           await loadCheckins();
           await createPostCheckinNudges(session.user.id, beforeBadgeKeys);
+          if (queuedCustomBeers > 0) {
+            alert(
+              tx(
+                lang,
+                "Listede olmayan bira adlari inceleme sirasina alindi.",
+                "Unknown beer names were sent to moderation review."
+              )
+            );
+          }
           return;
         }
 
@@ -2854,8 +2951,17 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       trackEvent({
         eventName: "checkin_added_local",
         userId: session?.user?.id ?? null,
-        props: { rating: normalizedRating, beer_count: targets.length, date: dateISO },
+        props: { rating: normalizedRating, beer_count: targets.length, date: dateISO, queued_custom_beers: queuedCustomBeers },
       });
+      if (queuedCustomBeers > 0) {
+        alert(
+          tx(
+            lang,
+            "Listede olmayan bira adlari inceleme sirasina alindi.",
+            "Unknown beer names were sent to moderation review."
+          )
+        );
+      }
     } finally {
       logMutationLockRef.current = false;
       setIsLogMutating(false);
@@ -3876,12 +3982,28 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         const beforeBadgeKeys = new Set(dbBadges.map((b) => b.badge_key));
         const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
         const normalizedRating = sanitizeRating(rating);
+        const rawBeer = beer_name.trim();
+        if (!rawBeer) {
+          logMutationLockRef.current = false;
+          setIsLogMutating(false);
+          return;
+        }
+        let resolvedBeerName = rawBeer;
+        let queuedCustomBeer = false;
         try {
           if (session?.user?.id) {
+            const resolved = await resolveBeerNameForInsert(rawBeer, {
+              source: "day_modal",
+              day,
+              city: city || null,
+              district: resolvedDistrict || null,
+            });
+            resolvedBeerName = String(resolved.canonicalName || rawBeer).trim() || rawBeer;
+            queuedCustomBeer = resolved.queued;
             const requestKey = currentLogSubmitIntent();
             const serverRow: CheckinInsertPayload = {
               user_id: session.user.id,
-              beer_name,
+              beer_name: resolvedBeerName,
               rating: normalizedRating,
               created_at,
               day_period: dayPeriod,
@@ -3895,7 +4017,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               longitude: null,
               media_url: "",
               media_type: "",
-              idempotency_key: `daymodal:${requestKey}:${day}:${beer_name.trim().toLowerCase()}`,
+              idempotency_key: `daymodal:${requestKey}:${day}:${resolvedBeerName.toLowerCase()}`,
             };
             const guarded = await insertCheckinGuarded(serverRow, {
               idempotencyKey: serverRow.idempotency_key || `daymodal:${requestKey}`,
@@ -3917,18 +4039,27 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             trackEvent({
               eventName: "checkin_added",
               userId: session.user.id,
-              props: { rating: normalizedRating, beer_name },
+              props: { rating: normalizedRating, beer_name: resolvedBeerName, queued_custom_beers: queuedCustomBeer ? 1 : 0 },
             });
             rotateLogSubmitIntent();
             await loadCheckins();
             await createPostCheckinNudges(session.user.id, beforeBadgeKeys);
+            if (queuedCustomBeer) {
+              alert(
+                tx(
+                  lang,
+                  "Listede olmayan bira adi inceleme sirasina alindi.",
+                  "Unknown beer name was sent to moderation review."
+                )
+              );
+            }
             return;
           }
 
           setCheckins((prev) => [
             {
               id: uuid(),
-              beer_name,
+              beer_name: resolvedBeerName,
               rating: normalizedRating,
               created_at,
               day_period: dayPeriod,
@@ -3947,7 +4078,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           trackEvent({
             eventName: "checkin_added_local",
             userId: session?.user?.id ?? null,
-            props: { rating: normalizedRating, beer_name },
+            props: { rating: normalizedRating, beer_name: resolvedBeerName, queued_custom_beers: queuedCustomBeer ? 1 : 0 },
           });
         } finally {
           logMutationLockRef.current = false;

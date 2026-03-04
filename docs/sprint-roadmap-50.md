@@ -32,8 +32,8 @@ Hedef: log akisinda duplicate, veri tutarliligi ve geri alma senaryolarini kapat
 - [x] `#14` Eski tarih toplu giriste import-preview adimi (`M`, `done`)
 - [x] `#15` Gelecek tarihe log atmayi tum entry pointlerde engelleme (`S`, `done`)
 - [x] `#16` Log silme icin soft-delete + undo (`L`, `done`)
-- [ ] `#17` Bira katalog normalize (`beer_master`, `beer_alias`) (`L`, `todo`)
-- [ ] `#18` Custom beer adlarini moderasyon kuyruguna dusurme (`M`, `todo`)
+- [x] `#17` Bira katalog normalize (`beer_master`, `beer_alias`) (`L`, `done`)
+- [x] `#18` Custom beer adlarini moderasyon kuyruguna dusurme (`M`, `done`)
 - [ ] `#19` Format/olcu/marka alanlarini normalize kolonlara tasima (`M`, `todo`)
 - [x] `#20` Favori bira 3 limitini DB trigger ile kesinlestirme (`S`, `done`)
 
@@ -97,6 +97,6 @@ Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 
 ## Yurutme Notu
 - Aktif sprint: `Sprint 2`
-- Aktif paket: `#17 + #18`
+- Aktif paket: `#19`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.

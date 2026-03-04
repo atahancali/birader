@@ -96,6 +96,156 @@ create table if not exists public.user_badges (
   primary key (user_id, badge_key)
 );
 
+-- 001b_beer_catalog_normalization
+create table if not exists public.beer_master (
+  id bigserial primary key,
+  canonical_name text not null unique,
+  is_active boolean not null default true,
+  created_by uuid null references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  constraint beer_master_canonical_name_non_empty check (length(trim(canonical_name)) > 0)
+);
+
+create table if not exists public.beer_alias (
+  id bigserial primary key,
+  master_id bigint not null references public.beer_master(id) on delete cascade,
+  alias_name text not null unique,
+  source text not null default 'system',
+  created_by uuid null references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  constraint beer_alias_alias_name_non_empty check (length(trim(alias_name)) > 0)
+);
+
+create table if not exists public.custom_beer_moderation_queue (
+  id bigserial primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  raw_input text not null,
+  normalized_input text not null,
+  status text not null default 'pending',
+  context jsonb not null default '{}'::jsonb,
+  resolved_master_id bigint null references public.beer_master(id) on delete set null,
+  reviewed_by uuid null references auth.users(id) on delete set null,
+  reviewed_at timestamptz,
+  review_note text not null default '',
+  created_at timestamptz not null default now(),
+  constraint custom_beer_queue_status_check check (status in ('pending', 'approved', 'rejected', 'merged')),
+  constraint custom_beer_queue_raw_non_empty check (length(trim(raw_input)) > 0)
+);
+
+create unique index if not exists idx_beer_master_canonical_lower on public.beer_master (lower(canonical_name));
+create unique index if not exists idx_beer_alias_name_lower on public.beer_alias (lower(alias_name));
+create index if not exists idx_beer_alias_master on public.beer_alias (master_id);
+create index if not exists idx_custom_beer_queue_status_created_at on public.custom_beer_moderation_queue (status, created_at desc);
+create index if not exists idx_custom_beer_queue_normalized on public.custom_beer_moderation_queue (normalized_input);
+create unique index if not exists idx_custom_beer_queue_user_pending_unique
+  on public.custom_beer_moderation_queue (user_id, normalized_input)
+  where status = 'pending';
+
+with official_catalog(canonical_name) as (
+  values
+    ('1664 Blanc — Fici'),
+    ('1664 Blanc — Şişe/Kutu'),
+    ('Amsterdam Dark — Şişe/Kutu'),
+    ('Amsterdam Navigator — Fici'),
+    ('Amsterdam Navigator — Şişe/Kutu'),
+    ('Beck’s — Fici'),
+    ('Beck’s — Şişe/Kutu'),
+    ('Beck’s Gold — Şişe/Kutu'),
+    ('Belfast — Fici'),
+    ('Belfast — Şişe/Kutu'),
+    ('Bistro Lager — Şişe/Kutu'),
+    ('Bomonti Black — Şişe/Kutu'),
+    ('Bomonti Filtresiz — Fici'),
+    ('Bomonti Filtresiz — Şişe/Kutu'),
+    ('Bomonti Red Ale — Fici'),
+    ('Bomonti Red Ale — Şişe/Kutu'),
+    ('Bud — Fici'),
+    ('Bud — Şişe/Kutu'),
+    ('Budvar — Şişe/Kutu'),
+    ('Budweiser — Şişe/Kutu'),
+    ('Carlsberg — Fici'),
+    ('Carlsberg — Şişe/Kutu'),
+    ('Carlsberg Luna — Şişe/Kutu'),
+    ('Carlsberg Special Brew — Şişe/Kutu'),
+    ('Chimay Blue — Şişe/Kutu'),
+    ('Corona Extra — Fici'),
+    ('Corona Extra — Şişe/Kutu'),
+    ('Desperados — Fici'),
+    ('Desperados — Şişe/Kutu'),
+    ('Duvel — Şişe/Kutu'),
+    ('Efes %100 Malt — Şişe/Kutu'),
+    ('Efes Dark — Şişe/Kutu'),
+    ('Efes Glutensiz — Şişe/Kutu'),
+    ('Efes Malt — Şişe/Kutu'),
+    ('Efes Özel Seri — Şişe/Kutu'),
+    ('Efes Pilsen — Fici'),
+    ('Efes Pilsen — Şişe/Kutu'),
+    ('Erdinger Weissbier — Fici'),
+    ('Erdinger Weissbier — Şişe/Kutu'),
+    ('Grimbergen Blonde — Şişe/Kutu'),
+    ('Guinness — Fici'),
+    ('Guinness — Şişe/Kutu'),
+    ('Heineken — Fici'),
+    ('Heineken — Şişe/Kutu'),
+    ('Heineken Silver — Şişe/Kutu'),
+    ('Hoegaarden — Fici'),
+    ('Hoegaarden — Şişe/Kutu'),
+    ('Leffe Blonde — Fici'),
+    ('Leffe Blonde — Şişe/Kutu'),
+    ('Leffe Brune — Şişe/Kutu'),
+    ('Marmara Gold — Fici'),
+    ('Marmara Gold — Şişe/Kutu'),
+    ('Marmara Kırmızı — Şişe/Kutu'),
+    ('Miller Genuine Draft — Fici'),
+    ('Miller Genuine Draft — Şişe/Kutu'),
+    ('Paulaner Hefe Weissbier — Fici'),
+    ('Paulaner Hefe Weissbier — Şişe/Kutu'),
+    ('Skol — Şişe/Kutu'),
+    ('Stella Artois — Fici'),
+    ('Stella Artois — Şişe/Kutu'),
+    ('Troy — Fici'),
+    ('Troy — Şişe/Kutu'),
+    ('Tuborg Amber — Fici'),
+    ('Tuborg Amber — Şişe/Kutu'),
+    ('Tuborg Christmas Brew — Şişe/Kutu'),
+    ('Tuborg Filtresiz — Fici'),
+    ('Tuborg Filtresiz — Şişe/Kutu'),
+    ('Tuborg Gold — Fici'),
+    ('Tuborg Gold — Şişe/Kutu'),
+    ('Tuborg Shot — Şişe/Kutu'),
+    ('Tuborg Special — Şişe/Kutu'),
+    ('Venüs — Şişe/Kutu'),
+    ('Weihenstephaner Hefe Weissbier — Şişe/Kutu')
+)
+insert into public.beer_master (canonical_name)
+select o.canonical_name
+from official_catalog o
+where not exists (
+  select 1
+  from public.beer_master bm
+  where lower(bm.canonical_name) = lower(o.canonical_name)
+);
+
+insert into public.beer_master (canonical_name)
+select distinct trim(c.beer_name)
+from public.checkins c
+where nullif(trim(c.beer_name), '') is not null
+  and not exists (
+    select 1
+    from public.beer_master bm
+    where lower(bm.canonical_name) = lower(trim(c.beer_name))
+  );
+
+insert into public.beer_master (canonical_name)
+select distinct trim(f.beer_name)
+from public.favorite_beers f
+where nullif(trim(f.beer_name), '') is not null
+  and not exists (
+    select 1
+    from public.beer_master bm
+    where lower(bm.canonical_name) = lower(trim(f.beer_name))
+  );
+
 create index if not exists idx_follows_following on public.follows (following_id);
 create index if not exists idx_analytics_events_name_time on public.analytics_events (event_name, created_at desc);
 create index if not exists idx_analytics_events_user_time on public.analytics_events (user_id, created_at desc);
@@ -123,6 +273,242 @@ begin
 end;
 $$;
 
+create or replace function public.resolve_beer_name(p_input text)
+returns table(
+  canonical_name text,
+  master_id bigint,
+  matched boolean
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_raw text := nullif(trim(coalesce(p_input, '')), '');
+  v_norm text;
+  v_name text;
+  v_master_id bigint;
+begin
+  if v_raw is null then
+    return;
+  end if;
+
+  v_norm := lower(regexp_replace(v_raw, '\s+', ' ', 'g'));
+
+  select bm.canonical_name, bm.id
+    into v_name, v_master_id
+  from public.beer_master bm
+  where bm.is_active = true
+    and lower(regexp_replace(bm.canonical_name, '\s+', ' ', 'g')) = v_norm
+  limit 1;
+
+  if v_master_id is null then
+    select bm.canonical_name, bm.id
+      into v_name, v_master_id
+    from public.beer_alias ba
+    join public.beer_master bm on bm.id = ba.master_id
+    where bm.is_active = true
+      and lower(regexp_replace(ba.alias_name, '\s+', ' ', 'g')) = v_norm
+    order by ba.id asc
+    limit 1;
+  end if;
+
+  if v_master_id is null then
+    return query select v_raw, null::bigint, false;
+    return;
+  end if;
+
+  return query select v_name, v_master_id, true;
+end;
+$$;
+
+create or replace function public.queue_custom_beer_name(
+  p_raw text,
+  p_context jsonb default '{}'::jsonb
+)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_raw text := nullif(trim(coalesce(p_raw, '')), '');
+  v_norm text;
+  v_id bigint;
+begin
+  if v_uid is null then
+    raise exception 'not authenticated';
+  end if;
+  if v_raw is null then
+    return null;
+  end if;
+
+  v_norm := lower(regexp_replace(v_raw, '\s+', ' ', 'g'));
+
+  if exists (
+    select 1
+    from public.beer_master bm
+    where bm.is_active = true
+      and lower(regexp_replace(bm.canonical_name, '\s+', ' ', 'g')) = v_norm
+  ) then
+    return null;
+  end if;
+
+  if exists (
+    select 1
+    from public.beer_alias ba
+    join public.beer_master bm on bm.id = ba.master_id
+    where bm.is_active = true
+      and lower(regexp_replace(ba.alias_name, '\s+', ' ', 'g')) = v_norm
+  ) then
+    return null;
+  end if;
+
+  select q.id
+    into v_id
+  from public.custom_beer_moderation_queue q
+  where q.user_id = v_uid
+    and q.normalized_input = v_norm
+    and q.status = 'pending'
+  order by q.created_at desc
+  limit 1;
+
+  if v_id is not null then
+    return v_id;
+  end if;
+
+  insert into public.custom_beer_moderation_queue (
+    user_id,
+    raw_input,
+    normalized_input,
+    context,
+    status
+  )
+  values (
+    v_uid,
+    v_raw,
+    v_norm,
+    coalesce(p_context, '{}'::jsonb),
+    'pending'
+  )
+  returning id into v_id;
+
+  return v_id;
+exception
+  when unique_violation then
+    select q.id
+      into v_id
+    from public.custom_beer_moderation_queue q
+    where q.user_id = v_uid
+      and q.normalized_input = v_norm
+      and q.status = 'pending'
+    order by q.created_at desc
+    limit 1;
+    return v_id;
+end;
+$$;
+
+create or replace function public.review_custom_beer_name(
+  p_queue_id bigint,
+  p_action text,
+  p_master_id bigint default null,
+  p_note text default ''
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_is_admin boolean := false;
+  q public.custom_beer_moderation_queue%rowtype;
+  v_action text := lower(trim(coalesce(p_action, '')));
+  v_target_master bigint := null;
+begin
+  if v_uid is null then
+    raise exception 'not authenticated';
+  end if;
+
+  select exists (
+    select 1
+    from public.profiles p
+    where p.user_id = v_uid
+      and p.is_admin = true
+  ) into v_is_admin;
+
+  if not v_is_admin then
+    raise exception 'not allowed';
+  end if;
+
+  select *
+    into q
+  from public.custom_beer_moderation_queue
+  where id = p_queue_id
+  for update;
+
+  if not found or q.status <> 'pending' then
+    return false;
+  end if;
+
+  if v_action = 'rejected' then
+    update public.custom_beer_moderation_queue
+    set status = 'rejected',
+        reviewed_by = v_uid,
+        reviewed_at = now(),
+        review_note = coalesce(p_note, '')
+    where id = p_queue_id;
+    return true;
+  end if;
+
+  if v_action not in ('approved', 'merged') then
+    return false;
+  end if;
+
+  v_target_master := p_master_id;
+  if v_target_master is null then
+    insert into public.beer_master (canonical_name, created_by)
+    values (q.raw_input, v_uid)
+    on conflict (canonical_name) do nothing
+    returning id into v_target_master;
+
+    if v_target_master is null then
+      select bm.id
+        into v_target_master
+      from public.beer_master bm
+      where lower(bm.canonical_name) = lower(q.raw_input)
+      limit 1;
+    end if;
+  end if;
+
+  if v_target_master is null then
+    return false;
+  end if;
+
+  insert into public.beer_alias (master_id, alias_name, source, created_by)
+  values (v_target_master, q.raw_input, 'moderation_queue', v_uid)
+  on conflict (alias_name) do nothing;
+
+  update public.custom_beer_moderation_queue
+  set status = case when v_action = 'merged' then 'merged' else 'approved' end,
+      resolved_master_id = v_target_master,
+      reviewed_by = v_uid,
+      reviewed_at = now(),
+      review_note = coalesce(p_note, '')
+  where id = p_queue_id;
+
+  return true;
+end;
+$$;
+
+revoke all on function public.resolve_beer_name(text) from public;
+grant execute on function public.resolve_beer_name(text) to authenticated;
+revoke all on function public.queue_custom_beer_name(text, jsonb) from public;
+grant execute on function public.queue_custom_beer_name(text, jsonb) to authenticated;
+revoke all on function public.review_custom_beer_name(bigint, text, bigint, text) from public;
+grant execute on function public.review_custom_beer_name(bigint, text, bigint, text) to authenticated;
+
 drop trigger if exists trg_profiles_updated_at on public.profiles;
 create trigger trg_profiles_updated_at
 before update on public.profiles
@@ -137,6 +523,9 @@ alter table public.user_badges enable row level security;
 alter table public.content_reports enable row level security;
 alter table public.social_perf_events enable row level security;
 alter table public.social_perf_daily enable row level security;
+alter table public.beer_master enable row level security;
+alter table public.beer_alias enable row level security;
+alter table public.custom_beer_moderation_queue enable row level security;
 
 -- 002_profile_display_name_and_public_checkins
 alter table public.profiles add column if not exists display_name text not null default '';
@@ -543,6 +932,48 @@ drop policy if exists favorite_beers_owner_delete on public.favorite_beers;
 create policy favorite_beers_owner_delete on public.favorite_beers
 for delete using (auth.uid() = user_id);
 
+drop policy if exists beer_master_read_all on public.beer_master;
+create policy beer_master_read_all on public.beer_master
+for select using (true);
+
+drop policy if exists beer_alias_read_all on public.beer_alias;
+create policy beer_alias_read_all on public.beer_alias
+for select using (true);
+
+drop policy if exists custom_beer_queue_insert_auth on public.custom_beer_moderation_queue;
+create policy custom_beer_queue_insert_auth on public.custom_beer_moderation_queue
+for insert with check (auth.uid() = user_id);
+
+drop policy if exists custom_beer_queue_read_own_or_admin on public.custom_beer_moderation_queue;
+create policy custom_beer_queue_read_own_or_admin on public.custom_beer_moderation_queue
+for select using (
+  auth.uid() = user_id
+  or exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
+drop policy if exists custom_beer_queue_update_admin on public.custom_beer_moderation_queue;
+create policy custom_beer_queue_update_admin on public.custom_beer_moderation_queue
+for update using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+) with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
 drop policy if exists analytics_insert_auth on public.analytics_events;
 create policy analytics_insert_auth on public.analytics_events
 for insert with check (auth.uid() is not null);
@@ -710,6 +1141,15 @@ grant select, insert, update, delete on public.social_perf_daily to authenticate
 revoke all on public.user_badges from anon;
 revoke all on public.user_badges from authenticated;
 grant select, insert, update, delete on public.user_badges to authenticated;
+revoke all on public.beer_master from anon;
+revoke all on public.beer_master from authenticated;
+grant select on public.beer_master to authenticated;
+revoke all on public.beer_alias from anon;
+revoke all on public.beer_alias from authenticated;
+grant select on public.beer_alias to authenticated;
+revoke all on public.custom_beer_moderation_queue from anon;
+revoke all on public.custom_beer_moderation_queue from authenticated;
+grant insert, select, update on public.custom_beer_moderation_queue to authenticated;
 
 create or replace function public.compute_and_store_user_badges(p_user_id uuid)
 returns integer

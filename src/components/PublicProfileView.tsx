@@ -63,6 +63,12 @@ type DeletedCheckinUndo = {
   beer_name: string;
 };
 
+type BeerResolveOutcome = {
+  canonicalName: string;
+  matched: boolean;
+  queued: boolean;
+};
+
 const CHECKINS_SELECT_WITH_MEDIA =
   "id, beer_name, rating, created_at, day_period, city, district, location_text, price_try, note, media_url, media_type";
 const CHECKINS_SELECT_BASE =
@@ -102,6 +108,11 @@ function isFutureIsoDay(dayIso: string, todayIso = isoTodayLocal()) {
 function isFavoriteLimitExceededError(error: any) {
   const msg = String(error?.message || "").toLowerCase();
   return msg.includes("favorite_limit_exceeded");
+}
+
+function isMissingRpcFunctionError(error: any, fnName: string) {
+  const msg = String(error?.message || "").toLowerCase();
+  return msg.includes("function") && msg.includes(fnName.toLowerCase()) && msg.includes("does not exist");
 }
 
 export default function PublicProfileView({ username }: { username: string }) {
@@ -185,6 +196,10 @@ export default function PublicProfileView({ username }: { username: string }) {
   const beerOptions = useMemo(
     () => Array.from(new Set(checkins.map((c) => c.beer_name).filter(Boolean))).sort((a, b) => a.localeCompare(b, "tr")),
     [checkins]
+  );
+  const knownBeerNamesLower = useMemo(
+    () => new Set(beerOptions.map((name) => name.trim().toLowerCase())),
+    [beerOptions]
   );
 
   async function fetchYearCheckins(userId: string, yearValue: number) {
@@ -701,16 +716,74 @@ export default function PublicProfileView({ username }: { username: string }) {
     setFavorites((prev) => prev.filter((f) => Number(f.rank) !== rank));
   }
 
+  async function resolveBeerNameForProfileInsert(
+    rawBeer: string,
+    context: Record<string, unknown> = {}
+  ): Promise<BeerResolveOutcome> {
+    const raw = String(rawBeer || "").trim();
+    if (!raw) return { canonicalName: "", matched: false, queued: false };
+
+    const { data, error } = await supabase.rpc("resolve_beer_name", { p_input: raw });
+    if (error) {
+      if (!isMissingRpcFunctionError(error, "resolve_beer_name")) {
+        console.error("resolve_beer_name failed:", error.message);
+      }
+      return {
+        canonicalName: raw,
+        matched: knownBeerNamesLower.has(raw.toLowerCase()),
+        queued: false,
+      };
+    }
+
+    const row = Array.isArray(data)
+      ? (data[0] as { canonical_name?: string | null; matched?: boolean } | undefined)
+      : undefined;
+    const canonicalName = String(row?.canonical_name || raw).trim() || raw;
+    const matched = Boolean(row?.matched);
+
+    if (matched || !sessionUserId) {
+      return { canonicalName, matched, queued: false };
+    }
+
+    const { data: queuedId, error: queueError } = await supabase.rpc("queue_custom_beer_name", {
+      p_raw: raw,
+      p_context: {
+        source: "profile_day_modal",
+        lang,
+        ...context,
+      } as any,
+    });
+    if (queueError) {
+      if (!isMissingRpcFunctionError(queueError, "queue_custom_beer_name")) {
+        console.error("queue_custom_beer_name failed:", queueError.message);
+      }
+      return { canonicalName, matched: false, queued: false };
+    }
+
+    return {
+      canonicalName,
+      matched: false,
+      queued: queuedId !== null && queuedId !== undefined,
+    };
+  }
+
   async function addCheckinOnDay(payload: { day: string; beer_name: string; rating: number | null }) {
     if (!sessionUserId || !isOwnProfile) return;
     if (isFutureIsoDay(payload.day, isoTodayLocal())) {
       alert(tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."));
       return;
     }
+    const rawBeer = payload.beer_name.trim();
+    if (!rawBeer) return;
+    const resolved = await resolveBeerNameForProfileInsert(rawBeer, {
+      day: payload.day,
+      year,
+    });
+    const canonicalBeerName = String(resolved.canonicalName || rawBeer).trim() || rawBeer;
     const created_at = new Date(`${payload.day}T12:00:00.000Z`).toISOString();
     const { error } = await supabase.from("checkins").insert({
       user_id: sessionUserId,
-      beer_name: payload.beer_name.trim(),
+      beer_name: canonicalBeerName,
       rating: payload.rating,
       created_at,
       day_period: "evening",
@@ -723,6 +796,15 @@ export default function PublicProfileView({ username }: { username: string }) {
     setCheckins((refreshed.data as CheckinRow[] | null) ?? []);
     await supabase.rpc("refresh_my_badges");
     await loadBadgesForUser(sessionUserId);
+    if (resolved.queued) {
+      alert(
+        tx(
+          lang,
+          "Listede olmayan bira adi inceleme sirasina alindi.",
+          "Unknown beer name was sent to moderation review."
+        )
+      );
+    }
   }
 
   async function deleteCheckinOnDay(id: string) {
@@ -765,9 +847,17 @@ export default function PublicProfileView({ username }: { username: string }) {
 
   async function updateCheckinOnDay(payload: { id: string; beer_name: string; rating: number | null }) {
     if (!sessionUserId || !isOwnProfile) return;
+    const rawBeer = payload.beer_name.trim();
+    if (!rawBeer) return;
+    const resolved = await resolveBeerNameForProfileInsert(rawBeer, {
+      source: "profile_day_modal_edit",
+      checkin_id: payload.id,
+      year,
+    });
+    const canonicalBeerName = String(resolved.canonicalName || rawBeer).trim() || rawBeer;
     const { error } = await supabase
       .from("checkins")
-      .update({ beer_name: payload.beer_name.trim(), rating: payload.rating })
+      .update({ beer_name: canonicalBeerName, rating: payload.rating })
       .eq("id", payload.id)
       .eq("user_id", sessionUserId);
     if (error) {
@@ -775,10 +865,19 @@ export default function PublicProfileView({ username }: { username: string }) {
       return;
     }
     setCheckins((prev) =>
-      prev.map((c) => (c.id === payload.id ? { ...c, beer_name: payload.beer_name.trim(), rating: payload.rating } : c))
+      prev.map((c) => (c.id === payload.id ? { ...c, beer_name: canonicalBeerName, rating: payload.rating } : c))
     );
     await supabase.rpc("refresh_my_badges");
     await loadBadgesForUser(sessionUserId);
+    if (resolved.queued) {
+      alert(
+        tx(
+          lang,
+          "Listede olmayan bira adi inceleme sirasina alindi.",
+          "Unknown beer name was sent to moderation review."
+        )
+      );
+    }
   }
 
   async function deleteOwnAccount() {
