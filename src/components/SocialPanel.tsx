@@ -9,6 +9,7 @@ import WeeklyTickerBar, { type WeeklyTickerItem } from "@/components/WeeklyTicke
 import { supabase } from "@/lib/supabase";
 import { normalizeUsername, usernameFromEmail } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
+import { measurePerf, trackPerfEvent } from "@/lib/perf";
 import { favoriteBeerName } from "@/lib/beer";
 import type { AppLang } from "@/lib/i18n";
 import { tx } from "@/lib/i18n";
@@ -829,6 +830,25 @@ export default function SocialPanel({
 
   async function loadFeed(reset = true) {
     if (!reset && !feedHasMore) return;
+    const started = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const finishPerf = (ok: boolean, rowCount = 0, errorText = "") => {
+      const ended = typeof performance !== "undefined" ? performance.now() : Date.now();
+      trackPerfEvent({
+        userId,
+        metricKey: "social.feed.load",
+        durationMs: ended - started,
+        rowCount,
+        ok,
+        context: {
+          reset,
+          scope: feedScope,
+          window: feedWindow,
+          format: feedFormat,
+          minRating: feedMinRating,
+          error: errorText || undefined,
+        },
+      });
+    };
     if (reset) setFeedBusy(true);
     else setFeedLoadingMore(true);
 
@@ -846,6 +866,7 @@ export default function SocialPanel({
 
     if (checkinErr) {
       markDbError(checkinErr.message);
+      finishPerf(false, 0, checkinErr.message);
       return;
     }
 
@@ -862,6 +883,7 @@ export default function SocialPanel({
         setCommentLikedByMe({});
       }
       setFeedHasMore(false);
+      finishPerf(true, 0);
       return;
     }
 
@@ -873,6 +895,7 @@ export default function SocialPanel({
 
     if (profileErr) {
       markDbError(profileErr.message);
+      finishPerf(false, rows.length, profileErr.message);
       return;
     }
 
@@ -912,6 +935,7 @@ export default function SocialPanel({
       }, 350);
     }
     trackEvent({ eventName: "feed_loaded", userId, props: { count: rows.length, reset } });
+    finishPerf(true, rows.length);
   }
 
   async function loadCommentsForCheckins(checkinIds: string[]) {
@@ -1138,6 +1162,22 @@ export default function SocialPanel({
   }
 
   async function loadNotifications(limit = notifLimit) {
+    const started = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const finishPerf = (ok: boolean, rowCount = 0, errorText = "") => {
+      const ended = typeof performance !== "undefined" ? performance.now() : Date.now();
+      trackPerfEvent({
+        userId,
+        metricKey: "social.notifications.load",
+        durationMs: ended - started,
+        rowCount,
+        ok,
+        context: {
+          limit,
+          filter: notifFilter,
+          error: errorText || undefined,
+        },
+      });
+    };
     setNotifBusy(true);
     const { data, error } = await supabase
       .from("notifications")
@@ -1149,6 +1189,7 @@ export default function SocialPanel({
 
     if (error) {
       markDbError(error.message);
+      finishPerf(false, 0, error.message);
       return;
     }
 
@@ -1162,6 +1203,7 @@ export default function SocialPanel({
         .in("user_id", actorIds);
       if (actorErr) {
         markDbError(actorErr.message);
+        finishPerf(false, rows.length, actorErr.message);
         return;
       }
       actorById = new Map(
@@ -1184,6 +1226,7 @@ export default function SocialPanel({
     setNotifUnreadCountServer(
       viewRows.filter((n) => !n.is_read).length
     );
+    finishPerf(true, viewRows.length);
   }
 
   async function markAllNotificationsRead() {
@@ -1280,6 +1323,22 @@ export default function SocialPanel({
   }
 
   async function loadLeaderboardLegacy() {
+    const started = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const finishPerf = (ok: boolean, rowCount = 0, errorText = "") => {
+      const ended = typeof performance !== "undefined" ? performance.now() : Date.now();
+      trackPerfEvent({
+        userId,
+        metricKey: "social.leaderboard.legacy",
+        durationMs: ended - started,
+        rowCount,
+        ok,
+        context: {
+          window: leaderWindow,
+          scope: leaderScope,
+          error: errorText || undefined,
+        },
+      });
+    };
     const now = new Date();
     const start = new Date(now);
     if (leaderWindow === "7d") start.setDate(now.getDate() - 7);
@@ -1306,6 +1365,7 @@ export default function SocialPanel({
 
     if (checkinErr) {
       markDbError(checkinErr.message);
+      finishPerf(false, 0, checkinErr.message);
       return;
     }
 
@@ -1321,9 +1381,11 @@ export default function SocialPanel({
             avgRating: 0,
           },
         ]);
+        finishPerf(true, 1);
         return;
       }
       setLeaderRows([]);
+      finishPerf(true, 0);
       return;
     }
 
@@ -1346,6 +1408,7 @@ export default function SocialPanel({
 
     if (profileErr) {
       markDbError(profileErr.message);
+      finishPerf(false, rows.length, profileErr.message);
       return;
     }
 
@@ -1390,22 +1453,60 @@ export default function SocialPanel({
       userId,
       props: { scope: leaderScope, window: leaderWindow, count: result.length },
     });
+    finishPerf(true, result.length);
   }
 
   async function loadLeaderboard() {
+    const started = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const finishPerf = (ok: boolean, rowCount = 0, errorText = "", source = "rpc") => {
+      const ended = typeof performance !== "undefined" ? performance.now() : Date.now();
+      trackPerfEvent({
+        userId,
+        metricKey: "social.leaderboard.load",
+        durationMs: ended - started,
+        rowCount,
+        ok,
+        context: {
+          window: leaderWindow,
+          scope: leaderScope,
+          source,
+          error: errorText || undefined,
+        },
+      });
+    };
     setLeaderBusy(true);
-    const { data, error } = await supabase.rpc("get_social_leaderboard", {
-      p_window: leaderWindow,
-      p_scope: leaderScope,
-    });
+    let data: any = null;
+    let rpcErrorMessage = "";
+    try {
+      const rpcRes = await measurePerf(
+        "social.leaderboard.rpc",
+        async () => {
+          const res = await supabase.rpc("get_social_leaderboard", {
+            p_window: leaderWindow,
+            p_scope: leaderScope,
+          });
+          if (res.error) throw new Error(res.error.message);
+          return res;
+        },
+        {
+          userId,
+          context: { window: leaderWindow, scope: leaderScope },
+        }
+      );
+      data = rpcRes.data;
+    } catch (error: any) {
+      rpcErrorMessage = String(error?.message || "");
+    }
     setLeaderBusy(false);
 
-    if (error) {
-      if (isMissingFunctionError(error.message, "get_social_leaderboard")) {
+    if (rpcErrorMessage) {
+      if (isMissingFunctionError(rpcErrorMessage, "get_social_leaderboard")) {
         await loadLeaderboardLegacy();
+        finishPerf(true, 0, "", "legacy_fallback");
         return;
       }
-      markDbError(error.message);
+      markDbError(rpcErrorMessage);
+      finishPerf(false, 0, rpcErrorMessage);
       return;
     }
 
@@ -1432,6 +1533,7 @@ export default function SocialPanel({
       userId,
       props: { scope: leaderScope, window: leaderWindow, count: mapped.length, source: "rpc" },
     });
+    finishPerf(true, mapped.length);
   }
 
   async function loadFollowing() {
@@ -1496,6 +1598,21 @@ export default function SocialPanel({
   }
 
   async function loadAll() {
+    const started = typeof performance !== "undefined" ? performance.now() : Date.now();
+    let hasError = false;
+    let firstError = "";
+    const finishPerf = (ok: boolean, errorText = "") => {
+      const ended = typeof performance !== "undefined" ? performance.now() : Date.now();
+      trackPerfEvent({
+        userId,
+        metricKey: "social.panel.bootstrap",
+        durationMs: ended - started,
+        ok,
+        context: {
+          error: errorText || undefined,
+        },
+      });
+    };
     setLoading(true);
     setDbError(null);
     setNotifLoaded(false);
@@ -1504,6 +1621,7 @@ export default function SocialPanel({
     const ensured = await reserveProfile();
     if (!ensured) {
       setLoading(false);
+      finishPerf(false, "reserve_profile_failed");
       return;
     }
 
@@ -1529,6 +1647,8 @@ export default function SocialPanel({
 
     if (favoritesRes.error) {
       markDbError(favoritesRes.error.message);
+      hasError = true;
+      if (!firstError) firstError = favoritesRes.error.message;
     } else {
       const normalized = ((favoritesRes.data as FavoriteBeerRow[] | null) ?? []).map((f) => ({
         ...f,
@@ -1539,6 +1659,8 @@ export default function SocialPanel({
 
     if (checkinsRes.error) {
       markDbError(checkinsRes.error.message);
+      hasError = true;
+      if (!firstError) firstError = checkinsRes.error.message;
     } else {
       setCheckins((checkinsRes.data as CheckinRow[] | null) ?? []);
     }
@@ -1554,6 +1676,7 @@ export default function SocialPanel({
     if (notifPanelOpen) {
       void loadNotifications(notifLimit);
     }
+    finishPerf(!hasError, firstError);
   }
 
   async function loadServerPreferences() {
@@ -1802,6 +1925,12 @@ export default function SocialPanel({
         async (payload) => {
           const row = payload.new as FeedCheckinRow;
           if (!row?.id) return;
+          trackPerfEvent({
+            userId,
+            metricKey: "social.realtime.event",
+            rowCount: 1,
+            context: { table: "checkins", event: "INSERT" },
+          });
           let profileRef = followingNameRef.current.get(row.user_id);
           if (!profileRef) {
             const { data: p } = await supabase
@@ -1836,6 +1965,12 @@ export default function SocialPanel({
         async (payload) => {
           const row = payload.new as FeedCheckinRow;
           if (!row?.id) return;
+          trackPerfEvent({
+            userId,
+            metricKey: "social.realtime.event",
+            rowCount: 1,
+            context: { table: "checkins", event: "UPDATE" },
+          });
           let profileRef = followingNameRef.current.get(row.user_id);
           if (!profileRef) {
             const { data: p } = await supabase
@@ -1870,6 +2005,12 @@ export default function SocialPanel({
         (payload) => {
           const oldRow = payload.old as { id?: string; user_id?: string };
           if (!oldRow?.id) return;
+          trackPerfEvent({
+            userId,
+            metricKey: "social.realtime.event",
+            rowCount: 1,
+            context: { table: "checkins", event: "DELETE" },
+          });
           setFeedItems((prev) => prev.filter((x) => x.id !== oldRow.id));
           scheduleLeaderboardRefresh();
           scheduleWeeklyHighlightsRefresh();
@@ -1879,6 +2020,12 @@ export default function SocialPanel({
         "postgres_changes",
         { event: "*", schema: "public", table: "checkin_comment_likes" },
         (payload) => {
+          trackPerfEvent({
+            userId,
+            metricKey: "social.realtime.event",
+            rowCount: 1,
+            context: { table: "checkin_comment_likes", event: String((payload as any)?.eventType || "").toUpperCase() || "*" },
+          });
           const eventType = String((payload as any)?.eventType || "").toUpperCase();
           const nextRow = ((payload as any)?.new || {}) as CommentLikeRow;
           const prevRow = ((payload as any)?.old || {}) as CommentLikeRow;
@@ -1906,6 +2053,12 @@ export default function SocialPanel({
         "postgres_changes",
         { event: "*", schema: "public", table: "checkin_likes" },
         (payload) => {
+          trackPerfEvent({
+            userId,
+            metricKey: "social.realtime.event",
+            rowCount: 1,
+            context: { table: "checkin_likes", event: String((payload as any)?.eventType || "").toUpperCase() || "*" },
+          });
           const eventType = String((payload as any)?.eventType || "").toUpperCase();
           const nextRow = ((payload as any)?.new || {}) as CheckinLikeRow;
           const prevRow = ((payload as any)?.old || {}) as CheckinLikeRow;
@@ -1940,6 +2093,12 @@ export default function SocialPanel({
           filter: `user_id=eq.${userId}`,
         },
         () => {
+          trackPerfEvent({
+            userId,
+            metricKey: "social.realtime.event",
+            rowCount: 1,
+            context: { table: "notifications", event: "*" },
+          });
           void loadNotificationUnreadCount();
           if (notifPanelOpenRef.current) void loadNotifications();
         }
@@ -1953,6 +2112,12 @@ export default function SocialPanel({
           filter: `follower_id=eq.${userId}`,
         },
         () => {
+          trackPerfEvent({
+            userId,
+            metricKey: "social.realtime.event",
+            rowCount: 1,
+            context: { table: "follows", event: "*", side: "follower" },
+          });
           void loadFollowing();
         }
       )
@@ -1965,6 +2130,12 @@ export default function SocialPanel({
           filter: `following_id=eq.${userId}`,
         },
         () => {
+          trackPerfEvent({
+            userId,
+            metricKey: "social.realtime.event",
+            rowCount: 1,
+            context: { table: "follows", event: "*", side: "following" },
+          });
           void loadFollowing();
         }
       )
@@ -1972,6 +2143,12 @@ export default function SocialPanel({
         "postgres_changes",
         { event: "*", schema: "public", table: "checkin_comments" },
         (payload) => {
+          trackPerfEvent({
+            userId,
+            metricKey: "social.realtime.event",
+            rowCount: 1,
+            context: { table: "checkin_comments", event: String((payload as any)?.eventType || "").toUpperCase() || "*" },
+          });
           const nextRow = ((payload as any)?.new || {}) as { checkin_id?: string };
           const prevRow = ((payload as any)?.old || {}) as { checkin_id?: string };
           const checkinId = String(nextRow.checkin_id || prevRow.checkin_id || "");
@@ -2224,11 +2401,40 @@ export default function SocialPanel({
   }
 
   async function loadDiscoverProfiles() {
+    const started = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const finishPerf = (ok: boolean, rowCount = 0, errorText = "", source = "rpc") => {
+      const ended = typeof performance !== "undefined" ? performance.now() : Date.now();
+      trackPerfEvent({
+        userId,
+        metricKey: "social.discover.load",
+        durationMs: ended - started,
+        rowCount,
+        ok,
+        context: {
+          source,
+          error: errorText || undefined,
+        },
+      });
+    };
     setDiscoverBusy(true);
-    const { data: rpcRows, error: rpcErr } = await supabase.rpc("get_discover_profiles", {
-      p_limit: 12,
-    });
-    if (!rpcErr) {
+    let rpcRows: DiscoverRpcRow[] | null = null;
+    let rpcErrorMessage = "";
+    try {
+      const rpcRes = await measurePerf(
+        "social.discover.rpc",
+        async () => {
+          const res = await supabase.rpc("get_discover_profiles", { p_limit: 12 });
+          if (res.error) throw new Error(res.error.message);
+          return res;
+        },
+        { userId, context: { limit: 12 } }
+      );
+      rpcRows = (rpcRes.data as DiscoverRpcRow[] | null) ?? [];
+    } catch (error: any) {
+      rpcErrorMessage = String(error?.message || "");
+    }
+
+    if (!rpcErrorMessage) {
       const mapped = ((rpcRows as DiscoverRpcRow[] | null) ?? []).map((row) => ({
         user_id: row.user_id,
         username: row.username,
@@ -2240,11 +2446,13 @@ export default function SocialPanel({
       }));
       setDiscoverProfiles(mapped);
       setDiscoverBusy(false);
+      finishPerf(true, mapped.length);
       return;
     }
-    if (!isMissingFunctionError(rpcErr.message, "get_discover_profiles")) {
+    if (!isMissingFunctionError(rpcErrorMessage, "get_discover_profiles")) {
       setDiscoverBusy(false);
-      markDbError(rpcErr.message);
+      markDbError(rpcErrorMessage);
+      finishPerf(false, 0, rpcErrorMessage);
       return;
     }
 
@@ -2259,6 +2467,7 @@ export default function SocialPanel({
     if (profileErr) {
       setDiscoverBusy(false);
       markDbError(profileErr.message);
+      finishPerf(false, 0, profileErr.message, "legacy");
       return;
     }
 
@@ -2266,6 +2475,7 @@ export default function SocialPanel({
     if (!base.length) {
       setDiscoverProfiles([]);
       setDiscoverBusy(false);
+      finishPerf(true, 0, "", "legacy");
       return;
     }
 
@@ -2279,10 +2489,12 @@ export default function SocialPanel({
 
     if (followerErr) {
       markDbError(followerErr.message);
+      finishPerf(false, base.length, followerErr.message, "legacy");
       return;
     }
     if (logErr) {
       markDbError(logErr.message);
+      finishPerf(false, base.length, logErr.message, "legacy");
       return;
     }
 
@@ -2314,6 +2526,7 @@ export default function SocialPanel({
       .slice(0, 12);
 
     setDiscoverProfiles(enriched);
+    finishPerf(true, enriched.length, "", "legacy");
   }
 
   async function follow(target: SearchProfile) {

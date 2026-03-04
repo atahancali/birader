@@ -58,6 +58,32 @@ create table if not exists public.content_reports (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.social_perf_events (
+  id bigserial primary key,
+  user_id uuid null references auth.users(id) on delete set null,
+  metric_key text not null,
+  duration_ms integer,
+  row_count integer,
+  ok boolean not null default true,
+  source text not null default 'web',
+  context jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.social_perf_daily (
+  snapshot_date date not null default current_date,
+  metric_key text not null,
+  total_calls int not null default 0,
+  failed_calls int not null default 0,
+  fail_rate_pct numeric(6,2),
+  avg_ms numeric(10,2),
+  p95_ms numeric(10,2),
+  max_ms int,
+  unique_users int not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (snapshot_date, metric_key)
+);
+
 create table if not exists public.user_badges (
   user_id uuid not null references auth.users(id) on delete cascade,
   badge_key text not null,
@@ -76,6 +102,11 @@ create index if not exists idx_follows_following on public.follows (following_id
 create index if not exists idx_analytics_events_name_time on public.analytics_events (event_name, created_at desc);
 create index if not exists idx_analytics_events_user_time on public.analytics_events (user_id, created_at desc);
 create index if not exists idx_product_suggestions_created_at on public.product_suggestions (created_at desc);
+create index if not exists idx_social_perf_events_metric_time on public.social_perf_events (metric_key, created_at desc);
+create index if not exists idx_social_perf_events_user_time on public.social_perf_events (user_id, created_at desc);
+create index if not exists idx_social_perf_events_time on public.social_perf_events (created_at desc);
+create index if not exists idx_social_perf_daily_snapshot on public.social_perf_daily (snapshot_date desc);
+create index if not exists idx_social_perf_daily_metric on public.social_perf_daily (metric_key, snapshot_date desc);
 create index if not exists idx_user_badges_user_score on public.user_badges (user_id, score desc, computed_at desc);
 
 create or replace function public.set_updated_at()
@@ -100,6 +131,8 @@ alter table public.analytics_events enable row level security;
 alter table public.product_suggestions enable row level security;
 alter table public.user_badges enable row level security;
 alter table public.content_reports enable row level security;
+alter table public.social_perf_events enable row level security;
+alter table public.social_perf_daily enable row level security;
 
 -- 002_profile_display_name_and_public_checkins
 alter table public.profiles add column if not exists display_name text not null default '';
@@ -345,6 +378,54 @@ for update using (
   )
 );
 
+drop policy if exists social_perf_events_insert_auth on public.social_perf_events;
+create policy social_perf_events_insert_auth on public.social_perf_events
+for insert with check (
+  auth.uid() is not null
+  and (user_id is null or auth.uid() = user_id)
+);
+
+drop policy if exists social_perf_events_read_owner_or_admin on public.social_perf_events;
+create policy social_perf_events_read_owner_or_admin on public.social_perf_events
+for select using (
+  auth.uid() = user_id
+  or exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
+drop policy if exists social_perf_daily_admin_read on public.social_perf_daily;
+create policy social_perf_daily_admin_read on public.social_perf_daily
+for select using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
+drop policy if exists social_perf_daily_admin_write on public.social_perf_daily;
+create policy social_perf_daily_admin_write on public.social_perf_daily
+for all using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+) with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
 drop policy if exists user_badges_read_public_or_owner on public.user_badges;
 create policy user_badges_read_public_or_owner on public.user_badges
 for select using (
@@ -384,6 +465,12 @@ grant insert, select, update on public.product_suggestions to authenticated;
 revoke all on public.content_reports from anon;
 revoke all on public.content_reports from authenticated;
 grant insert, select, update on public.content_reports to authenticated;
+revoke all on public.social_perf_events from anon;
+revoke all on public.social_perf_events from authenticated;
+grant insert, select on public.social_perf_events to authenticated;
+revoke all on public.social_perf_daily from anon;
+revoke all on public.social_perf_daily from authenticated;
+grant select, insert, update, delete on public.social_perf_daily to authenticated;
 revoke all on public.user_badges from anon;
 revoke all on public.user_badges from authenticated;
 grant select, insert, update, delete on public.user_badges to authenticated;
@@ -1873,6 +1960,144 @@ revoke all on function public.crm_at_risk_users(int, int) from public;
 grant execute on function public.latest_user_daily_metrics() to authenticated;
 grant execute on function public.crm_at_risk_users(int, int) to authenticated;
 
+drop view if exists public.social_perf_overview_24h;
+create view public.social_perf_overview_24h as
+select
+  e.metric_key,
+  count(*)::int as total_calls,
+  count(*) filter (where e.ok = false)::int as failed_calls,
+  round((count(*) filter (where e.ok = false)::numeric / nullif(count(*), 0)) * 100, 2) as fail_rate_pct,
+  round(avg(e.duration_ms)::numeric, 2) as avg_ms,
+  round(percentile_cont(0.95) within group (order by e.duration_ms)::numeric, 2) as p95_ms,
+  max(e.duration_ms) as max_ms,
+  count(distinct e.user_id)::int as unique_users,
+  max(e.created_at) as last_seen_at
+from public.social_perf_events e
+where e.created_at >= now() - interval '24 hours'
+group by e.metric_key
+order by p95_ms desc nulls last, total_calls desc;
+
+create or replace function public.social_perf_hourly(
+  p_hours int default 24,
+  p_metric_key text default null
+)
+returns table(
+  bucket timestamptz,
+  metric_key text,
+  total_calls int,
+  failed_calls int,
+  avg_ms numeric(10,2),
+  p95_ms numeric(10,2),
+  max_ms int
+)
+language sql
+stable
+as $$
+  select
+    date_trunc('hour', e.created_at) as bucket,
+    e.metric_key,
+    count(*)::int as total_calls,
+    count(*) filter (where e.ok = false)::int as failed_calls,
+    round(avg(e.duration_ms)::numeric, 2) as avg_ms,
+    round(percentile_cont(0.95) within group (order by e.duration_ms)::numeric, 2) as p95_ms,
+    max(e.duration_ms) as max_ms
+  from public.social_perf_events e
+  where e.created_at >= now() - make_interval(hours => greatest(coalesce(p_hours, 24), 1))
+    and (p_metric_key is null or e.metric_key = p_metric_key)
+  group by 1, 2
+  order by 1 desc, 2 asc;
+$$;
+
+create or replace function public.refresh_social_perf_daily(p_snapshot_date date default current_date)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+begin
+  if auth.uid() is not null and not exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  ) then
+    raise exception 'not allowed';
+  end if;
+
+  insert into public.social_perf_daily (
+    snapshot_date,
+    metric_key,
+    total_calls,
+    failed_calls,
+    fail_rate_pct,
+    avg_ms,
+    p95_ms,
+    max_ms,
+    unique_users,
+    updated_at
+  )
+  select
+    p_snapshot_date as snapshot_date,
+    e.metric_key,
+    count(*)::int as total_calls,
+    count(*) filter (where e.ok = false)::int as failed_calls,
+    round((count(*) filter (where e.ok = false)::numeric / nullif(count(*), 0)) * 100, 2) as fail_rate_pct,
+    round(avg(e.duration_ms)::numeric, 2) as avg_ms,
+    round(percentile_cont(0.95) within group (order by e.duration_ms)::numeric, 2) as p95_ms,
+    max(e.duration_ms) as max_ms,
+    count(distinct e.user_id)::int as unique_users,
+    now() as updated_at
+  from public.social_perf_events e
+  where timezone('Europe/Istanbul', e.created_at)::date = p_snapshot_date
+  group by e.metric_key
+  on conflict (snapshot_date, metric_key) do update set
+    total_calls = excluded.total_calls,
+    failed_calls = excluded.failed_calls,
+    fail_rate_pct = excluded.fail_rate_pct,
+    avg_ms = excluded.avg_ms,
+    p95_ms = excluded.p95_ms,
+    max_ms = excluded.max_ms,
+    unique_users = excluded.unique_users,
+    updated_at = now();
+
+  return (
+    select count(*)::int
+    from public.social_perf_daily d
+    where d.snapshot_date = p_snapshot_date
+  );
+end;
+$$;
+
+revoke all on public.social_perf_overview_24h from anon;
+revoke all on public.social_perf_overview_24h from authenticated;
+grant select on public.social_perf_overview_24h to authenticated;
+revoke all on function public.social_perf_hourly(int, text) from public;
+grant execute on function public.social_perf_hourly(int, text) to authenticated;
+revoke all on function public.refresh_social_perf_daily(date) from public;
+grant execute on function public.refresh_social_perf_daily(date) to authenticated;
+
+do $do$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    begin
+      perform cron.unschedule(jobid) from cron.job where jobname = 'birader_refresh_social_perf_daily';
+    exception when others then
+      null;
+    end;
+    perform cron.schedule(
+      'birader_refresh_social_perf_daily',
+      '35 3 * * *',
+      'select public.refresh_social_perf_daily(current_date);'
+    );
+  end if;
+exception when others then
+  null;
+end;
+$do$;
+
+select public.refresh_social_perf_daily(current_date);
+
 create or replace function public.get_discover_profiles(p_limit int default 12)
 returns table(
   user_id uuid,
@@ -1932,6 +2157,7 @@ begin
   delete from public.favorite_beers where user_id = v_uid;
   delete from public.user_badges where user_id = v_uid;
   delete from public.analytics_events where user_id = v_uid;
+  delete from public.social_perf_events where user_id = v_uid;
   delete from public.product_suggestions where user_id = v_uid;
   delete from public.content_reports where reporter_id = v_uid or target_user_id = v_uid;
   delete from public.app_action_logs where user_id = v_uid;
@@ -1957,6 +2183,8 @@ select
   to_regclass('public.follows') as follows_table,
   to_regclass('public.favorite_beers') as favorite_beers_table,
   to_regclass('public.analytics_events') as analytics_events_table,
+  to_regclass('public.social_perf_events') as social_perf_events_table,
+  to_regclass('public.social_perf_daily') as social_perf_daily_table,
   to_regclass('public.checkins') as checkins_table,
   to_regclass('public.product_suggestions') as product_suggestions_table,
   to_regclass('public.user_badges') as user_badges_table,
@@ -1968,5 +2196,6 @@ select
   to_regclass('public.profile_identity_history') as profile_identity_history_table,
   to_regclass('public.app_action_logs') as app_action_logs_table,
   to_regclass('public.user_daily_metrics') as user_daily_metrics_table,
+  to_regclass('public.social_perf_overview_24h') as social_perf_overview_24h_view,
   to_regclass('public.growth_weekly_overview') as growth_weekly_overview_view,
   to_regclass('public.retention_cohort_weekly') as retention_cohort_weekly_view;
