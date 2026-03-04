@@ -244,10 +244,17 @@ alter table public.checkins
 add constraint checkins_day_period_check check (day_period is null or day_period in ('morning', 'afternoon', 'evening', 'night'));
 
 create index if not exists idx_checkins_city_district on public.checkins (city, district);
+create index if not exists idx_checkins_city_created_at on public.checkins (city, created_at desc);
 create index if not exists idx_checkins_location_text on public.checkins (location_text);
 create index if not exists idx_checkins_geo on public.checkins (latitude, longitude);
 create index if not exists idx_checkins_created_at on public.checkins (created_at desc);
 create index if not exists idx_checkins_user_created_at on public.checkins (user_id, created_at desc);
+create index if not exists idx_checkins_created_at_rating
+  on public.checkins (created_at desc, rating)
+  where rating is not null;
+create extension if not exists pg_trgm;
+create index if not exists idx_checkins_beer_name_trgm
+  on public.checkins using gin (beer_name gin_trgm_ops);
 
 -- refresh checks / constraints
 alter table public.favorite_beers drop constraint if exists favorite_beers_rank_check;

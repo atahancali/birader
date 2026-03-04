@@ -554,6 +554,7 @@ export default function SocialPanel({
   const commentToCheckinIdRef = useRef<Map<number, string>>(new Map());
   const leaderboardReloadRef = useRef<(() => Promise<void>) | null>(null);
   const feedIdsRef = useRef<string[]>([]);
+  const feedFilterSigRef = useRef("");
   const feedLoadMoreRef = useRef<HTMLDivElement | null>(null);
   const weeklyRefreshTimerRef = useRef<number | null>(null);
   const leaderboardRefreshTimerRef = useRef<number | null>(null);
@@ -852,14 +853,70 @@ export default function SocialPanel({
     if (reset) setFeedBusy(true);
     else setFeedLoadingMore(true);
 
+    let scopeUserIds: string[] | null = null;
+    if (feedScope === "following") {
+      const seed = Array.from(followingIdsRef.current);
+      if (!seed.includes(userId)) seed.push(userId);
+      if (seed.length <= 1) {
+        const { data: followRows, error: followErr } = await supabase
+          .from("follows")
+          .select("following_id")
+          .eq("follower_id", userId);
+        if (followErr) {
+          if (reset) setFeedBusy(false);
+          else setFeedLoadingMore(false);
+          markDbError(followErr.message);
+          finishPerf(false, 0, followErr.message);
+          return;
+        }
+        const fetched = ((followRows as FollowRow[] | null) ?? []).map((x) => x.following_id);
+        scopeUserIds = Array.from(new Set([userId, ...fetched]));
+      } else {
+        scopeUserIds = seed;
+      }
+
+      if (!scopeUserIds.length) {
+        if (reset) {
+          setFeedItems([]);
+          setFeedCommentsByCheckin({});
+          setCommentPanelOpenByCheckin({});
+          setCommentPanelLoadingByCheckin({});
+          setCheckinLikeCountById({});
+          setCheckinLikedByMe({});
+          setCommentLikeCountById({});
+          setCommentLikedByMe({});
+        }
+        if (reset) setFeedBusy(false);
+        else setFeedLoadingMore(false);
+        setFeedHasMore(false);
+        finishPerf(true, 0);
+        return;
+      }
+    }
+
+    const lookbackHours = feedWindow === "24h" ? 24 : feedWindow === "7d" ? 24 * 7 : 0;
+    const windowStartIso = lookbackHours > 0 ? new Date(Date.now() - lookbackHours * 60 * 60 * 1000).toISOString() : "";
+
     let query = supabase
       .from("checkins")
       .select("id, user_id, beer_name, rating, created_at, city, district")
       .order("created_at", { ascending: false })
       .limit(FEED_PAGE_SIZE);
+
+    if (scopeUserIds) query = query.in("user_id", scopeUserIds);
+    if (windowStartIso) query = query.gte("created_at", windowStartIso);
+    if (feedMinRating > 0) query = query.gte("rating", feedMinRating);
+    if (feedOnlyMyCity && primaryCity) query = query.eq("city", primaryCity);
+    if (feedFormat === "draft") {
+      query = query.ilike("beer_name", "%— Fici —%");
+    } else if (feedFormat === "bottle") {
+      query = query.or("beer_name.ilike.%— Şişe/Kutu —%,beer_name.ilike.%— Sise/Kutu —%");
+    }
+
     if (!reset && feedCursorCreatedAt) {
       query = query.lt("created_at", feedCursorCreatedAt);
     }
+
     const { data: checkinRows, error: checkinErr } = await query;
     if (reset) setFeedBusy(false);
     else setFeedLoadingMore(false);
@@ -1668,6 +1725,15 @@ export default function SocialPanel({
     setLoading(false);
 
     void loadFollowing();
+    feedFilterSigRef.current = [
+      feedScope,
+      feedWindow,
+      feedFormat,
+      String(feedMinRating),
+      feedOnlyMyCity ? "1" : "0",
+      feedOnlyMyCity ? primaryCity.toLowerCase() : "",
+      feedScope === "following" ? Array.from(followingIdsRef.current).sort().join(",") : "",
+    ].join("|");
     void loadFeed(true);
     void loadOwnRecentCheckins();
     void loadPendingInvites();
@@ -1784,6 +1850,24 @@ export default function SocialPanel({
       })
     );
   }, [feedFormat, feedMinRating, feedOnlyMyCity, feedScope, feedWindow, userId]);
+
+  useEffect(() => {
+    if (loading) return;
+    const followingSig = feedScope === "following" ? Array.from(followingIds).sort().join(",") : "";
+    const signature = [
+      feedScope,
+      feedWindow,
+      feedFormat,
+      String(feedMinRating),
+      feedOnlyMyCity ? "1" : "0",
+      feedOnlyMyCity ? primaryCity.toLowerCase() : "",
+      followingSig,
+    ].join("|");
+    if (feedFilterSigRef.current === signature) return;
+    feedFilterSigRef.current = signature;
+    void loadFeed(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, feedFormat, feedMinRating, feedOnlyMyCity, feedScope, feedWindow, followingIds, primaryCity]);
 
   useEffect(() => {
     if (!profile?.user_id) return;
