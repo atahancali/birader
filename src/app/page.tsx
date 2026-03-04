@@ -307,8 +307,9 @@ function beerStyleLabel(b: BeerItem) {
 }
 
 function inferFormatFromBeerName(label: string): BeerItem["format"] {
-  if (label.includes("— Fici —")) return "Fici";
-  if (label.includes("— Şişe/Kutu —")) return "Şişe/Kutu";
+  const normalized = String(label || "").toLowerCase();
+  if (normalized.includes("— fici")) return "Fici";
+  if (normalized.includes("— şişe/kutu") || normalized.includes("— sise/kutu")) return "Şişe/Kutu";
   return "Fici";
 }
 
@@ -1538,8 +1539,9 @@ export default function Home() {
 
     for (const c of checkins) {
       const name = c.beer_name || "";
-      if (name.includes("— Fici —")) countsF[name] = (countsF[name] || 0) + 1;
-      if (name.includes("— Şişe/Kutu —")) countsS[name] = (countsS[name] || 0) + 1;
+      const inferred = inferFormatFromBeerName(name);
+      if (inferred === "Fici") countsF[name] = (countsF[name] || 0) + 1;
+      if (inferred === "Şişe/Kutu") countsS[name] = (countsS[name] || 0) + 1;
     }
 
     const topN = (m: Record<string, number>, n = 6) =>
@@ -2137,8 +2139,7 @@ export default function Home() {
     const incomingBeer = payload.beerName?.trim();
     if (!incomingBeer) return;
 
-    if (incomingBeer.includes("— Fici —")) setFormat("Fici");
-    else if (incomingBeer.includes("— Şişe/Kutu —")) setFormat("Şişe/Kutu");
+    setFormat(inferFormatFromBeerName(incomingBeer));
     setFormatConfirmed(true);
 
     setBeerName(incomingBeer);

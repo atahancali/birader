@@ -34,7 +34,7 @@ Hedef: log akisinda duplicate, veri tutarliligi ve geri alma senaryolarini kapat
 - [x] `#16` Log silme icin soft-delete + undo (`L`, `done`)
 - [x] `#17` Bira katalog normalize (`beer_master`, `beer_alias`) (`L`, `done`)
 - [x] `#18` Custom beer adlarini moderasyon kuyruguna dusurme (`M`, `done`)
-- [ ] `#19` Format/olcu/marka alanlarini normalize kolonlara tasima (`M`, `todo`)
+- [x] `#19` Format/olcu/marka alanlarini normalize kolonlara tasima (`M`, `done`)
 - [x] `#20` Favori bira 3 limitini DB trigger ile kesinlestirme (`S`, `done`)
 
 ## Sprint 3 (Heatmap/Grid + Geo UX)
@@ -96,7 +96,7 @@ Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 - [ ] `#50` Admin panelde growth + perf + moderation KPI tek ekran (`L`, `todo`)
 
 ## Yurutme Notu
-- Aktif sprint: `Sprint 2`
-- Aktif paket: `#19`
+- Aktif sprint: `Sprint 3`
+- Aktif paket: `#21 + #22`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.

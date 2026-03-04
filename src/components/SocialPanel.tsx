@@ -227,6 +227,13 @@ function ratio(a: number, b: number) {
   return Math.max(0, Math.min(1, a / b));
 }
 
+function inferBeerFormatFromName(name: string): "draft" | "bottle" | "unknown" {
+  const normalized = String(name || "").toLowerCase();
+  if (normalized.includes("— fici")) return "draft";
+  if (normalized.includes("— şişe/kutu") || normalized.includes("— sise/kutu")) return "bottle";
+  return "unknown";
+}
+
 function badgeProgress(checkins: CheckinRow[]) {
   const total = checkins.length;
   const weekdaySat = checkins.filter((c) => new Date(c.created_at).getDay() === 6).length;
@@ -235,9 +242,8 @@ function badgeProgress(checkins: CheckinRow[]) {
     const h = new Date(c.created_at).getHours();
     return Number.isFinite(h) && (h >= 22 || h < 4);
   }).length;
-  const draftLogs = checkins.filter((c) => c.beer_name.includes("— Fici —")).length;
-  const bottleLogs = checkins.filter((c) => c.beer_name.includes("— Şişe/Kutu —") || c.beer_name.includes("— Sise/Kutu —"))
-    .length;
+  const draftLogs = checkins.filter((c) => inferBeerFormatFromName(c.beer_name) === "draft").length;
+  const bottleLogs = checkins.filter((c) => inferBeerFormatFromName(c.beer_name) === "bottle").length;
   const uniqueCities = new Set(checkins.map((c) => String(c.city || "").trim()).filter(Boolean)).size;
   const spotMap = new Map<string, number>();
   for (const c of checkins) {
@@ -625,12 +631,8 @@ export default function SocialPanel({
         const city = String(item.city || "").trim().toLowerCase();
         if (!city || city !== primaryCity.toLowerCase()) return false;
       }
-      if (feedFormat === "draft" && !item.beer_name.includes("— Fici —")) return false;
-      if (
-        feedFormat === "bottle" &&
-        !item.beer_name.includes("— Şişe/Kutu —") &&
-        !item.beer_name.includes("— Sise/Kutu —")
-      ) {
+      if (feedFormat === "draft" && inferBeerFormatFromName(item.beer_name) !== "draft") return false;
+      if (feedFormat === "bottle" && inferBeerFormatFromName(item.beer_name) !== "bottle") {
         return false;
       }
       if (feedMinRating > 0 && (item.rating === null || Number(item.rating) < feedMinRating)) return false;
@@ -937,9 +939,9 @@ export default function SocialPanel({
     if (feedMinRating > 0) query = query.gte("rating", feedMinRating);
     if (feedOnlyMyCity && primaryCity) query = query.eq("city", primaryCity);
     if (feedFormat === "draft") {
-      query = query.ilike("beer_name", "%— Fici —%");
+      query = query.ilike("beer_name", "%— Fici%");
     } else if (feedFormat === "bottle") {
-      query = query.or("beer_name.ilike.%— Şişe/Kutu —%,beer_name.ilike.%— Sise/Kutu —%");
+      query = query.or("beer_name.ilike.%— Şişe/Kutu%,beer_name.ilike.%— Sise/Kutu%");
     }
 
     if (!reset && feedCursorCreatedAt) {

@@ -100,10 +100,15 @@ create table if not exists public.user_badges (
 create table if not exists public.beer_master (
   id bigserial primary key,
   canonical_name text not null unique,
+  brand text not null default '',
+  serving_format text not null default '',
+  volume_ml integer,
   is_active boolean not null default true,
   created_by uuid null references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
-  constraint beer_master_canonical_name_non_empty check (length(trim(canonical_name)) > 0)
+  constraint beer_master_canonical_name_non_empty check (length(trim(canonical_name)) > 0),
+  constraint beer_master_serving_format_check check (serving_format in ('', 'Fici', 'Şişe/Kutu')),
+  constraint beer_master_volume_ml_check check (volume_ml is null or volume_ml > 0)
 );
 
 create table if not exists public.beer_alias (
@@ -132,9 +137,89 @@ create table if not exists public.custom_beer_moderation_queue (
   constraint custom_beer_queue_raw_non_empty check (length(trim(raw_input)) > 0)
 );
 
+create or replace function public.parse_beer_label_parts(p_label text)
+returns table(
+  brand text,
+  serving_format text,
+  volume_ml integer
+)
+language plpgsql
+stable
+set search_path = public
+as $$
+declare
+  v_raw text := nullif(trim(coalesce(p_label, '')), '');
+  v_parts text[];
+  v_brand text := '';
+  v_format text := '';
+  v_ml integer := null;
+  v_ml_text text := '';
+begin
+  if v_raw is null then
+    return query select ''::text, ''::text, null::integer;
+    return;
+  end if;
+
+  v_parts := regexp_split_to_array(v_raw, '\s*—\s*');
+  if array_length(v_parts, 1) >= 1 then
+    v_brand := coalesce(trim(v_parts[1]), '');
+  end if;
+  if array_length(v_parts, 1) >= 2 and trim(v_parts[2]) in ('Fici', 'Şişe/Kutu') then
+    v_format := trim(v_parts[2]);
+  end if;
+  if array_length(v_parts, 1) >= 3 then
+    v_ml_text := nullif(regexp_replace(lower(v_parts[3]), '[^0-9]', '', 'g'), '');
+  end if;
+
+  if v_format = '' then
+    if lower(v_raw) like '%— fici%' then
+      v_format := 'Fici';
+    elsif lower(v_raw) like '%— şişe/kutu%' or lower(v_raw) like '%— sise/kutu%' then
+      v_format := 'Şişe/Kutu';
+    end if;
+  end if;
+
+  if v_ml_text = '' then
+    v_ml_text := nullif(regexp_replace(lower(v_raw), '.*?([0-9]{2,4})\s*ml.*', '\1', 'g'), lower(v_raw));
+    if v_ml_text = lower(v_raw) then
+      v_ml_text := '';
+    end if;
+    v_ml_text := nullif(regexp_replace(coalesce(v_ml_text, ''), '[^0-9]', '', 'g'), '');
+  end if;
+
+  if v_ml_text is not null then
+    begin
+      v_ml := v_ml_text::integer;
+      if v_ml <= 0 then v_ml := null; end if;
+    exception
+      when others then
+        v_ml := null;
+    end;
+  end if;
+
+  if v_brand = '' then
+    v_brand := v_raw;
+  end if;
+
+  return query select v_brand, v_format, v_ml;
+end;
+$$;
+
+alter table public.beer_master add column if not exists brand text not null default '';
+alter table public.beer_master add column if not exists serving_format text not null default '';
+alter table public.beer_master add column if not exists volume_ml integer;
+alter table public.beer_master drop constraint if exists beer_master_serving_format_check;
+alter table public.beer_master
+add constraint beer_master_serving_format_check check (serving_format in ('', 'Fici', 'Şişe/Kutu'));
+alter table public.beer_master drop constraint if exists beer_master_volume_ml_check;
+alter table public.beer_master
+add constraint beer_master_volume_ml_check check (volume_ml is null or volume_ml > 0);
+
 create unique index if not exists idx_beer_master_canonical_lower on public.beer_master (lower(canonical_name));
 create unique index if not exists idx_beer_alias_name_lower on public.beer_alias (lower(alias_name));
 create index if not exists idx_beer_alias_master on public.beer_alias (master_id);
+create index if not exists idx_beer_master_brand on public.beer_master (brand);
+create index if not exists idx_beer_master_serving_format on public.beer_master (serving_format);
 create index if not exists idx_custom_beer_queue_status_created_at on public.custom_beer_moderation_queue (status, created_at desc);
 create index if not exists idx_custom_beer_queue_normalized on public.custom_beer_moderation_queue (normalized_input);
 create unique index if not exists idx_custom_beer_queue_user_pending_unique
@@ -245,6 +330,24 @@ where nullif(trim(f.beer_name), '') is not null
     from public.beer_master bm
     where lower(bm.canonical_name) = lower(trim(f.beer_name))
   );
+
+with parsed as (
+  select
+    bm.id,
+    p.brand as parsed_brand,
+    p.serving_format as parsed_format,
+    p.volume_ml as parsed_volume
+  from public.beer_master bm
+  left join lateral public.parse_beer_label_parts(bm.canonical_name) p on true
+)
+update public.beer_master bm
+set
+  canonical_name = trim(bm.canonical_name),
+  brand = coalesce(nullif(trim(bm.brand), ''), parsed.parsed_brand, trim(bm.canonical_name)),
+  serving_format = coalesce(nullif(trim(bm.serving_format), ''), parsed.parsed_format, ''),
+  volume_ml = coalesce(bm.volume_ml, parsed.parsed_volume)
+from parsed
+where parsed.id = bm.id;
 
 create index if not exists idx_follows_following on public.follows (following_id);
 create index if not exists idx_analytics_events_name_time on public.analytics_events (event_name, created_at desc);
@@ -670,10 +773,76 @@ alter table public.checkins add column if not exists idempotency_key text;
 alter table public.checkins add column if not exists logged_at timestamptz;
 alter table public.checkins add column if not exists deleted_at timestamptz;
 alter table public.checkins add column if not exists deleted_by uuid references auth.users(id) on delete set null;
+alter table public.checkins add column if not exists beer_master_id bigint references public.beer_master(id) on delete set null;
+alter table public.checkins add column if not exists beer_brand text not null default '';
+alter table public.checkins add column if not exists beer_format text not null default '';
+alter table public.checkins add column if not exists beer_volume_ml integer;
 alter table public.checkins alter column logged_at set default now();
 alter table public.checkins drop constraint if exists checkins_day_period_check;
 alter table public.checkins
 add constraint checkins_day_period_check check (day_period is null or day_period in ('morning', 'afternoon', 'evening', 'night'));
+alter table public.checkins drop constraint if exists checkins_beer_format_check;
+alter table public.checkins
+add constraint checkins_beer_format_check check (beer_format in ('', 'Fici', 'Şişe/Kutu'));
+alter table public.checkins drop constraint if exists checkins_beer_volume_ml_check;
+alter table public.checkins
+add constraint checkins_beer_volume_ml_check check (beer_volume_ml is null or beer_volume_ml > 0);
+
+with resolved_master as (
+  select
+    c.id,
+    r.master_id,
+    r.canonical_name
+  from public.checkins c
+  left join lateral (
+    select x.master_id, x.canonical_name
+    from public.resolve_beer_name(c.beer_name) x
+    limit 1
+  ) r on true
+)
+update public.checkins c
+set
+  beer_master_id = coalesce(c.beer_master_id, rm.master_id),
+  beer_name = coalesce(nullif(trim(rm.canonical_name), ''), c.beer_name)
+from resolved_master rm
+where rm.id = c.id;
+
+with parsed as (
+  select
+    c.id,
+    c.beer_master_id as parsed_master_id,
+    p.brand as parsed_brand,
+    p.serving_format as parsed_format,
+    p.volume_ml as parsed_volume
+  from public.checkins c
+  left join lateral public.parse_beer_label_parts(c.beer_name) p on true
+)
+update public.checkins c
+set
+  beer_brand = coalesce(nullif(trim(c.beer_brand), ''), nullif(trim(bm.brand), ''), parsed.parsed_brand, coalesce(trim(c.beer_name), '')),
+  beer_format = coalesce(nullif(trim(c.beer_format), ''), nullif(trim(bm.serving_format), ''), parsed.parsed_format, ''),
+  beer_volume_ml = coalesce(c.beer_volume_ml, bm.volume_ml, parsed.parsed_volume)
+from parsed
+join public.beer_master bm on bm.id = parsed.parsed_master_id
+where c.id = parsed.id;
+
+with parsed as (
+  select
+    c.id,
+    p.brand as parsed_brand,
+    p.serving_format as parsed_format,
+    p.volume_ml as parsed_volume
+  from public.checkins c
+  left join lateral public.parse_beer_label_parts(c.beer_name) p on true
+)
+update public.checkins c
+set
+  beer_brand = coalesce(nullif(trim(c.beer_brand), ''), parsed.parsed_brand, coalesce(trim(c.beer_name), '')),
+  beer_format = coalesce(nullif(trim(c.beer_format), ''), parsed.parsed_format, ''),
+  beer_volume_ml = coalesce(c.beer_volume_ml, parsed.parsed_volume)
+from parsed
+where c.id = parsed.id
+  and c.beer_master_id is null;
 
 create index if not exists idx_checkins_city_district on public.checkins (city, district);
 create index if not exists idx_checkins_city_created_at on public.checkins (city, created_at desc);
@@ -681,6 +850,9 @@ create index if not exists idx_checkins_location_text on public.checkins (locati
 create index if not exists idx_checkins_geo on public.checkins (latitude, longitude);
 create index if not exists idx_checkins_created_at on public.checkins (created_at desc);
 create index if not exists idx_checkins_user_created_at on public.checkins (user_id, created_at desc);
+create index if not exists idx_checkins_beer_master on public.checkins (beer_master_id);
+create index if not exists idx_checkins_beer_format on public.checkins (beer_format);
+create index if not exists idx_checkins_beer_brand on public.checkins (beer_brand);
 create index if not exists idx_checkins_user_active_created_at
   on public.checkins (user_id, created_at desc)
   where deleted_at is null;
@@ -696,6 +868,82 @@ create index if not exists idx_checkins_created_at_rating
 create extension if not exists pg_trgm;
 create index if not exists idx_checkins_beer_name_trgm
   on public.checkins using gin (beer_name gin_trgm_ops);
+
+create or replace function public.sync_checkin_beer_columns()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_resolved record;
+  v_master record;
+  v_parts record;
+begin
+  new.beer_name := trim(coalesce(new.beer_name, ''));
+  if new.beer_name = '' then
+    return new;
+  end if;
+
+  begin
+    select x.master_id, x.canonical_name, x.matched
+      into v_resolved
+    from public.resolve_beer_name(new.beer_name) x
+    limit 1;
+  exception when others then
+    v_resolved := null;
+  end;
+
+  if coalesce(v_resolved.matched, false) then
+    if nullif(trim(coalesce(v_resolved.canonical_name, '')), '') is not null then
+      new.beer_name := trim(v_resolved.canonical_name);
+    end if;
+    if new.beer_master_id is null then
+      new.beer_master_id := v_resolved.master_id;
+    end if;
+  end if;
+
+  if new.beer_master_id is not null then
+    select
+      bm.brand,
+      bm.serving_format,
+      bm.volume_ml
+    into v_master
+    from public.beer_master bm
+    where bm.id = new.beer_master_id;
+  end if;
+
+  select p.brand, p.serving_format, p.volume_ml
+    into v_parts
+  from public.parse_beer_label_parts(new.beer_name) p;
+
+  new.beer_brand := coalesce(
+    nullif(trim(coalesce(new.beer_brand, '')), ''),
+    nullif(trim(coalesce(v_master.brand, '')), ''),
+    nullif(trim(coalesce(v_parts.brand, '')), ''),
+    new.beer_name
+  );
+  new.beer_format := coalesce(
+    nullif(trim(coalesce(new.beer_format, '')), ''),
+    nullif(trim(coalesce(v_master.serving_format, '')), ''),
+    nullif(trim(coalesce(v_parts.serving_format, '')), ''),
+    ''
+  );
+  new.beer_volume_ml := coalesce(new.beer_volume_ml, v_master.volume_ml, v_parts.volume_ml);
+
+  if new.beer_volume_ml is not null and new.beer_volume_ml <= 0 then
+    new.beer_volume_ml := null;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_sync_checkin_beer_columns on public.checkins;
+create trigger trg_sync_checkin_beer_columns
+before insert or update of beer_name, beer_master_id, beer_brand, beer_format, beer_volume_ml
+on public.checkins
+for each row
+execute function public.sync_checkin_beer_columns();
 
 create or replace function public.create_checkin_guarded(
   p_beer_name text,
@@ -1181,8 +1429,14 @@ begin
              )
            )
       )::int as night_logs,
-      count(*) filter (where c.beer_name like '%— Fici —%')::int as draft_logs,
-      count(*) filter (where c.beer_name like '%— Şişe/Kutu —%')::int as bottle_logs,
+      count(*) filter (
+        where c.beer_format = 'Fici'
+           or (c.beer_format = '' and c.beer_name like '%— Fici%')
+      )::int as draft_logs,
+      count(*) filter (
+        where c.beer_format = 'Şişe/Kutu'
+           or (c.beer_format = '' and (c.beer_name like '%— Şişe/Kutu%' or c.beer_name like '%— Sise/Kutu%'))
+      )::int as bottle_logs,
       count(distinct nullif(trim(c.city), ''))::int as unique_cities
     from public.checkins c
     where c.user_id = p_user_id
@@ -1251,7 +1505,7 @@ begin
       union all
       select
         'draft_loyalist',
-        'Taslakçı',
+        'Fıçıcı',
         'Draft Loyalist',
         format('Fıçı oranı: %s%%', round((s.draft_logs::numeric / nullif(s.total_logs, 0)) * 100)),
         format('Draft ratio: %s%%', round((s.draft_logs::numeric / nullif(s.total_logs, 0)) * 100)),
@@ -1387,6 +1641,7 @@ as $$
       c.id::text as checkin_id,
       c.user_id,
       c.beer_name,
+      c.beer_brand,
       c.created_at,
       sp.username,
       sp.display_name
@@ -1411,7 +1666,7 @@ as $$
   ),
   top_beer as (
     select
-      coalesce(nullif(trim(split_part(wc.beer_name, '—', 1)), ''), trim(wc.beer_name)) as beer_base,
+      coalesce(nullif(trim(wc.beer_brand), ''), nullif(trim(split_part(wc.beer_name, '—', 1)), ''), trim(wc.beer_name)) as beer_base,
       count(*)::int as cnt
     from week_checkins wc
     group by 1
@@ -1434,7 +1689,7 @@ as $$
       wc.checkin_id,
       wc.username,
       wc.display_name,
-      coalesce(nullif(trim(split_part(wc.beer_name, '—', 1)), ''), trim(wc.beer_name)) as beer_base,
+      coalesce(nullif(trim(wc.beer_brand), ''), nullif(trim(split_part(wc.beer_name, '—', 1)), ''), trim(wc.beer_name)) as beer_base,
       wlc.like_count
     from week_like_counts wlc
     join week_checkins wc on wc.checkin_id = wlc.checkin_id
@@ -1756,6 +2011,10 @@ begin
   insert into public.checkins (
     user_id,
     beer_name,
+    beer_master_id,
+    beer_brand,
+    beer_format,
+    beer_volume_ml,
     rating,
     created_at,
     country_code,
@@ -1770,6 +2029,10 @@ begin
   select
     inv.invited_user_id,
     c.beer_name,
+    c.beer_master_id,
+    coalesce(c.beer_brand, ''),
+    coalesce(c.beer_format, ''),
+    c.beer_volume_ml,
     c.rating,
     c.created_at,
     coalesce(c.country_code, 'TR'),
