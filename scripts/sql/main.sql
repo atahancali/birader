@@ -96,8 +96,6 @@ create table if not exists public.user_badges (
   primary key (user_id, badge_key)
 );
 
-create index if not exists idx_profiles_username on public.profiles (username);
-create index if not exists idx_follows_follower on public.follows (follower_id);
 create index if not exists idx_follows_following on public.follows (following_id);
 create index if not exists idx_analytics_events_name_time on public.analytics_events (event_name, created_at desc);
 create index if not exists idx_analytics_events_user_time on public.analytics_events (user_id, created_at desc);
@@ -108,6 +106,12 @@ create index if not exists idx_social_perf_events_time on public.social_perf_eve
 create index if not exists idx_social_perf_daily_snapshot on public.social_perf_daily (snapshot_date desc);
 create index if not exists idx_social_perf_daily_metric on public.social_perf_daily (metric_key, snapshot_date desc);
 create index if not exists idx_user_badges_user_score on public.user_badges (user_id, score desc, computed_at desc);
+
+-- Cleanup for duplicate indexes from older migrations.
+-- profiles.username already has a unique index from table definition.
+-- follows(follower_id, following_id) PK already covers follower_id prefix lookups.
+drop index if exists public.idx_profiles_username;
+drop index if exists public.idx_follows_follower;
 
 create or replace function public.set_updated_at()
 returns trigger
