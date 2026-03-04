@@ -151,7 +151,7 @@ export default function FieldHeatmap({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 xl:grid-cols-[1fr_220px] xl:items-start">
+      <div className="mt-4 grid gap-3">
         {/* horizontal scroll "field" */}
         <div className="overflow-x-auto">
           <div className="min-w-[980px]">

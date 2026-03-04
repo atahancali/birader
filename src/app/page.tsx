@@ -3355,13 +3355,13 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       {activeSection === "heatmap" ? (
         <>
           <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
-            <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div className="mb-2 flex flex-col gap-2">
               <div className="text-sm opacity-80">{t(lang, "heading_heatmap")} ({year})</div>
-              <div className="grid w-full grid-cols-2 gap-2 md:w-auto md:grid-cols-[repeat(5,minmax(0,auto))] md:items-center">
+              <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3">
                 <select
                   value={heatmapMode}
                   onChange={(e) => setHeatmapMode(e.target.value as "football" | "grid")}
-                  className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none md:min-w-[88px]"
+                  className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
                 >
                   <option value="football">{tx(lang, "Saha", "Field")}</option>
                   <option value="grid">Grid</option>
@@ -3371,7 +3371,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     <select
                       value={gridCellMetric}
                       onChange={(e) => setGridCellMetric(e.target.value as "color" | "count" | "avgRating")}
-                      className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none md:min-w-[88px]"
+                      className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
                     >
                       <option value="color">{tx(lang, "Renk", "Color")}</option>
                       <option value="count">{tx(lang, "Sayi", "Count")}</option>
@@ -3386,7 +3386,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                         setGridColorTo(to);
                         void saveHeatmapThemeToProfile(from, to);
                       }}
-                      className="col-span-2 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none md:col-span-1 md:min-w-[132px]"
+                      className="col-span-2 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none sm:col-span-1"
                     >
                       {HEATMAP_PALETTES.map((p) => (
                         <option key={p.key} value={`${p.from}|${p.to}`}>
@@ -3403,7 +3403,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                         void saveHeatmapThemeToProfile(next, gridColorTo);
                       }}
                       title={tx(lang, "Gradient baslangic", "Gradient start")}
-                      className="h-8 w-full rounded border border-white/20 bg-black/20 p-0.5 md:w-8"
+                      className="h-8 w-full rounded border border-white/20 bg-black/20 p-0.5"
                     />
                     <input
                       type="color"
@@ -3414,7 +3414,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                         void saveHeatmapThemeToProfile(gridColorFrom, next);
                       }}
                       title={tx(lang, "Gradient bitis", "Gradient end")}
-                      className="h-8 w-full rounded border border-white/20 bg-black/20 p-0.5 md:w-8"
+                      className="h-8 w-full rounded border border-white/20 bg-black/20 p-0.5"
                     />
                   </>
                 ) : null}
