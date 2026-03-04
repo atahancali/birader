@@ -69,7 +69,7 @@ export function computeStereotypeBadges(checkins: CheckinLike[]): Badge[] {
   if (ficiShare >= 0.6 && ficiCount >= 6) {
     out.push({
       key: "draft_loyalist",
-      titleTr: "Taslakçı",
+      titleTr: "Fıçıcı",
       titleEn: "Draft Loyalist",
       detailTr: `Fıçı ağırlık: %${Math.round(ficiShare * 100)}`,
       detailEn: `Draft-heavy profile: ${Math.round(ficiShare * 100)}%`,

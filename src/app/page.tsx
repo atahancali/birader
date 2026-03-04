@@ -140,11 +140,6 @@ const CHECKINS_SELECT_WITH_MEDIA =
 const CHECKINS_SELECT_BASE =
   "id, beer_name, rating, created_at, day_period, country_code, city, district, location_text, price_try, note, latitude, longitude";
 
-type BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
-};
-
 type TutorialStep = {
   title: string;
   desc: string;
@@ -877,16 +872,6 @@ export default function Home() {
     await supabase.auth.signOut();
   }
 
-  async function installPwa() {
-    if (!pwaPromptEvent) return;
-    await pwaPromptEvent.prompt();
-    try {
-      await pwaPromptEvent.userChoice;
-    } catch {}
-    setPwaPromptEvent(null);
-    setPwaInstallOpen(false);
-  }
-
   // logging state
   const today = useMemo(() => isoTodayLocal(), []);
   const [format, setFormat] = useState<BeerItem["format"]>("Fici");
@@ -927,8 +912,6 @@ export default function Home() {
   const [recentExpandStep, setRecentExpandStep] = useState(0);
   const [headerProfile, setHeaderProfile] = useState<HeaderProfile | null>(null);
   const [profileFlagsLoaded, setProfileFlagsLoaded] = useState(false);
-  const [pwaPromptEvent, setPwaPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
-  const [pwaInstallOpen, setPwaInstallOpen] = useState(false);
   const { lang, setLang } = useAppLang("tr");
   const [abOnboardingVariant, setAbOnboardingVariant] = useState<"A" | "B">("A");
   const [tutorialOpen, setTutorialOpen] = useState(false);
@@ -1067,25 +1050,6 @@ export default function Home() {
       localStorage.setItem(BUG_BASH_KEY, JSON.stringify(bugBashChecks));
     } catch {}
   }, [bugBashChecks]);
-
-
-  useEffect(() => {
-    const onBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setPwaPromptEvent(e as BeforeInstallPromptEvent);
-      setPwaInstallOpen(true);
-    };
-    const onInstalled = () => {
-      setPwaPromptEvent(null);
-      setPwaInstallOpen(false);
-    };
-    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-    window.addEventListener("appinstalled", onInstalled);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-      window.removeEventListener("appinstalled", onInstalled);
-    };
-  }, []);
 
   useEffect(() => {
     setAbOnboardingVariant(getExperimentVariant("onboarding-copy-v1"));
@@ -1856,11 +1820,6 @@ export default function Home() {
     const uname = (headerProfile?.username || usernameFromEmail(session?.user?.email) || "").trim();
     return uname ? `/u/${uname}` : "/";
   }, [headerProfile?.username, session?.user?.email]);
-  const referralLink = useMemo(() => {
-    const code = (headerProfile?.referral_code || "").trim();
-    if (!code) return "";
-    return `https://birader.app/?ref=${encodeURIComponent(code)}`;
-  }, [headerProfile?.referral_code]);
   const tutorialSteps = useMemo<TutorialStep[]>(
     () =>
       lang === "en"
@@ -2890,81 +2849,6 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           </div>
         </section>
       ) : null}
-
-      <section className="mt-4 rounded-2xl border border-amber-300/25 bg-amber-500/5 p-3">
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <div className="text-xs text-amber-200/85">Birader Mobile</div>
-            <div className="text-[11px] opacity-70">
-              {tx(lang, "iOS/Android uygulama linkleri ve web app kurulumu", "iOS/Android app links and web app install")}
-            </div>
-          </div>
-          {pwaPromptEvent ? (
-            <button
-              type="button"
-              onClick={() => void installPwa()}
-              className="rounded-lg border border-amber-300/35 bg-amber-500/15 px-2 py-1 text-xs"
-            >
-              {t(lang, "cta_add_home")}
-            </button>
-          ) : null}
-        </div>
-        {pwaInstallOpen || pwaPromptEvent ? (
-          <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-            <a
-              href="https://apps.apple.com"
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-lg border border-white/15 bg-white/10 px-2 py-1.5 text-center"
-            >
-              App Store
-            </a>
-            <a
-              href="https://play.google.com/store"
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-lg border border-white/15 bg-white/10 px-2 py-1.5 text-center"
-            >
-              Google Play
-            </a>
-          </div>
-        ) : null}
-        {referralLink ? (
-          <div className="mt-2 rounded-lg border border-white/10 bg-black/25 p-2">
-            <div className="text-[11px] opacity-70">{tx(lang, "Davet linkin", "Your invite link")}</div>
-            <div className="mt-1 flex items-center gap-2">
-              <input
-                value={referralLink}
-                readOnly
-                className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-[11px] outline-none"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard?.writeText(referralLink).catch(() => {});
-                  trackEvent({ eventName: "referral_copy_link", userId: session?.user?.id ?? null });
-                }}
-                className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
-              >
-                {tx(lang, "Kopyala", "Copy")}
-              </button>
-            </div>
-          </div>
-        ) : null}
-        <div className="mt-2 flex items-center justify-between gap-2">
-          <div className="text-[11px] opacity-70">{lang === "en" ? "App tour" : "Uygulama turu"}</div>
-          <button
-            type="button"
-            onClick={() => {
-              setTutorialStepIdx(0);
-              setTutorialOpen(true);
-            }}
-            className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
-          >
-            {tx(lang, "Tutorial baslat", "Start tutorial")}
-          </button>
-        </div>
-      </section>
 
       {activeSection === "log" ? (
       <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">

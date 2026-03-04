@@ -31,6 +31,35 @@ export default function HelpPage() {
         </Link>
       </div>
 
+      <section className="mt-4 rounded-2xl border border-amber-300/25 bg-amber-500/10 p-4">
+        <div className="text-sm font-semibold text-amber-200">Birader Mobile</div>
+        <div className="mt-1 text-sm opacity-85">
+          {tx(
+            lang,
+            "iOS/Android uygulama linkleri ve web app kurulumu icin gecici alan.",
+            "Temporary area for iOS/Android app links and web app install."
+          )}
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+          <a
+            href="https://apps.apple.com"
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg border border-white/15 bg-white/10 px-2 py-1.5 text-center"
+          >
+            App Store
+          </a>
+          <a
+            href="https://play.google.com/store"
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg border border-white/15 bg-white/10 px-2 py-1.5 text-center"
+          >
+            Google Play
+          </a>
+        </div>
+      </section>
+
       <section className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
         <div className="flex items-center justify-between gap-3">
           <div className="text-sm font-semibold">{tx(lang, "0. Interaktif Tur", "0. Interactive Tour")}</div>

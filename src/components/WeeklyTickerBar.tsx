@@ -44,22 +44,27 @@ export default function WeeklyTickerBar({
   const scrollItems = baseItems.length > 1 ? [...baseItems, ...baseItems] : baseItems;
 
   return (
-    <div className="w-full min-w-0 rounded-2xl border border-amber-300/25 bg-gradient-to-r from-amber-500/10 via-black/35 to-black/40 p-3">
+    <div className="w-full min-w-0 rounded-2xl border border-amber-300/30 bg-gradient-to-r from-[#2a1c03]/90 via-[#1a1204]/95 to-[#110b02]/95 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs text-amber-200/90">{tx(lang, "Haftanin nabzi", "Weekly pulse")}</div>
+        <div
+          className="font-mono text-xs uppercase tracking-[0.12em] text-amber-300/95"
+          style={{ textShadow: "0 0 8px rgba(252,211,77,0.45), 0 0 2px rgba(252,211,77,0.8)" }}
+        >
+          {tx(lang, "Haftanin nabzi", "Weekly pulse")}
+        </div>
         <div className="flex items-center gap-2">
-          <div className="flex gap-1 rounded-lg border border-white/10 bg-black/25 p-1">
+          <div className="flex gap-1 rounded-lg border border-amber-300/15 bg-black/35 p-1">
             <button
               type="button"
               onClick={() => onScopeChange("all")}
-              className={`rounded-md px-2 py-1 text-[11px] ${scope === "all" ? "bg-white/15" : "bg-black/20"}`}
+              className={`rounded-md px-2 py-1 text-[11px] ${scope === "all" ? "bg-amber-400/15 text-amber-100" : "bg-black/20 text-white/75"}`}
             >
               {tx(lang, "Tum", "All")}
             </button>
             <button
               type="button"
               onClick={() => onScopeChange("followed")}
-              className={`rounded-md px-2 py-1 text-[11px] ${scope === "followed" ? "bg-white/15" : "bg-black/20"}`}
+              className={`rounded-md px-2 py-1 text-[11px] ${scope === "followed" ? "bg-amber-400/15 text-amber-100" : "bg-black/20 text-white/75"}`}
             >
               {tx(lang, "Takip", "Followed")}
             </button>
@@ -67,18 +72,18 @@ export default function WeeklyTickerBar({
           <button
             type="button"
             onClick={onRefresh}
-            className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
+            className="rounded-lg border border-amber-300/20 bg-black/30 px-2 py-1 text-[11px] text-amber-100"
           >
             {busy ? "..." : tx(lang, "Yenile", "Refresh")}
           </button>
         </div>
       </div>
 
-      <div className="ticker-wrap relative mt-2 w-full overflow-hidden rounded-xl border border-white/10 bg-black/25">
-        <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-black/75 to-transparent" />
-        <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-black/75 to-transparent" />
+      <div className="ticker-wrap relative mt-2 w-full overflow-hidden rounded-xl border border-amber-300/20 bg-[#0d0a03]">
+        <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-[#0d0a03] to-transparent" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-[#0d0a03] to-transparent" />
         <div
-          className={`ticker-track flex w-max items-center gap-6 py-2 pr-6 whitespace-nowrap ${
+          className={`ticker-track flex w-max items-center gap-8 py-2 pr-8 whitespace-nowrap ${
             scrollItems.length <= 1 || busy ? "[animation-play-state:paused]" : ""
           }`}
         >
@@ -86,11 +91,12 @@ export default function WeeklyTickerBar({
             <Link
               key={`${item.key}-${idx}`}
               href={item.href || "/"}
-              className="shrink-0 text-xs text-white/85 transition hover:text-amber-100"
+              className="shrink-0 font-mono text-[11px] uppercase tracking-[0.08em] text-amber-300/95 transition hover:text-amber-100"
+              style={{ textShadow: "0 0 7px rgba(252,211,77,0.45), 0 0 2px rgba(252,211,77,0.9)" }}
             >
-              <span className="mr-1 text-[10px] uppercase tracking-wide opacity-55">{item.label}:</span>
+              <span className="mr-1 opacity-70">{item.label}:</span>
               <span className="font-semibold">{item.value}</span>
-              <span className="ml-1 opacity-60">• {item.meta}</span>
+              <span className="ml-2 opacity-80">• {item.meta}</span>
             </Link>
           ))}
         </div>

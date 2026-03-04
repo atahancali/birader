@@ -263,7 +263,7 @@ function badgeProgress(checkins: CheckinRow[]) {
     },
     {
       key: "draft_loyalist",
-      titleTr: "Taslakci",
+      titleTr: "Fıçıcı",
       titleEn: "Draft Loyalist",
       progress: Math.min(
         ratio(total, BADGE_THRESHOLDS.draft_loyalist.minTotal),
