@@ -170,16 +170,21 @@ alter table public.profiles
 add constraint profiles_feed_pref_format_check check (feed_pref_format in ('all', 'draft', 'bottle'));
 
 alter table public.checkins enable row level security;
+alter table public.checkins add column if not exists deleted_at timestamptz;
+alter table public.checkins add column if not exists deleted_by uuid references auth.users(id) on delete set null;
 
 drop policy if exists checkins_public_read on public.checkins;
 create policy checkins_public_read on public.checkins
 for select using (
-  auth.uid() = user_id
-  or exists (
-    select 1
-    from public.profiles p
-    where p.user_id = checkins.user_id
-      and p.is_public = true
+  deleted_at is null
+  and (
+    auth.uid() = user_id
+    or exists (
+      select 1
+      from public.profiles p
+      where p.user_id = checkins.user_id
+        and p.is_public = true
+    )
   )
 );
 
@@ -189,11 +194,11 @@ for insert with check (auth.uid() = user_id);
 
 drop policy if exists checkins_owner_update on public.checkins;
 create policy checkins_owner_update on public.checkins
-for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+for update using (auth.uid() = user_id and deleted_at is null) with check (auth.uid() = user_id);
 
 drop policy if exists checkins_owner_delete on public.checkins;
 create policy checkins_owner_delete on public.checkins
-for delete using (auth.uid() = user_id);
+for delete using (auth.uid() = user_id and deleted_at is null);
 
 create or replace function public.delete_own_checkin(p_id text)
 returns boolean
@@ -204,9 +209,12 @@ as $$
 declare
   affected int := 0;
 begin
-  delete from public.checkins
+  update public.checkins
+  set deleted_at = now(),
+      deleted_by = auth.uid()
   where id::text = p_id
-    and user_id = auth.uid();
+    and user_id = auth.uid()
+    and deleted_at is null;
 
   get diagnostics affected = row_count;
   return affected > 0;
@@ -215,6 +223,32 @@ $$;
 
 revoke all on function public.delete_own_checkin(text) from public;
 grant execute on function public.delete_own_checkin(text) to authenticated;
+
+create or replace function public.undo_delete_own_checkin(p_id text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  affected int := 0;
+begin
+  update public.checkins
+  set deleted_at = null,
+      deleted_by = null
+  where id::text = p_id
+    and user_id = auth.uid()
+    and deleted_at is not null
+    and deleted_by = auth.uid()
+    and deleted_at >= (now() - interval '15 minutes');
+
+  get diagnostics affected = row_count;
+  return affected > 0;
+end;
+$$;
+
+revoke all on function public.undo_delete_own_checkin(text) from public;
+grant execute on function public.undo_delete_own_checkin(text) to authenticated;
 
 -- 003_checkins_nullable_rating
 alter table public.checkins alter column rating drop not null;
@@ -245,6 +279,8 @@ alter table public.checkins add column if not exists media_url text not null def
 alter table public.checkins add column if not exists media_type text not null default '';
 alter table public.checkins add column if not exists idempotency_key text;
 alter table public.checkins add column if not exists logged_at timestamptz;
+alter table public.checkins add column if not exists deleted_at timestamptz;
+alter table public.checkins add column if not exists deleted_by uuid references auth.users(id) on delete set null;
 alter table public.checkins alter column logged_at set default now();
 alter table public.checkins drop constraint if exists checkins_day_period_check;
 alter table public.checkins
@@ -256,9 +292,14 @@ create index if not exists idx_checkins_location_text on public.checkins (locati
 create index if not exists idx_checkins_geo on public.checkins (latitude, longitude);
 create index if not exists idx_checkins_created_at on public.checkins (created_at desc);
 create index if not exists idx_checkins_user_created_at on public.checkins (user_id, created_at desc);
+create index if not exists idx_checkins_user_active_created_at
+  on public.checkins (user_id, created_at desc)
+  where deleted_at is null;
+create index if not exists idx_checkins_deleted_at on public.checkins (deleted_at);
+drop index if exists public.idx_checkins_user_idempotency;
 create unique index if not exists idx_checkins_user_idempotency
   on public.checkins (user_id, idempotency_key)
-  where idempotency_key is not null;
+  where idempotency_key is not null and deleted_at is null;
 create index if not exists idx_checkins_user_logged_at on public.checkins (user_id, logged_at desc);
 create index if not exists idx_checkins_created_at_rating
   on public.checkins (created_at desc, rating)
@@ -318,6 +359,7 @@ begin
     from public.checkins c
     where c.user_id = v_uid
       and c.idempotency_key = v_key
+      and c.deleted_at is null
     order by coalesce(c.logged_at, c.created_at) desc
     limit 1;
 
@@ -332,6 +374,7 @@ begin
     into v_recent_ts
     from public.checkins c
     where c.user_id = v_uid
+      and c.deleted_at is null
       and coalesce(c.logged_at, c.created_at) >= now() - make_interval(secs => greatest(coalesce(p_rate_limit_seconds, 10), 1));
 
     if v_recent_ts is not null then
@@ -389,6 +432,7 @@ exception
       from public.checkins c
       where c.user_id = v_uid
         and c.idempotency_key = v_key
+        and c.deleted_at is null
       order by coalesce(c.logged_at, c.created_at) desc
       limit 1;
       return query select v_id, false, false, 'idempotent_replay';
@@ -412,6 +456,40 @@ alter table public.favorite_beers drop constraint if exists favorite_beers_rank_
 delete from public.favorite_beers where rank > 3;
 alter table public.favorite_beers
 add constraint favorite_beers_rank_check check (rank between 1 and 3);
+
+create or replace function public.enforce_favorite_beers_limit()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_count int := 0;
+begin
+  if new.rank < 1 or new.rank > 3 then
+    raise exception 'favorite_rank_out_of_range';
+  end if;
+
+  if tg_op = 'UPDATE' and new.user_id = old.user_id then
+    return new;
+  end if;
+
+  select count(*)::int
+    into v_count
+  from public.favorite_beers fb
+  where fb.user_id = new.user_id;
+
+  if v_count >= 3 then
+    raise exception 'favorite_limit_exceeded';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_enforce_favorite_beers_limit on public.favorite_beers;
+create trigger trg_enforce_favorite_beers_limit
+before insert or update on public.favorite_beers
+for each row execute function public.enforce_favorite_beers_limit();
 
 update public.profiles
 set display_name = username
@@ -668,6 +746,7 @@ begin
       count(distinct nullif(trim(c.city), ''))::int as unique_cities
     from public.checkins c
     where c.user_id = p_user_id
+      and c.deleted_at is null
     group by c.user_id
   ),
   spot as (
@@ -681,6 +760,7 @@ begin
         count(*)::int as cnt
       from public.checkins c
       where c.user_id = p_user_id
+        and c.deleted_at is null
       group by c.user_id, coalesce(nullif(trim(c.city), ''), '-') || '::' || coalesce(nullif(trim(c.district), ''), '-')
     ) c
     group by c.user_id
@@ -875,6 +955,7 @@ as $$
     join params pa on true
     where timezone('Europe/Istanbul', c.created_at) >= pa.week_start_local
       and timezone('Europe/Istanbul', c.created_at) < (pa.week_start_local + interval '7 day')
+      and c.deleted_at is null
   ),
   prev_week_checkins as (
     select
@@ -885,6 +966,7 @@ as $$
     join params pa on true
     where timezone('Europe/Istanbul', c.created_at) >= pa.prev_week_start_local
       and timezone('Europe/Istanbul', c.created_at) < pa.week_start_local
+      and c.deleted_at is null
     group by c.user_id
   ),
   top_beer as (
@@ -1073,6 +1155,7 @@ as $$
     join scope_users su on su.user_id = c.user_id
     join params pa on true
     where c.created_at >= now() - pa.lookback
+      and c.deleted_at is null
   ),
   agg as (
     select
@@ -1158,6 +1241,7 @@ for select using (
     from public.checkins c
     left join public.profiles p on p.user_id = c.user_id
     where c.id::text = checkin_comments.checkin_id
+      and c.deleted_at is null
       and (
         auth.uid() = c.user_id
         or coalesce(p.is_public, false) = true
@@ -1174,6 +1258,7 @@ for insert with check (
     from public.checkins c
     left join public.profiles p on p.user_id = c.user_id
     where c.id::text = checkin_comments.checkin_id
+      and c.deleted_at is null
       and (
         auth.uid() = c.user_id
         or coalesce(p.is_public, false) = true
@@ -1198,6 +1283,7 @@ for insert with check (
     from public.checkins c
     where c.id::text = checkin_share_invites.source_checkin_id
       and c.user_id = auth.uid()
+      and c.deleted_at is null
   )
 );
 
@@ -1257,6 +1343,7 @@ begin
   from public.checkins c
   where c.id::text = inv.source_checkin_id
     and c.user_id = inv.inviter_id
+    and c.deleted_at is null
   returning id::text into new_checkin_id;
 
   if new_checkin_id is null then
@@ -1322,6 +1409,7 @@ for select using (
     join public.checkins c on c.id::text = cc.checkin_id
     left join public.profiles p on p.user_id = c.user_id
     where cc.id = checkin_comment_likes.comment_id
+      and c.deleted_at is null
       and (
         auth.uid() = c.user_id
         or coalesce(p.is_public, false) = true
@@ -1345,6 +1433,7 @@ for select using (
     from public.checkins c
     left join public.profiles p on p.user_id = c.user_id
     where c.id::text = checkin_likes.checkin_id
+      and c.deleted_at is null
       and (
         auth.uid() = c.user_id
         or coalesce(p.is_public, false) = true
@@ -1400,7 +1489,7 @@ select
   count(c.id)::int as total_checkins,
   coalesce(round(avg(c.rating)::numeric, 2), 0) as avg_rating
 from public.profiles p
-left join public.checkins c on c.user_id = p.user_id
+left join public.checkins c on c.user_id = p.user_id and c.deleted_at is null
 group by p.user_id, p.username, p.display_name;
 
 
@@ -1764,6 +1853,7 @@ with days as (
   select distinct (timezone('UTC', c.created_at))::date as d
   from public.checkins c
   where c.user_id = p_user_id
+    and c.deleted_at is null
 ),
 ordered as (
   select
@@ -1833,7 +1923,8 @@ begin
     max(c.created_at)
   into v_total, v_7d, v_30d, v_avg_all, v_avg_30d, v_city_count, v_last_checkin
   from public.checkins c
-  where c.user_id = p_user_id;
+  where c.user_id = p_user_id
+    and c.deleted_at is null;
 
   select count(*)::int into v_followers from public.follows f where f.following_id = p_user_id;
   select count(*)::int into v_following from public.follows f where f.follower_id = p_user_id;
@@ -1969,6 +2060,7 @@ checkin_weeks as (
     count(*)::int as total_checkins,
     count(distinct c.user_id)::int as active_users
   from public.checkins c
+  where c.deleted_at is null
   group by 1
 )
 select
@@ -2015,7 +2107,7 @@ ret as (
        and ch.created_at <  c.cohort_week::timestamptz + interval '63 days'
       then c.user_id end)::int as retained_w8
   from cohorts c
-  left join public.checkins ch on ch.user_id = c.user_id
+  left join public.checkins ch on ch.user_id = c.user_id and ch.deleted_at is null
   group by 1
 )
 select

@@ -77,6 +77,12 @@ type GuardedInsertOutcome = {
   message: string;
 };
 
+type DeletedCheckinUndo = {
+  id: string;
+  beer_name: string;
+  snapshot: Checkin | null;
+};
+
 type FavoriteBeer = {
   beer_name: string;
   rank: number;
@@ -417,6 +423,11 @@ function isMissingGuardedCheckinFunctionError(error: any) {
     msg.includes("function") ||
     msg.includes("42883")
   );
+}
+
+function isFavoriteLimitExceededError(error: any) {
+  const msg = String(error?.message || "").toLowerCase();
+  return msg.includes("favorite_limit_exceeded");
 }
 
 function normalizeTR(input: string) {
@@ -999,6 +1010,7 @@ export default function Home() {
   const [bugBashChecks, setBugBashChecks] = useState<Record<string, boolean>>({});
   const [missionNoticeDismissed, setMissionNoticeDismissed] = useState(false);
   const [theme, setTheme] = useState<AppTheme>("dark");
+  const [pendingUndoCheckin, setPendingUndoCheckin] = useState<DeletedCheckinUndo | null>(null);
   const lastLogAttemptAtRef = useRef(0);
   const logMutationLockRef = useRef(false);
   const logSubmitIntentRef = useRef<string>(uuid());
@@ -1123,6 +1135,12 @@ export default function Home() {
       document.documentElement.setAttribute("data-theme", theme);
     }
   }, [theme]);
+
+  useEffect(() => {
+    if (!pendingUndoCheckin) return;
+    const timer = setTimeout(() => setPendingUndoCheckin(null), 15_000);
+    return () => clearTimeout(timer);
+  }, [pendingUndoCheckin]);
 
   useEffect(() => {
     try {
@@ -1894,6 +1912,11 @@ export default function Home() {
       });
 
       if (error) {
+        if (isFavoriteLimitExceededError(error)) {
+          await loadFavorites();
+          alert(tx(lang, "En fazla 3 favori ekleyebilirsin.", "You can add at most 3 favorites."));
+          return;
+        }
         if (error.code === "23505" || error.message.toLowerCase().includes("duplicate")) {
           await loadFavorites();
           return;
@@ -2427,32 +2450,87 @@ export default function Home() {
     setTutorialOpen(false);
   }
 
-async function deleteCheckin(id: string) {
-  // Session varsa Supabase dene
-  if (session?.user?.id) {
-    const { data, error } = await supabase.rpc("delete_own_checkin", { p_id: String(id) });
-    if (!error && data === true) {
-      trackEvent({
-        eventName: "checkin_deleted",
-        userId: session.user.id,
-        props: { id },
-      });
-      await loadCheckins();
+  async function deleteCheckin(id: string) {
+    const existing = checkins.find((x) => String(x.id) === String(id)) ?? null;
+
+    // Session varsa Supabase dene
+    if (session?.user?.id) {
+      const { data, error } = await supabase.rpc("delete_own_checkin", { p_id: String(id) });
+      if (!error && data === true) {
+        setPendingUndoCheckin({
+          id: String(id),
+          beer_name: existing?.beer_name || tx(lang, "Bilinmeyen bira", "Unknown beer"),
+          snapshot: existing,
+        });
+        trackEvent({
+          eventName: "checkin_deleted",
+          userId: session.user.id,
+          props: { id },
+        });
+        await supabase.rpc("refresh_my_badges");
+        await loadMyBadges();
+        await loadCheckins();
+        return;
+      }
+      const reason = error?.message || "Kayit bulunamadi ya da yetki yok.";
+      alert(`${tx(lang, "Silme basarisiz", "Delete failed")}: ${reason}`);
       return;
     }
-    const reason = error?.message || "Kayit bulunamadi ya da yetki yok.";
-    alert(`${tx(lang, "Silme basarisiz", "Delete failed")}: ${reason}`);
-    return;
+
+    // Local fallback
+    setCheckins((prev) => prev.filter((x) => x.id !== id));
+    setPendingUndoCheckin({
+      id: String(id),
+      beer_name: existing?.beer_name || tx(lang, "Bilinmeyen bira", "Unknown beer"),
+      snapshot: existing,
+    });
+    trackEvent({
+      eventName: "checkin_deleted_local",
+      userId: session?.user?.id ?? null,
+      props: { id },
+    });
   }
 
-  // Local fallback
-  setCheckins((prev) => prev.filter((x) => x.id !== id));
-  trackEvent({
-    eventName: "checkin_deleted_local",
-    userId: session?.user?.id ?? null,
-    props: { id },
-  });
-}
+  async function undoDeletedCheckin() {
+    if (!pendingUndoCheckin) return;
+    const target = pendingUndoCheckin;
+
+    if (session?.user?.id) {
+      const { data, error } = await supabase.rpc("undo_delete_own_checkin", { p_id: String(target.id) });
+      if (error || data !== true) {
+        alert(
+          tx(
+            lang,
+            "Geri alma suresi dolmus olabilir veya kayit bulunamadi.",
+            "Undo window may be over or the record was not found."
+          )
+        );
+        setPendingUndoCheckin(null);
+        await loadCheckins();
+        return;
+      }
+      trackEvent({
+        eventName: "checkin_delete_undone",
+        userId: session.user.id,
+        props: { id: target.id },
+      });
+      await supabase.rpc("refresh_my_badges");
+      await loadMyBadges();
+      await loadCheckins();
+      setPendingUndoCheckin(null);
+      return;
+    }
+
+    if (target.snapshot) {
+      setCheckins((prev) => (prev.some((c) => c.id === target.snapshot?.id) ? prev : [target.snapshot as Checkin, ...prev]));
+      trackEvent({
+        eventName: "checkin_delete_undone_local",
+        userId: session?.user?.id ?? null,
+        props: { id: target.id },
+      });
+    }
+    setPendingUndoCheckin(null);
+  }
 
 async function updateCheckin(payload: { id: string; beer_name: string; rating: number | null }) {
   const name = payload.beer_name.trim();
@@ -3096,6 +3174,37 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             >
               {tx(lang, "Kapat", "Close")}
             </button>
+          </div>
+        </section>
+      ) : null}
+
+      {pendingUndoCheckin ? (
+        <section className="mt-3 rounded-2xl border border-amber-300/30 bg-amber-500/10 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 text-sm">
+              <div className="truncate">
+                {tx(lang, "Log silindi:", "Log deleted:")} <span className="font-semibold">{pendingUndoCheckin.beer_name}</span>
+              </div>
+              <div className="text-xs opacity-75">
+                {tx(lang, "15 saniye icinde geri alabilirsin.", "You can undo within 15 seconds.")}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void undoDeletedCheckin()}
+                className="rounded-xl border border-amber-300/40 bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-100"
+              >
+                {tx(lang, "Geri al", "Undo")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingUndoCheckin(null)}
+                className="rounded-xl border border-white/15 bg-white/10 px-2 py-1.5 text-xs"
+              >
+                ×
+              </button>
+            </div>
           </div>
         </section>
       ) : null}

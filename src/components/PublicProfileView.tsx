@@ -58,6 +58,11 @@ type UserBadgeRow = {
   computed_at: string;
 };
 
+type DeletedCheckinUndo = {
+  id: string;
+  beer_name: string;
+};
+
 const CHECKINS_SELECT_WITH_MEDIA =
   "id, beer_name, rating, created_at, day_period, city, district, location_text, price_try, note, media_url, media_type";
 const CHECKINS_SELECT_BASE =
@@ -94,6 +99,11 @@ function isFutureIsoDay(dayIso: string, todayIso = isoTodayLocal()) {
   return normalized > todayIso;
 }
 
+function isFavoriteLimitExceededError(error: any) {
+  const msg = String(error?.message || "").toLowerCase();
+  return msg.includes("favorite_limit_exceeded");
+}
+
 export default function PublicProfileView({ username }: { username: string }) {
   const router = useRouter();
   const { lang, setLang } = useAppLang("tr");
@@ -125,6 +135,7 @@ export default function PublicProfileView({ username }: { username: string }) {
   const [gridColorTo, setGridColorTo] = useState<string>("#ef4444");
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [pendingUndoCheckin, setPendingUndoCheckin] = useState<DeletedCheckinUndo | null>(null);
 
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const [year, setYear] = useState(currentYear);
@@ -245,6 +256,12 @@ export default function PublicProfileView({ username }: { username: string }) {
       setSessionEmail((data.session?.user?.email || "").trim().toLowerCase());
     });
   }, []);
+
+  useEffect(() => {
+    if (!pendingUndoCheckin) return;
+    const timer = setTimeout(() => setPendingUndoCheckin(null), 15_000);
+    return () => clearTimeout(timer);
+  }, [pendingUndoCheckin]);
 
   useEffect(() => {
     async function loadProfile() {
@@ -633,6 +650,20 @@ export default function PublicProfileView({ username }: { username: string }) {
     while (usedRanks.has(rank) && rank <= 3) rank += 1;
     const { error } = await supabase.from("favorite_beers").insert({ user_id: sessionUserId, beer_name: beer, rank });
     if (error) {
+      if (isFavoriteLimitExceededError(error)) {
+        alert("En fazla 3 favori ekleyebilirsin.");
+        const { data: refreshRows } = await supabase
+          .from("favorite_beers")
+          .select("beer_name, rank")
+          .eq("user_id", sessionUserId)
+          .order("rank", { ascending: true });
+        const refreshed = ((refreshRows as FavoriteBeerRow[] | null) ?? []).map((f) => ({
+          ...f,
+          beer_name: favoriteBeerName(f.beer_name),
+        }));
+        setFavorites(refreshed);
+        return;
+      }
       if (error.code === "23505" || error.message.toLowerCase().includes("duplicate")) {
         const { data: refreshRows } = await supabase
           .from("favorite_beers")
@@ -696,14 +727,40 @@ export default function PublicProfileView({ username }: { username: string }) {
 
   async function deleteCheckinOnDay(id: string) {
     if (!sessionUserId || !isOwnProfile) return;
-    const { error } = await supabase.from("checkins").delete().eq("id", id).eq("user_id", sessionUserId);
-    if (error) {
-      alert(error.message);
+    const deleted = checkins.find((c) => String(c.id) === String(id));
+    const { data, error } = await supabase.rpc("delete_own_checkin", { p_id: String(id) });
+    if (error || data !== true) {
+      alert(error?.message || "Kayit bulunamadi.");
       return;
     }
     setCheckins((prev) => prev.filter((c) => c.id !== id));
+    setPendingUndoCheckin({
+      id: String(id),
+      beer_name: deleted?.beer_name || tx(lang, "Bilinmeyen bira", "Unknown beer"),
+    });
     await supabase.rpc("refresh_my_badges");
     await loadBadgesForUser(sessionUserId);
+  }
+
+  async function undoDeletedCheckinOnProfile() {
+    if (!sessionUserId || !isOwnProfile || !pendingUndoCheckin) return;
+    const { data, error } = await supabase.rpc("undo_delete_own_checkin", { p_id: String(pendingUndoCheckin.id) });
+    if (error || data !== true) {
+      alert(
+        tx(
+          lang,
+          "Geri alma suresi dolmus olabilir veya kayit bulunamadi.",
+          "Undo window may be over or the record was not found."
+        )
+      );
+      setPendingUndoCheckin(null);
+      return;
+    }
+    const refreshed = await fetchYearCheckins(sessionUserId, year);
+    setCheckins((refreshed.data as CheckinRow[] | null) ?? []);
+    await supabase.rpc("refresh_my_badges");
+    await loadBadgesForUser(sessionUserId);
+    setPendingUndoCheckin(null);
   }
 
   async function updateCheckinOnDay(payload: { id: string; beer_name: string; rating: number | null }) {
@@ -815,6 +872,37 @@ export default function PublicProfileView({ username }: { username: string }) {
       </div>
 
       {profile.bio ? <p className="mt-2 text-sm opacity-80">{profile.bio}</p> : null}
+
+      {isOwnProfile && pendingUndoCheckin ? (
+        <section className="mt-3 rounded-2xl border border-amber-300/30 bg-amber-500/10 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 text-sm">
+              <div className="truncate">
+                {tx(lang, "Log silindi:", "Log deleted:")} <span className="font-semibold">{pendingUndoCheckin.beer_name}</span>
+              </div>
+              <div className="text-xs opacity-75">
+                {tx(lang, "15 saniye icinde geri alabilirsin.", "You can undo within 15 seconds.")}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void undoDeletedCheckinOnProfile()}
+                className="rounded-xl border border-amber-300/40 bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-100"
+              >
+                {tx(lang, "Geri al", "Undo")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingUndoCheckin(null)}
+                className="rounded-xl border border-white/15 bg-white/10 px-2 py-1.5 text-xs"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {isOwnProfile && editOpen ? (
         <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">

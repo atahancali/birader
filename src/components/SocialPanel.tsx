@@ -738,6 +738,10 @@ export default function SocialPanel({
     return lower.includes("function") && lower.includes(fnName.toLowerCase());
   }
 
+  function isFavoriteLimitExceededError(message: string) {
+    return String(message || "").toLowerCase().includes("favorite_limit_exceeded");
+  }
+
   function scheduleWeeklyHighlightsRefresh() {
     if (weeklyRefreshTimerRef.current !== null) return;
     weeklyRefreshTimerRef.current = window.setTimeout(() => {
@@ -2444,6 +2448,20 @@ export default function SocialPanel({
     });
 
     if (error) {
+      if (isFavoriteLimitExceededError(error.message)) {
+        alert("En fazla 3 favori ekleyebilirsin.");
+        const { data: refreshRows } = await supabase
+          .from("favorite_beers")
+          .select("beer_name, rank")
+          .eq("user_id", userId)
+          .order("rank", { ascending: true });
+        const refreshed = ((refreshRows as FavoriteBeerRow[] | null) ?? []).map((f) => ({
+          ...f,
+          beer_name: favoriteBeerName(f.beer_name),
+        }));
+        setFavorites(refreshed);
+        return;
+      }
       if (error.code === "23505" || error.message.toLowerCase().includes("duplicate")) {
         const { data: refreshRows } = await supabase
           .from("favorite_beers")
