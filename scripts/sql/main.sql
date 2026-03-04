@@ -312,23 +312,35 @@ where not exists (
 );
 
 insert into public.beer_master (canonical_name)
-select distinct trim(c.beer_name)
-from public.checkins c
-where nullif(trim(c.beer_name), '') is not null
+select seed.canonical_name
+from (
+  select
+    min(trim(c.beer_name)) as canonical_name
+  from public.checkins c
+  where nullif(trim(c.beer_name), '') is not null
+  group by lower(trim(c.beer_name))
+) seed
+where nullif(trim(seed.canonical_name), '') is not null
   and not exists (
     select 1
     from public.beer_master bm
-    where lower(bm.canonical_name) = lower(trim(c.beer_name))
+    where lower(bm.canonical_name) = lower(trim(seed.canonical_name))
   );
 
 insert into public.beer_master (canonical_name)
-select distinct trim(f.beer_name)
-from public.favorite_beers f
-where nullif(trim(f.beer_name), '') is not null
+select seed.canonical_name
+from (
+  select
+    min(trim(f.beer_name)) as canonical_name
+  from public.favorite_beers f
+  where nullif(trim(f.beer_name), '') is not null
+  group by lower(trim(f.beer_name))
+) seed
+where nullif(trim(seed.canonical_name), '') is not null
   and not exists (
     select 1
     from public.beer_master bm
-    where lower(bm.canonical_name) = lower(trim(f.beer_name))
+    where lower(bm.canonical_name) = lower(trim(seed.canonical_name))
   );
 
 with parsed as (
@@ -571,10 +583,15 @@ begin
 
   v_target_master := p_master_id;
   if v_target_master is null then
-    insert into public.beer_master (canonical_name, created_by)
-    values (q.raw_input, v_uid)
-    on conflict (canonical_name) do nothing
-    returning id into v_target_master;
+    if not exists (
+      select 1
+      from public.beer_master bm
+      where lower(bm.canonical_name) = lower(q.raw_input)
+    ) then
+      insert into public.beer_master (canonical_name, created_by)
+      values (q.raw_input, v_uid)
+      returning id into v_target_master;
+    end if;
 
     if v_target_master is null then
       select bm.id
