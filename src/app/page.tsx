@@ -51,6 +51,31 @@ type Checkin = {
   media_type?: string | null;
 };
 
+type CheckinInsertPayload = {
+  user_id: string;
+  beer_name: string;
+  rating: number | null;
+  created_at: string;
+  day_period?: DayPeriod | null;
+  country_code?: string | null;
+  city?: string | null;
+  district?: string | null;
+  location_text?: string | null;
+  price_try?: number | null;
+  note?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  media_url?: string | null;
+  media_type?: string | null;
+};
+
+type GuardedInsertOutcome = {
+  ok: boolean;
+  limited: boolean;
+  fallbackLegacy: boolean;
+  message: string;
+};
+
 type FavoriteBeer = {
   beer_name: string;
   rank: number;
@@ -369,6 +394,17 @@ function inferMediaType(urlRaw: string) {
 function isMissingMediaColumnError(error: any) {
   const msg = String(error?.message || "").toLowerCase();
   return msg.includes("does not exist") && (msg.includes("media_url") || msg.includes("media_type"));
+}
+
+function isMissingGuardedCheckinFunctionError(error: any) {
+  const msg = String(error?.message || "").toLowerCase();
+  if (!msg.includes("create_checkin_guarded")) return false;
+  return (
+    msg.includes("does not exist") ||
+    msg.includes("could not find") ||
+    msg.includes("function") ||
+    msg.includes("42883")
+  );
 }
 
 function normalizeTR(input: string) {
@@ -2378,6 +2414,53 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     props: { id: payload.id, rating: normalizedRating },
   });
 }
+
+  async function insertCheckinGuarded(
+    row: CheckinInsertPayload,
+    opts: { idempotencyKey: string; bypassRateLimit?: boolean; rateLimitSeconds?: number } = {
+      idempotencyKey: "",
+    }
+  ): Promise<GuardedInsertOutcome> {
+    const { data, error } = await supabase.rpc("create_checkin_guarded", {
+      p_beer_name: row.beer_name,
+      p_rating: row.rating,
+      p_created_at: row.created_at,
+      p_day_period: row.day_period ?? null,
+      p_country_code: row.country_code ?? "TR",
+      p_city: row.city ?? "",
+      p_district: row.district ?? "",
+      p_location_text: row.location_text ?? "",
+      p_price_try: row.price_try ?? null,
+      p_note: row.note ?? "",
+      p_latitude: row.latitude ?? null,
+      p_longitude: row.longitude ?? null,
+      p_media_url: row.media_url ?? "",
+      p_media_type: row.media_type ?? "",
+      p_idempotency_key: opts.idempotencyKey || null,
+      p_bypass_rate_limit: Boolean(opts.bypassRateLimit),
+      p_rate_limit_seconds: Math.max(1, Number(opts.rateLimitSeconds || 10)),
+    });
+
+    if (error) {
+      if (isMissingGuardedCheckinFunctionError(error)) {
+        return { ok: false, limited: false, fallbackLegacy: true, message: error.message };
+      }
+      return { ok: false, limited: false, fallbackLegacy: false, message: error.message };
+    }
+
+    const rowRes = Array.isArray(data) ? (data[0] as { limited?: boolean; reason?: string } | undefined) : undefined;
+    if (rowRes?.limited) {
+      return {
+        ok: false,
+        limited: true,
+        fallbackLegacy: false,
+        message: tx(lang, "Cok hizli log atiyorsun. Biraz bekleyip tekrar dene.", "You're logging too fast. Wait a bit and try again."),
+      };
+    }
+
+    return { ok: true, limited: false, fallbackLegacy: false, message: "" };
+  }
+
   async function addCheckin() {
     const name = (beerName || "").trim();
     const targets = isBackDate && batchBeerNames.length > 0 ? batchBeerNames : name ? [name] : [];
@@ -2428,11 +2511,40 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           media_url: normalizedMediaUrl || "",
           media_type: normalizedMediaType || "",
         }));
-        let { error } = await supabase.from("checkins").insert(rows);
-        if (error && isMissingMediaColumnError(error)) {
-          const rowsWithoutMedia = rows.map(({ media_url, media_type, ...rest }) => rest);
-          const retry = await supabase.from("checkins").insert(rowsWithoutMedia);
-          error = retry.error;
+        const requestKey = uuid();
+        const bypassRateLimit = isBackDate && rows.length > 1;
+        let guardedAvailable = true;
+        let error: { message: string } | null = null;
+
+        for (let i = 0; i < rows.length; i += 1) {
+          const guarded = await insertCheckinGuarded(rows[i], {
+            idempotencyKey: `${requestKey}:${i}`,
+            bypassRateLimit,
+            rateLimitSeconds: 10,
+          });
+          if (guarded.fallbackLegacy) {
+            guardedAvailable = false;
+            break;
+          }
+          if (!guarded.ok) {
+            error = { message: guarded.message || tx(lang, "Log kaydi basarisiz.", "Check-in failed.") };
+            break;
+          }
+        }
+
+        if (!error && !guardedAvailable) {
+          const legacyRows = rows.map(({ media_url, media_type, ...rest }) => ({
+            ...rest,
+            media_url: media_url || "",
+            media_type: media_type || "",
+          }));
+          const legacyRes = await supabase.from("checkins").insert(legacyRows);
+          error = legacyRes.error ? { message: legacyRes.error.message } : null;
+          if (error && isMissingMediaColumnError(error)) {
+            const rowsWithoutMedia = legacyRows.map(({ media_url, media_type, ...rest }) => rest);
+            const retry = await supabase.from("checkins").insert(rowsWithoutMedia);
+            error = retry.error ? { message: retry.error.message } : null;
+          }
         }
 
         if (!error) {
@@ -3491,30 +3603,57 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
         const normalizedRating = sanitizeRating(rating);
         try {
-          if (session?.user?.id) {
-            const { error } = await supabase.from("checkins").insert({
-              user_id: session.user.id,
-              beer_name,
-              rating: normalizedRating,
-              created_at,
-              day_period: dayPeriod,
-              country_code: "TR",
-              city,
-              district: resolvedDistrict,
-              location_text: "",
-              price_try: null,
-              note: "",
-              latitude: null,
-              longitude: null,
-            });
+	          if (session?.user?.id) {
+	            const serverRow: CheckinInsertPayload = {
+	              user_id: session.user.id,
+	              beer_name,
+	              rating: normalizedRating,
+	              created_at,
+	              day_period: dayPeriod,
+	              country_code: "TR",
+	              city,
+	              district: resolvedDistrict,
+	              location_text: "",
+	              price_try: null,
+	              note: "",
+	              latitude: null,
+	              longitude: null,
+	              media_url: "",
+	              media_type: "",
+	            };
+	            const guarded = await insertCheckinGuarded(serverRow, {
+	              idempotencyKey: `daymodal:${day}:${beer_name}:${uuid()}`,
+	              bypassRateLimit: false,
+	              rateLimitSeconds: 10,
+	            });
 
-            if (error) {
-              alert(error.message);
-              return;
-            }
+	            if (!guarded.ok && guarded.fallbackLegacy) {
+	              const { error } = await supabase.from("checkins").insert({
+	                user_id: session.user.id,
+	                beer_name,
+	                rating: normalizedRating,
+	                created_at,
+	                day_period: dayPeriod,
+	                country_code: "TR",
+	                city,
+	                district: resolvedDistrict,
+	                location_text: "",
+	                price_try: null,
+	                note: "",
+	                latitude: null,
+	                longitude: null,
+	              });
+	              if (error) {
+	                alert(error.message);
+	                return;
+	              }
+	            } else if (!guarded.ok) {
+	              alert(guarded.message);
+	              return;
+	            }
 
-            trackEvent({
-              eventName: "checkin_added",
+	            trackEvent({
+	              eventName: "checkin_added",
               userId: session.user.id,
               props: { rating: normalizedRating, beer_name },
             });

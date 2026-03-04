@@ -22,8 +22,8 @@ Hedef: performansi olcebilir, alarm verebilir ve cache/queue kismini stabilize e
 - [x] `#08` Hata orani esik asiminda admin uyarisi (`M`, `done`)
 - [x] `#09` p95 yavas metrikleri kirmizi esik ile isaretleme (`S`, `done`)
 - [x] `#10` Frontend error tracking (Sentry vb.) entegrasyonu (`M`, `done`)
-- [ ] `#11` API idempotency key standardi (`S`, `todo`)
-- [ ] `#13` Log aksiyonlarina server-side rate limit (`M`, `todo`)
+- [x] `#11` API idempotency key standardi (`S`, `done`)
+- [x] `#13` Log aksiyonlarina server-side rate limit (`M`, `done`)
 
 ## Sprint 2 (Check-in Guvenligi + Veri Butunlugu)
 Hedef: log akisinda duplicate, veri tutarliligi ve geri alma senaryolarini kapatmak.
@@ -97,6 +97,6 @@ Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 
 ## Yurutme Notu
 - Aktif sprint: `Sprint 1`
-- Aktif paket: `#11 + #13`
+- Aktif paket: `Sprint 2 / #12`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.

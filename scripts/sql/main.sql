@@ -243,6 +243,9 @@ alter table public.checkins add column if not exists longitude double precision;
 alter table public.checkins add column if not exists day_period text;
 alter table public.checkins add column if not exists media_url text not null default '';
 alter table public.checkins add column if not exists media_type text not null default '';
+alter table public.checkins add column if not exists idempotency_key text;
+alter table public.checkins add column if not exists logged_at timestamptz;
+alter table public.checkins alter column logged_at set default now();
 alter table public.checkins drop constraint if exists checkins_day_period_check;
 alter table public.checkins
 add constraint checkins_day_period_check check (day_period is null or day_period in ('morning', 'afternoon', 'evening', 'night'));
@@ -253,12 +256,152 @@ create index if not exists idx_checkins_location_text on public.checkins (locati
 create index if not exists idx_checkins_geo on public.checkins (latitude, longitude);
 create index if not exists idx_checkins_created_at on public.checkins (created_at desc);
 create index if not exists idx_checkins_user_created_at on public.checkins (user_id, created_at desc);
+create unique index if not exists idx_checkins_user_idempotency
+  on public.checkins (user_id, idempotency_key)
+  where idempotency_key is not null;
+create index if not exists idx_checkins_user_logged_at on public.checkins (user_id, logged_at desc);
 create index if not exists idx_checkins_created_at_rating
   on public.checkins (created_at desc, rating)
   where rating is not null;
 create extension if not exists pg_trgm;
 create index if not exists idx_checkins_beer_name_trgm
   on public.checkins using gin (beer_name gin_trgm_ops);
+
+create or replace function public.create_checkin_guarded(
+  p_beer_name text,
+  p_rating numeric default null,
+  p_created_at timestamptz default now(),
+  p_day_period text default null,
+  p_country_code text default 'TR',
+  p_city text default '',
+  p_district text default '',
+  p_location_text text default '',
+  p_price_try numeric default null,
+  p_note text default '',
+  p_latitude double precision default null,
+  p_longitude double precision default null,
+  p_media_url text default '',
+  p_media_type text default '',
+  p_idempotency_key text default null,
+  p_bypass_rate_limit boolean default false,
+  p_rate_limit_seconds int default 10
+)
+returns table(
+  checkin_id text,
+  inserted boolean,
+  limited boolean,
+  reason text
+)
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_key text := nullif(trim(coalesce(p_idempotency_key, '')), '');
+  v_id text;
+  v_recent_ts timestamptz;
+begin
+  if v_uid is null then
+    raise exception 'not authenticated';
+  end if;
+  if nullif(trim(coalesce(p_beer_name, '')), '') is null then
+    raise exception 'beer_name_required';
+  end if;
+
+  if v_key is not null then
+    select c.id::text
+    into v_id
+    from public.checkins c
+    where c.user_id = v_uid
+      and c.idempotency_key = v_key
+    order by coalesce(c.logged_at, c.created_at) desc
+    limit 1;
+
+    if v_id is not null then
+      return query select v_id, false, false, 'idempotent_replay';
+      return;
+    end if;
+  end if;
+
+  if not coalesce(p_bypass_rate_limit, false) then
+    select max(coalesce(c.logged_at, c.created_at))
+    into v_recent_ts
+    from public.checkins c
+    where c.user_id = v_uid
+      and coalesce(c.logged_at, c.created_at) >= now() - make_interval(secs => greatest(coalesce(p_rate_limit_seconds, 10), 1));
+
+    if v_recent_ts is not null then
+      return query select null::text, false, true, 'rate_limited';
+      return;
+    end if;
+  end if;
+
+  insert into public.checkins (
+    user_id,
+    beer_name,
+    rating,
+    created_at,
+    day_period,
+    country_code,
+    city,
+    district,
+    location_text,
+    price_try,
+    note,
+    latitude,
+    longitude,
+    media_url,
+    media_type,
+    idempotency_key,
+    logged_at
+  )
+  values (
+    v_uid,
+    trim(p_beer_name),
+    p_rating,
+    coalesce(p_created_at, now()),
+    p_day_period,
+    coalesce(p_country_code, 'TR'),
+    coalesce(p_city, ''),
+    coalesce(p_district, ''),
+    coalesce(p_location_text, ''),
+    p_price_try,
+    coalesce(p_note, ''),
+    p_latitude,
+    p_longitude,
+    coalesce(p_media_url, ''),
+    coalesce(p_media_type, ''),
+    v_key,
+    now()
+  )
+  returning id::text into v_id;
+
+  return query select v_id, true, false, 'inserted';
+exception
+  when unique_violation then
+    if v_key is not null then
+      select c.id::text
+      into v_id
+      from public.checkins c
+      where c.user_id = v_uid
+        and c.idempotency_key = v_key
+      order by coalesce(c.logged_at, c.created_at) desc
+      limit 1;
+      return query select v_id, false, false, 'idempotent_replay';
+      return;
+    end if;
+    raise;
+end;
+$$;
+
+revoke all on function public.create_checkin_guarded(
+  text, numeric, timestamptz, text, text, text, text, text, numeric, text,
+  double precision, double precision, text, text, text, boolean, int
+) from public;
+grant execute on function public.create_checkin_guarded(
+  text, numeric, timestamptz, text, text, text, text, text, numeric, text,
+  double precision, double precision, text, text, text, boolean, int
+) to authenticated;
 
 -- refresh checks / constraints
 alter table public.favorite_beers drop constraint if exists favorite_beers_rank_check;
