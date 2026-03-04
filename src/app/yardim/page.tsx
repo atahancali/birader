@@ -7,7 +7,7 @@ import { tx } from "@/lib/i18n";
 export default function HelpPage() {
   const { lang, setLang } = useAppLang("tr");
   return (
-    <main className="min-h-screen max-w-md mx-auto p-4">
+    <main className="min-h-screen max-w-md mx-auto p-4 pb-24">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">{tx(lang, "Birader Yardım", "Birader Help")}</h1>
         <div className="flex items-center gap-1">

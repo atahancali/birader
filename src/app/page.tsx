@@ -119,6 +119,12 @@ type AtRiskUserRow = {
 
 type HomeSection = "log" | "social" | "heatmap" | "stats";
 type LocationSuggestion = { city: string; district: string; score: number };
+
+function parseSection(value: string | null): HomeSection | null {
+  if (value === "log" || value === "social" || value === "heatmap" || value === "stats") return value;
+  return null;
+}
+
 const MAX_BULK_BACKDATE_COUNT = 10;
 const ONBOARDING_SEEN_KEY = "birader:onboarding:v1";
 const PENDING_COMPLIANCE_KEY = "birader:pending-compliance:v1";
@@ -967,6 +973,25 @@ export default function Home() {
     () => isAdminUser,
     [isAdminUser]
   );
+
+  useEffect(() => {
+    function syncFromUrl() {
+      if (typeof window === "undefined") return;
+      const next = parseSection(new URLSearchParams(window.location.search).get("section"));
+      if (next) setActiveSection(next);
+    }
+    function onGlobalNavSection(event: Event) {
+      const detail = (event as CustomEvent<{ section?: HomeSection }>).detail;
+      if (detail?.section) setActiveSection(detail.section);
+    }
+    syncFromUrl();
+    window.addEventListener("popstate", syncFromUrl);
+    window.addEventListener("birader:nav-section", onGlobalNavSection as EventListener);
+    return () => {
+      window.removeEventListener("popstate", syncFromUrl);
+      window.removeEventListener("birader:nav-section", onGlobalNavSection as EventListener);
+    };
+  }, []);
 
   function canOpenLogStep(step: 1 | 2 | 3 | 4) {
     if (step <= 1) return true;
@@ -2766,7 +2791,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           <div>
             <h1 className="text-2xl font-bold text-amber-300">Birader</h1>
             <p className="text-sm text-amber-100/80">
-              God forbid an individual loves beer &amp; stats
+              God forbid a man loves beer &amp; stats
             </p>
           </div>
         </div>
@@ -4194,35 +4219,6 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         </div>
       ) : null}
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/85 backdrop-blur-md">
-        <div className="mx-auto grid max-w-md grid-cols-5 gap-1 p-2">
-          {[
-            { key: "log", label: t(lang, "nav_log") },
-            { key: "social", label: t(lang, "nav_social") },
-            { key: "heatmap", label: t(lang, "nav_heatmap") },
-            { key: "stats", label: t(lang, "nav_stats") },
-          ].map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => setActiveSection(item.key as HomeSection)}
-              className={`rounded-xl border px-2 py-2 text-xs ${
-                activeSection === item.key
-                  ? "border-amber-200/50 bg-amber-300/15 text-amber-200"
-                  : "border-white/10 bg-black/30 text-white/75"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-          <Link
-            href="/yardim"
-            className="rounded-xl border border-white/10 bg-black/30 px-2 py-2 text-center text-xs text-white/75"
-          >
-            {t(lang, "nav_help")}
-          </Link>
-        </div>
-      </nav>
     </main>
   );
 }

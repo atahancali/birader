@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import ComplianceLayer from "@/components/ComplianceLayer";
+import GlobalBottomNav from "@/components/GlobalBottomNav";
 import HealthNoticeBar from "@/components/HealthNoticeBar";
 import SiteFooter from "@/components/SiteFooter";
 import "./globals.css";
@@ -51,6 +52,7 @@ export default function RootLayout({
           <HealthNoticeBar />
           <div className="flex-1">{children}</div>
           <SiteFooter />
+          <GlobalBottomNav />
         </div>
       </body>
     </html>

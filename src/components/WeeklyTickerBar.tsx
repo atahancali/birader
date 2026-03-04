@@ -81,7 +81,7 @@ export default function WeeklyTickerBar({
             <Link
               key={`${item.key}-${idx}`}
               href={item.href || "/"}
-              className="inline-flex min-w-[220px] max-w-[300px] shrink-0 snap-start flex-col rounded-lg border border-white/10 bg-white/5 px-3 py-2 transition hover:border-amber-300/45 hover:bg-amber-500/10"
+              className="inline-flex h-[84px] min-w-[220px] max-w-[300px] shrink-0 snap-start flex-col justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 transition hover:border-amber-300/45 hover:bg-amber-500/10"
             >
               <span className="text-[10px] uppercase tracking-wide opacity-70">{item.label}</span>
               <span className="truncate text-xs font-semibold">{item.value}</span>
