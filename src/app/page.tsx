@@ -11,6 +11,7 @@ import FieldHeatmap from "@/components/FieldHeatmap";
 import FootballHeatmap from "@/components/FootballHeatmap";
 import GeoHeatmap from "@/components/GeoHeatmap";
 import BeerWheel from "@/components/BeerWheel";
+import FavoriteReplaceModal from "@/components/FavoriteReplaceModal";
 import LoadingPulse from "@/components/LoadingPulse";
 import RatingStars from "@/components/RatingStars";
 import { normalizeUsername, usernameFromEmail, usernameToCandidateEmails } from "@/lib/identity";
@@ -724,6 +725,8 @@ export default function Home() {
 
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
+  const [dayCheckinsFromQuery, setDayCheckinsFromQuery] = useState<Checkin[] | null>(null);
+  const [dayCheckinsLoading, setDayCheckinsLoading] = useState(false);
 
   const [checkins, setCheckins] = useState<Checkin[]>([]);
 
@@ -738,13 +741,43 @@ export default function Home() {
     saveLocalCheckins(checkins);
   }, [checkins]);
 
-  const dayCheckins = selectedDay
+  useEffect(() => {
+    let cancelled = false;
+    async function hydrateSelectedDay() {
+      if (!selectedDay) {
+        setDayCheckinsFromQuery(null);
+        setDayCheckinsLoading(false);
+        return;
+      }
+      if (!session?.user?.id) {
+        setDayCheckinsFromQuery(null);
+        setDayCheckinsLoading(false);
+        return;
+      }
+      setDayCheckinsLoading(true);
+      const rows = await loadCheckinsForDay(selectedDay);
+      if (!cancelled) {
+        setDayCheckinsFromQuery(rows);
+        setDayCheckinsLoading(false);
+      }
+    }
+    void hydrateSelectedDay();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDay, session?.user?.id, checkins]);
+
+  const localDayCheckins = selectedDay
     ? checkins.filter((c) => {
         const d = new Date(c.created_at);
         const iso = d.toISOString().slice(0, 10);
         return iso === selectedDay;
       })
     : [];
+  const dayCheckins = useMemo(() => {
+    if (!selectedDay) return [] as Checkin[];
+    return dayCheckinsFromQuery ?? localDayCheckins;
+  }, [dayCheckinsFromQuery, localDayCheckins, selectedDay]);
 
   // auth
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
@@ -965,7 +998,10 @@ export default function Home() {
   const [batchConfirmed, setBatchConfirmed] = useState(false);
   const [favoriteOnSave, setFavoriteOnSave] = useState(false);
   const [favorites, setFavorites] = useState<FavoriteBeer[]>([]);
-  const [replaceFavoriteRank, setReplaceFavoriteRank] = useState<number | null>(null);
+  const [favoriteReplaceModalOpen, setFavoriteReplaceModalOpen] = useState(false);
+  const [favoriteReplacePendingBeer, setFavoriteReplacePendingBeer] = useState("");
+  const [favoriteReplaceBusy, setFavoriteReplaceBusy] = useState(false);
+  const [favoriteReplaceOptions, setFavoriteReplaceOptions] = useState<FavoriteBeer[]>([]);
   const [activeSection, setActiveSection] = useState<HomeSection>("log");
   const [logStep, setLogStep] = useState<1 | 2 | 3 | 4>(1);
   const [heatmapMode, setHeatmapMode] = useState<"football" | "grid">("football");
@@ -1271,6 +1307,41 @@ export default function Home() {
     setCheckins((((fallback.data as any[]) ?? []).map((c) => ({ ...c, media_url: null, media_type: null })) as any) ?? []);
   }
 
+  async function loadCheckinsForDay(dayIso: string): Promise<Checkin[]> {
+    if (!session?.user?.id) return [];
+    const start = `${dayIso}T00:00:00.000Z`;
+    const endDate = new Date(`${dayIso}T00:00:00.000Z`);
+    endDate.setUTCDate(endDate.getUTCDate() + 1);
+    const end = endDate.toISOString();
+
+    const withMedia = await supabase
+      .from("checkins")
+      .select(CHECKINS_SELECT_WITH_MEDIA)
+      .eq("user_id", session.user.id)
+      .gte("created_at", start)
+      .lt("created_at", end)
+      .order("created_at", { ascending: false });
+    if (!withMedia.error) return (withMedia.data as Checkin[] | null) ?? [];
+
+    if (!isMissingMediaColumnError(withMedia.error)) {
+      console.error(withMedia.error);
+      return [];
+    }
+
+    const fallback = await supabase
+      .from("checkins")
+      .select(CHECKINS_SELECT_BASE)
+      .eq("user_id", session.user.id)
+      .gte("created_at", start)
+      .lt("created_at", end)
+      .order("created_at", { ascending: false });
+    if (fallback.error) {
+      console.error(fallback.error);
+      return [];
+    }
+    return (((fallback.data as any[]) ?? []).map((c) => ({ ...c, media_url: null, media_type: null })) as Checkin[]) ?? [];
+  }
+
   async function loadFavorites() {
     if (!session?.user?.id) return;
     const { data, error } = await supabase
@@ -1519,19 +1590,6 @@ export default function Home() {
     void supabase.rpc("refresh_my_badges");
     void loadMyBadges();
   }, [session?.user?.id]);
-
-  useEffect(() => {
-    if (favorites.length < 3) {
-      setReplaceFavoriteRank(null);
-      return;
-    }
-    if (replaceFavoriteRank === null) {
-      setReplaceFavoriteRank(Number(favorites[0]?.rank ?? 1));
-      return;
-    }
-    const stillValid = favorites.some((f) => Number(f.rank) === replaceFavoriteRank);
-    if (!stillValid) setReplaceFavoriteRank(Number(favorites[0]?.rank ?? 1));
-  }, [favorites, replaceFavoriteRank]);
 
   const topBeerLabelsByFormat = useMemo(() => {
     const countsF: Record<string, number> = {};
@@ -1890,10 +1948,10 @@ export default function Home() {
     if (district !== "Diger" && customDistrict) setCustomDistrict("");
   }, [customDistrict, district]);
 
-  async function syncFavoriteAfterCheckin(beer: string) {
-    if (!session?.user?.id || !favoriteOnSave) return;
+  async function syncFavoriteAfterCheckin(beer: string): Promise<"applied" | "pending" | "noop"> {
+    if (!session?.user?.id || !favoriteOnSave) return "noop";
     const trimmed = favoriteBeerName(beer);
-    if (!trimmed) return;
+    if (!trimmed) return "noop";
 
     const { data: currentRows, error: currentErr } = await supabase
       .from("favorite_beers")
@@ -1902,7 +1960,7 @@ export default function Home() {
       .order("rank", { ascending: true });
     if (currentErr) {
       alert(currentErr.message);
-      return;
+      return "noop";
     }
     const current = ((currentRows as FavoriteBeer[] | null) ?? []).map((f) => ({
       ...f,
@@ -1910,7 +1968,7 @@ export default function Home() {
     }));
     if (current.some((f) => f.beer_name === trimmed)) {
       setFavorites(current);
-      return;
+      return "noop";
     }
 
     if (current.length < 3) {
@@ -1928,14 +1986,14 @@ export default function Home() {
         if (isFavoriteLimitExceededError(error)) {
           await loadFavorites();
           alert(tx(lang, "En fazla 3 favori ekleyebilirsin.", "You can add at most 3 favorites."));
-          return;
+          return "noop";
         }
         if (error.code === "23505" || error.message.toLowerCase().includes("duplicate")) {
           await loadFavorites();
-          return;
+          return "noop";
         }
         alert(error.message);
-        return;
+        return "noop";
       }
 
       await loadFavorites();
@@ -1944,34 +2002,74 @@ export default function Home() {
         userId: session.user.id,
         props: { beer_name: trimmed, rank, source: "checkin_form" },
       });
-      return;
+      return "applied";
     }
 
-    const rankToReplace = replaceFavoriteRank ?? Number(current[0]?.rank ?? 1);
-    const target = current.find((f) => Number(f.rank) === rankToReplace);
-    if (!target) return;
+    setFavorites(current);
+    setFavoriteReplaceOptions(current);
+    setFavoriteReplacePendingBeer(trimmed);
+    setFavoriteReplaceModalOpen(true);
+    return "pending";
+  }
 
-    const { error } = await supabase
-      .from("favorite_beers")
-      .update({ beer_name: trimmed })
-      .eq("user_id", session.user.id)
-      .eq("rank", rankToReplace);
-
-    if (error) {
-      if (error.code === "23505" || error.message.toLowerCase().includes("duplicate")) {
-        await loadFavorites();
+  async function confirmFavoriteReplacement(rankToReplace: number) {
+    if (!session?.user?.id) return;
+    const trimmed = favoriteBeerName(favoriteReplacePendingBeer);
+    if (!trimmed) return;
+    setFavoriteReplaceBusy(true);
+    try {
+      const { data: currentRows, error: currentErr } = await supabase
+        .from("favorite_beers")
+        .select("beer_name, rank")
+        .eq("user_id", session.user.id)
+        .order("rank", { ascending: true });
+      if (currentErr) {
+        alert(currentErr.message);
         return;
       }
-      alert(error.message);
-      return;
-    }
+      const current = ((currentRows as FavoriteBeer[] | null) ?? []).map((f) => ({
+        ...f,
+        beer_name: favoriteBeerName(f.beer_name),
+      }));
+      const target = current.find((f) => Number(f.rank) === Number(rankToReplace));
+      if (!target) return;
+      if (current.some((f) => f.beer_name === trimmed)) {
+        await loadFavorites();
+        setFavoriteReplaceModalOpen(false);
+        setFavoriteReplacePendingBeer("");
+        setFavoriteReplaceOptions([]);
+        return;
+      }
 
-    await loadFavorites();
-    trackEvent({
-      eventName: "favorite_replaced",
-      userId: session.user.id,
-      props: { old_beer_name: target.beer_name, new_beer_name: trimmed, rank: rankToReplace },
-    });
+      const { error } = await supabase
+        .from("favorite_beers")
+        .update({ beer_name: trimmed })
+        .eq("user_id", session.user.id)
+        .eq("rank", Number(rankToReplace));
+      if (error) {
+        if (error.code === "23505" || error.message.toLowerCase().includes("duplicate")) {
+          await loadFavorites();
+          setFavoriteReplaceModalOpen(false);
+          setFavoriteReplacePendingBeer("");
+          setFavoriteReplaceOptions([]);
+          return;
+        }
+        alert(error.message);
+        return;
+      }
+
+      await loadFavorites();
+      trackEvent({
+        eventName: "favorite_replaced",
+        userId: session.user.id,
+        props: { old_beer_name: target.beer_name, new_beer_name: trimmed, rank: Number(rankToReplace) },
+      });
+      setFavoriteReplaceModalOpen(false);
+      setFavoriteReplacePendingBeer("");
+      setFavoriteReplaceOptions([]);
+    } finally {
+      setFavoriteReplaceBusy(false);
+    }
   }
 
   const favoriteCandidate = useMemo(() => favoriteBeerName(beerName), [beerName]);
@@ -2839,7 +2937,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           const favoriteTargets = Array.from(
             new Set(targets.map((beer) => favoriteBeerName(beer)).filter((beer): beer is string => Boolean(beer)))
           );
-          for (const beer of favoriteTargets) await syncFavoriteAfterCheckin(beer);
+          for (const beer of favoriteTargets) {
+            const favoriteResult = await syncFavoriteAfterCheckin(beer);
+            if (favoriteResult === "pending") break;
+          }
           trackEvent({
             eventName: "checkin_added",
             userId: session.user.id,
@@ -3129,6 +3230,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           open={selectedDay !== null}
           day={selectedDay ?? ""}
           checkins={dayCheckins}
+          loading={dayCheckinsLoading}
           beerOptions={allBeerLabels}
           lang={lang}
           onOpenLogForDay={(d) => {
@@ -3697,24 +3799,6 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 />
                 {tx(lang, "Bu logdaki birayi favorilere ekle", "Add this beer to favorites")}
               </label>
-              {favoriteOnSave &&
-              favorites.length >= 3 &&
-              !favorites.some((f) => f.beer_name === favoriteCandidate) ? (
-                <div className="mt-2">
-                  <label className="mb-1 block text-xs opacity-70">{tx(lang, "Degisecek favori", "Favorite to replace")}</label>
-                  <select
-                    value={replaceFavoriteRank ?? ""}
-                    onChange={(e) => setReplaceFavoriteRank(Number(e.target.value))}
-                    className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
-                  >
-                    {favorites.map((f) => (
-                      <option key={f.rank} value={f.rank}>
-                        #{f.rank} {f.beer_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : null}
             </div>
 
             {isBackDate && batchBeerNames.length > 1 ? (
@@ -3965,6 +4049,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       open={selectedDay !== null}
       day={selectedDay ?? ""}
       checkins={dayCheckins}
+      loading={dayCheckinsLoading}
       beerOptions={allBeerLabels}
       lang={lang}
       onOpenLogForDay={(d) => {
@@ -4089,6 +4174,22 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
   onDelete={deleteCheckin}
   onUpdate={updateCheckin}
 />
+      <FavoriteReplaceModal
+        open={favoriteReplaceModalOpen}
+        favorites={favoriteReplaceOptions}
+        candidateBeerName={favoriteReplacePendingBeer}
+        lang={lang}
+        busy={favoriteReplaceBusy}
+        onClose={() => {
+          if (favoriteReplaceBusy) return;
+          setFavoriteReplaceModalOpen(false);
+          setFavoriteReplacePendingBeer("");
+          setFavoriteReplaceOptions([]);
+        }}
+        onConfirm={async (rank) => {
+          await confirmFavoriteReplacement(rank);
+        }}
+      />
       {activeSection === "stats" ? (
       <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
         <div className="mb-4 grid grid-cols-2 gap-2 text-sm">

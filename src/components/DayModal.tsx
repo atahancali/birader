@@ -33,6 +33,7 @@ export default function DayModal({
   open,
   day,
   checkins,
+  loading = false,
   beerOptions = [],
   onClose,
   onAdd,
@@ -44,6 +45,7 @@ export default function DayModal({
   open: boolean;
   day: string;
   checkins: Checkin[];
+  loading?: boolean;
   beerOptions?: string[];
   onClose: () => void;
   onAdd: (payload: { day: string; beer_name: string; rating: number | null }) => Promise<void>;
@@ -147,6 +149,11 @@ export default function DayModal({
             <div className="text-sm opacity-80 mt-1">
               {checkins.length} {lang === "en" ? "beers" : "bira"} • {lang === "en" ? "Average" : "Ortalama"}: {avg ? avg.toFixed(2) : "-"} ⭐
             </div>
+            {loading ? (
+              <div className="mt-1 text-xs opacity-60">
+                {lang === "en" ? "Loading day details..." : "Gun detaylari yukleniyor..."}
+              </div>
+            ) : null}
           </div>
           <button onClick={onClose} className="text-xl opacity-80">
             ✕
@@ -226,6 +233,14 @@ export default function DayModal({
 
         {/* LIST */}
         <div className="mt-4 space-y-2">
+          {loading ? (
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm opacity-70">
+              {lang === "en" ? "Loading..." : "Yukleniyor..."}
+            </div>
+          ) : null}
+
+          {!loading ? (
+            <>
           {checkins.map((c) => {
             const isEditing = editingId === c.id;
             const isBusy = busyId === c.id;
@@ -326,6 +341,8 @@ export default function DayModal({
           {checkins.length === 0 && (
             <div className="text-sm opacity-70">{lang === "en" ? "No entries for this day." : "Bu gün için kayıt yok."}</div>
           )}
+            </>
+          ) : null}
         </div>
       </div>
     </div>
