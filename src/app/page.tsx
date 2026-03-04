@@ -67,6 +67,7 @@ type CheckinInsertPayload = {
   longitude?: number | null;
   media_url?: string | null;
   media_type?: string | null;
+  idempotency_key?: string | null;
 };
 
 type GuardedInsertOutcome = {
@@ -394,6 +395,11 @@ function inferMediaType(urlRaw: string) {
 function isMissingMediaColumnError(error: any) {
   const msg = String(error?.message || "").toLowerCase();
   return msg.includes("does not exist") && (msg.includes("media_url") || msg.includes("media_type"));
+}
+
+function isMissingIdempotencyColumnError(error: any) {
+  const msg = String(error?.message || "").toLowerCase();
+  return msg.includes("does not exist") && msg.includes("idempotency_key");
 }
 
 function isMissingGuardedCheckinFunctionError(error: any) {
@@ -989,6 +995,7 @@ export default function Home() {
   const [theme, setTheme] = useState<AppTheme>("dark");
   const lastLogAttemptAtRef = useRef(0);
   const logMutationLockRef = useRef(false);
+  const logSubmitIntentRef = useRef<string>(uuid());
 
   const year = useMemo(() => new Date().getFullYear(), []);
   const isBackDate = dateISO !== today;
@@ -1039,6 +1046,15 @@ export default function Home() {
       return;
     }
     setLogStep(step);
+  }
+
+  function currentLogSubmitIntent() {
+    if (!logSubmitIntentRef.current) logSubmitIntentRef.current = uuid();
+    return logSubmitIntentRef.current;
+  }
+
+  function rotateLogSubmitIntent() {
+    logSubmitIntentRef.current = uuid();
   }
 
   function beginLogMutation() {
@@ -1248,13 +1264,46 @@ export default function Home() {
     if (!queued.length) return;
     const ownRows = queued.filter((r) => String(r.user_id) === session.user.id);
     if (!ownRows.length) return;
-    const { error } = await supabase.from("checkins").insert(ownRows);
+    const normalizedOwnRows = ownRows.map((row, idx) => {
+      const key = String(row.idempotency_key || "").trim();
+      if (key) return row;
+      return {
+        ...row,
+        idempotency_key: `offline:${session.user.id}:${String(row.created_at || "")}:${String(row.beer_name || "")}:${idx}`,
+      };
+    });
+    const dedupeMap = normalizedOwnRows.reduce<Map<string, Record<string, any>>>((acc, row, idx) => {
+      const typedRow = row as Record<string, any>;
+      const key = String(typedRow.idempotency_key || `legacy:${idx}`);
+      if (!acc.has(key)) acc.set(key, typedRow);
+      return acc;
+    }, new Map<string, Record<string, any>>());
+    const dedupedRows: Array<Record<string, any>> = Array.from(dedupeMap.values());
+
+    let error: { message: string } | null = null;
+    const upsertRes = await supabase
+      .from("checkins")
+      .upsert(dedupedRows, { onConflict: "user_id,idempotency_key", ignoreDuplicates: true });
+    if (upsertRes.error) {
+      if (isMissingIdempotencyColumnError(upsertRes.error)) {
+        const fallbackRows: CheckinInsertPayload[] = dedupedRows.map((row) => {
+          const { idempotency_key, ...rest } = row;
+          return rest as CheckinInsertPayload;
+        });
+        error = await insertLegacyCheckins(fallbackRows);
+      } else {
+        error = { message: upsertRes.error.message };
+      }
+    }
+
     if (!error) {
       const remained = queued.filter((r) => String(r.user_id) !== session.user.id);
       writeOfflineLogQueue(remained);
       await loadCheckins();
-      trackEvent({ eventName: "offline_queue_flushed", userId: session.user.id, props: { count: ownRows.length } });
+      trackEvent({ eventName: "offline_queue_flushed", userId: session.user.id, props: { count: dedupedRows.length } });
+      return;
     }
+    console.error("offline queue flush failed:", error.message);
   }
 
   useEffect(() => {
@@ -2461,6 +2510,33 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     return { ok: true, limited: false, fallbackLegacy: false, message: "" };
   }
 
+  async function insertLegacyCheckins(rows: CheckinInsertPayload[]): Promise<{ message: string } | null> {
+    let payloadRows = rows.map((r) => ({ ...r })) as Array<Record<string, any>>;
+    let strippedIdempotency = false;
+    let strippedMedia = false;
+
+    for (let i = 0; i < 3; i += 1) {
+      const { error } = await supabase.from("checkins").insert(payloadRows);
+      if (!error) return null;
+
+      if (!strippedIdempotency && isMissingIdempotencyColumnError(error)) {
+        payloadRows = payloadRows.map(({ idempotency_key, ...rest }) => rest);
+        strippedIdempotency = true;
+        continue;
+      }
+
+      if (!strippedMedia && isMissingMediaColumnError(error)) {
+        payloadRows = payloadRows.map(({ media_url, media_type, ...rest }) => rest);
+        strippedMedia = true;
+        continue;
+      }
+
+      return { message: error.message };
+    }
+
+    return { message: tx(lang, "Log kaydi basarisiz.", "Check-in failed.") };
+  }
+
   async function addCheckin() {
     const name = (beerName || "").trim();
     const targets = isBackDate && batchBeerNames.length > 0 ? batchBeerNames : name ? [name] : [];
@@ -2494,7 +2570,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
       // 1) session varsa supabase dene
       if (session?.user?.id) {
-        const rows = targets.map((beer) => ({
+        const requestKey = currentLogSubmitIntent();
+        const rows: CheckinInsertPayload[] = targets.map((beer, i) => ({
           user_id: session.user.id,
           beer_name: beer,
           rating: normalizedRating,
@@ -2510,15 +2587,15 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           longitude: null,
           media_url: normalizedMediaUrl || "",
           media_type: normalizedMediaType || "",
+          idempotency_key: `${requestKey}:${i}`,
         }));
-        const requestKey = uuid();
         const bypassRateLimit = isBackDate && rows.length > 1;
         let guardedAvailable = true;
         let error: { message: string } | null = null;
 
         for (let i = 0; i < rows.length; i += 1) {
           const guarded = await insertCheckinGuarded(rows[i], {
-            idempotencyKey: `${requestKey}:${i}`,
+            idempotencyKey: rows[i].idempotency_key || `${requestKey}:${i}`,
             bypassRateLimit,
             rateLimitSeconds: 10,
           });
@@ -2533,18 +2610,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         }
 
         if (!error && !guardedAvailable) {
-          const legacyRows = rows.map(({ media_url, media_type, ...rest }) => ({
-            ...rest,
-            media_url: media_url || "",
-            media_type: media_type || "",
-          }));
-          const legacyRes = await supabase.from("checkins").insert(legacyRows);
-          error = legacyRes.error ? { message: legacyRes.error.message } : null;
-          if (error && isMissingMediaColumnError(error)) {
-            const rowsWithoutMedia = legacyRows.map(({ media_url, media_type, ...rest }) => rest);
-            const retry = await supabase.from("checkins").insert(rowsWithoutMedia);
-            error = retry.error ? { message: retry.error.message } : null;
-          }
+          error = await insertLegacyCheckins(rows);
         }
 
         if (!error) {
@@ -2571,6 +2637,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           setBatchBeerNames([]);
           setBatchCountInput("1");
           setBatchConfirmed(false);
+          rotateLogSubmitIntent();
           await loadCheckins();
           await createPostCheckinNudges(session.user.id, beforeBadgeKeys);
           return;
@@ -2608,7 +2675,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       if (session?.user?.id) {
         const created_at =
           dateISO === today ? new Date().toISOString() : new Date(`${dateISO}T12:00:00.000Z`).toISOString();
-        const queueRows = targets.map((beer) => ({
+        const queueIntentKey = currentLogSubmitIntent();
+        const queueRows = targets.map((beer, i) => ({
           user_id: session.user.id,
           beer_name: beer,
           rating: normalizedRating,
@@ -2624,6 +2692,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           longitude: null,
           media_url: normalizedMediaUrl || "",
           media_type: normalizedMediaType || "",
+          idempotency_key: `${queueIntentKey}:${i}`,
         }));
         const queued = readOfflineLogQueue();
         writeOfflineLogQueue([...queued, ...queueRows]);
@@ -2643,6 +2712,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       setBatchBeerNames([]);
       setBatchCountInput("1");
       setBatchConfirmed(false);
+      rotateLogSubmitIntent();
       if (session?.user?.id) {
         await createPostCheckinNudges(session.user.id, beforeBadgeKeys);
       } else {
@@ -3603,60 +3673,49 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         const created_at = new Date(`${day}T12:00:00.000Z`).toISOString();
         const normalizedRating = sanitizeRating(rating);
         try {
-	          if (session?.user?.id) {
-	            const serverRow: CheckinInsertPayload = {
-	              user_id: session.user.id,
-	              beer_name,
-	              rating: normalizedRating,
-	              created_at,
-	              day_period: dayPeriod,
-	              country_code: "TR",
-	              city,
-	              district: resolvedDistrict,
-	              location_text: "",
-	              price_try: null,
-	              note: "",
-	              latitude: null,
-	              longitude: null,
-	              media_url: "",
-	              media_type: "",
-	            };
-	            const guarded = await insertCheckinGuarded(serverRow, {
-	              idempotencyKey: `daymodal:${day}:${beer_name}:${uuid()}`,
-	              bypassRateLimit: false,
-	              rateLimitSeconds: 10,
-	            });
+          if (session?.user?.id) {
+            const requestKey = currentLogSubmitIntent();
+            const serverRow: CheckinInsertPayload = {
+              user_id: session.user.id,
+              beer_name,
+              rating: normalizedRating,
+              created_at,
+              day_period: dayPeriod,
+              country_code: "TR",
+              city,
+              district: resolvedDistrict,
+              location_text: "",
+              price_try: null,
+              note: "",
+              latitude: null,
+              longitude: null,
+              media_url: "",
+              media_type: "",
+              idempotency_key: `daymodal:${requestKey}:${day}:${beer_name.trim().toLowerCase()}`,
+            };
+            const guarded = await insertCheckinGuarded(serverRow, {
+              idempotencyKey: serverRow.idempotency_key || `daymodal:${requestKey}`,
+              bypassRateLimit: false,
+              rateLimitSeconds: 10,
+            });
 
-	            if (!guarded.ok && guarded.fallbackLegacy) {
-	              const { error } = await supabase.from("checkins").insert({
-	                user_id: session.user.id,
-	                beer_name,
-	                rating: normalizedRating,
-	                created_at,
-	                day_period: dayPeriod,
-	                country_code: "TR",
-	                city,
-	                district: resolvedDistrict,
-	                location_text: "",
-	                price_try: null,
-	                note: "",
-	                latitude: null,
-	                longitude: null,
-	              });
-	              if (error) {
-	                alert(error.message);
-	                return;
-	              }
-	            } else if (!guarded.ok) {
-	              alert(guarded.message);
-	              return;
-	            }
+            if (!guarded.ok && guarded.fallbackLegacy) {
+              const legacyError = await insertLegacyCheckins([serverRow]);
+              if (legacyError) {
+                alert(legacyError.message);
+                return;
+              }
+            } else if (!guarded.ok) {
+              alert(guarded.message);
+              return;
+            }
 
-	            trackEvent({
-	              eventName: "checkin_added",
+            trackEvent({
+              eventName: "checkin_added",
               userId: session.user.id,
               props: { rating: normalizedRating, beer_name },
             });
+            rotateLogSubmitIntent();
             await loadCheckins();
             await createPostCheckinNudges(session.user.id, beforeBadgeKeys);
             return;
@@ -3680,6 +3739,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             },
             ...prev,
           ]);
+          rotateLogSubmitIntent();
           trackEvent({
             eventName: "checkin_added_local",
             userId: session?.user?.id ?? null,

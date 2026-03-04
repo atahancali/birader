@@ -28,7 +28,7 @@ Hedef: performansi olcebilir, alarm verebilir ve cache/queue kismini stabilize e
 ## Sprint 2 (Check-in Guvenligi + Veri Butunlugu)
 Hedef: log akisinda duplicate, veri tutarliligi ve geri alma senaryolarini kapatmak.
 
-- [ ] `#12` Coklu log akisi icin merkezi double-submit korumasi (`S`, `todo`)
+- [x] `#12` Coklu log akisi icin merkezi double-submit korumasi (`S`, `done`)
 - [ ] `#14` Eski tarih toplu giriste import-preview adimi (`M`, `todo`)
 - [ ] `#15` Gelecek tarihe log atmayi tum entry pointlerde engelleme (`S`, `todo`)
 - [ ] `#16` Log silme icin soft-delete + undo (`L`, `todo`)
@@ -96,7 +96,7 @@ Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 - [ ] `#50` Admin panelde growth + perf + moderation KPI tek ekran (`L`, `todo`)
 
 ## Yurutme Notu
-- Aktif sprint: `Sprint 1`
-- Aktif paket: `Sprint 2 / #12`
+- Aktif sprint: `Sprint 2`
+- Aktif paket: `#14 + #15`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.
