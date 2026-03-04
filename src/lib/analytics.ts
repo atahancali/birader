@@ -16,11 +16,14 @@ type AnalyticsRow = {
 
 const ANALYTICS_BATCH_SIZE = 20;
 const ANALYTICS_FLUSH_MS = 1500;
+const ERROR_TEXT_MAX = 280;
 
 const queue: AnalyticsRow[] = [];
 let flushTimer: number | null = null;
 let flushing = false;
 let lifecycleBound = false;
+let errorTrackingBound = false;
+let errorTrackingUserId: string | null = null;
 
 function readCookie(name: string) {
   if (typeof document === "undefined") return "";
@@ -101,4 +104,62 @@ export function trackEvent({ eventName, userId, props }: TrackEventInput) {
       void flushQueue();
     }, ANALYTICS_FLUSH_MS);
   }
+}
+
+function clipText(input: unknown, max = ERROR_TEXT_MAX) {
+  const raw = String(input ?? "").trim();
+  if (!raw) return "";
+  return raw.length > max ? `${raw.slice(0, max - 1)}…` : raw;
+}
+
+function reasonToText(reason: unknown) {
+  if (reason instanceof Error) {
+    return clipText(reason.message || reason.name || "error");
+  }
+  if (typeof reason === "string") return clipText(reason);
+  try {
+    return clipText(JSON.stringify(reason));
+  } catch {
+    return "unknown";
+  }
+}
+
+export function bindGlobalErrorTracking(userId?: string | null) {
+  if (typeof window === "undefined") return;
+  errorTrackingUserId = userId ?? null;
+  if (errorTrackingBound) return;
+  errorTrackingBound = true;
+
+  window.addEventListener("error", (event) => {
+    try {
+      trackEvent({
+        eventName: "client_error",
+        userId: errorTrackingUserId,
+        props: {
+          type: "error",
+          message: clipText(event.message || "window_error"),
+          file: clipText(event.filename || ""),
+          line: Number.isFinite(event.lineno) ? Number(event.lineno) : 0,
+          column: Number.isFinite(event.colno) ? Number(event.colno) : 0,
+        },
+      });
+    } catch {
+      // no-op
+    }
+  });
+
+  window.addEventListener("unhandledrejection", (event) => {
+    try {
+      trackEvent({
+        eventName: "client_error",
+        userId: errorTrackingUserId,
+        props: {
+          type: "unhandledrejection",
+          message: reasonToText(event.reason),
+        },
+      });
+    } catch {
+      // no-op
+    }
+  });
 }

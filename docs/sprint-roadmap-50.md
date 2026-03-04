@@ -16,12 +16,12 @@ Bu dosya 50 maddelik backlog'un sprintlere bolunmus ve isaretlenebilir halidir.
 ## Sprint 1 (Hizli Kazanim + Olcum)
 Hedef: performansi olcebilir, alarm verebilir ve cache/queue kismini stabilize edebilir hale gelmek.
 
-- [ ] `#01` Feed/Sosyal SQL sorgulari icin `EXPLAIN ANALYZE` turu (`M`, `in-progress`)
+- [x] `#01` Feed/Sosyal SQL sorgulari icin `EXPLAIN ANALYZE` turu (`M`, `done`)
 - [x] `#05` Sosyal sorgular icin eksik index taramasi + index ekleme (`M`, `done`)
 - [x] `#06` `social_perf_overview_24h` admin kartina tasima (`S`, `done`)
 - [x] `#08` Hata orani esik asiminda admin uyarisi (`M`, `done`)
 - [x] `#09` p95 yavas metrikleri kirmizi esik ile isaretleme (`S`, `done`)
-- [ ] `#10` Frontend error tracking (Sentry vb.) entegrasyonu (`M`, `todo`)
+- [x] `#10` Frontend error tracking (Sentry vb.) entegrasyonu (`M`, `done`)
 - [ ] `#11` API idempotency key standardi (`S`, `todo`)
 - [ ] `#13` Log aksiyonlarina server-side rate limit (`M`, `todo`)
 
@@ -97,6 +97,6 @@ Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 
 ## Yurutme Notu
 - Aktif sprint: `Sprint 1`
-- Aktif paket: `#01`
+- Aktif paket: `#11 + #13`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.

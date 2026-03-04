@@ -14,7 +14,7 @@ import BeerWheel from "@/components/BeerWheel";
 import LoadingPulse from "@/components/LoadingPulse";
 import RatingStars from "@/components/RatingStars";
 import { normalizeUsername, usernameFromEmail, usernameToCandidateEmails } from "@/lib/identity";
-import { trackEvent } from "@/lib/analytics";
+import { bindGlobalErrorTracking, trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
 import { TURKEY_CITIES, districtsForCity } from "@/lib/trLocations";
 import { DAY_PERIOD_OPTIONS, dayPeriodLabelEn, dayPeriodLabelTr, type DayPeriod } from "@/lib/dayPeriod";
@@ -1028,6 +1028,10 @@ export default function Home() {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    bindGlobalErrorTracking(session?.user?.id || null);
+  }, [session?.user?.id]);
 
   useEffect(() => {
     try {
