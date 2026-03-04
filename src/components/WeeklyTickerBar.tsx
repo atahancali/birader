@@ -30,7 +30,7 @@ export default function WeeklyTickerBar({
   busy = false,
 }: WeeklyTickerBarProps) {
   const hasItems = items.length > 0;
-  const renderItems = hasItems
+  const baseItems = hasItems
     ? items
     : [
         {
@@ -41,9 +41,10 @@ export default function WeeklyTickerBar({
           href: "/",
         },
       ];
+  const scrollItems = baseItems.length > 1 ? [...baseItems, ...baseItems] : baseItems;
 
   return (
-    <div className="rounded-2xl border border-amber-300/25 bg-gradient-to-r from-amber-500/10 via-black/35 to-black/40 p-3">
+    <div className="w-full min-w-0 rounded-2xl border border-amber-300/25 bg-gradient-to-r from-amber-500/10 via-black/35 to-black/40 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-xs text-amber-200/90">{tx(lang, "Haftanin nabzi", "Weekly pulse")}</div>
         <div className="flex items-center gap-2">
@@ -73,19 +74,23 @@ export default function WeeklyTickerBar({
         </div>
       </div>
 
-      <div className="relative mt-2 overflow-hidden rounded-xl border border-white/10 bg-black/25">
+      <div className="ticker-wrap relative mt-2 w-full overflow-hidden rounded-xl border border-white/10 bg-black/25">
         <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-black/75 to-transparent" />
         <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-black/75 to-transparent" />
-        <div className="no-scrollbar flex snap-x snap-mandatory items-stretch gap-2 overflow-x-auto py-2 pr-2">
-          {renderItems.map((item, idx) => (
+        <div
+          className={`ticker-track flex w-max items-center gap-6 py-2 pr-6 whitespace-nowrap ${
+            scrollItems.length <= 1 || busy ? "[animation-play-state:paused]" : ""
+          }`}
+        >
+          {scrollItems.map((item, idx) => (
             <Link
               key={`${item.key}-${idx}`}
               href={item.href || "/"}
-              className="inline-flex h-[84px] min-w-[220px] max-w-[300px] shrink-0 snap-start flex-col justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 transition hover:border-amber-300/45 hover:bg-amber-500/10"
+              className="shrink-0 text-xs text-white/85 transition hover:text-amber-100"
             >
-              <span className="text-[10px] uppercase tracking-wide opacity-70">{item.label}</span>
-              <span className="truncate text-xs font-semibold">{item.value}</span>
-              <span className="truncate text-[11px] opacity-65">{item.meta}</span>
+              <span className="mr-1 text-[10px] uppercase tracking-wide opacity-55">{item.label}:</span>
+              <span className="font-semibold">{item.value}</span>
+              <span className="ml-1 opacity-60">• {item.meta}</span>
             </Link>
           ))}
         </div>

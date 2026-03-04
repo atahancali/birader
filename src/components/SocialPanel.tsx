@@ -2459,7 +2459,7 @@ export default function SocialPanel({
       ) : null}
 
       <div className="mt-4 grid gap-3">
-        <div className="sticky top-2 z-20">
+        <div className="sticky top-2 z-20 min-w-0">
           <WeeklyTickerBar
             lang={lang}
             scope={weeklyScope}
