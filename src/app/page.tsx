@@ -365,6 +365,12 @@ function isoTodayLocal() {
   return `${y}-${m}-${day}`;
 }
 
+function isFutureIsoDay(dayIso: string, todayIso = isoTodayLocal()) {
+  const normalized = String(dayIso || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return false;
+  return normalized > todayIso;
+}
+
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
@@ -1008,6 +1014,23 @@ export default function Home() {
     () => isAdminUser,
     [isAdminUser]
   );
+  const bulkImportPreview = useMemo(() => {
+    if (!isBackDate || !batchBeerNames.length) return [];
+    const counts = new Map<string, number>();
+    for (const beer of batchBeerNames) {
+      const key = String(beer || "").trim();
+      if (!key) continue;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([beer, qty]) => ({ beer, qty }))
+      .sort((a, b) => {
+        if (b.qty !== a.qty) return b.qty - a.qty;
+        return a.beer.localeCompare(b.beer, "tr");
+      });
+  }, [batchBeerNames, isBackDate]);
+  const bulkImportUniqueCount = bulkImportPreview.length;
+  const bulkImportTotalCount = isBackDate ? batchBeerNames.length : 0;
 
   useEffect(() => {
     function syncFromUrl() {
@@ -1264,7 +1287,15 @@ export default function Home() {
     if (!queued.length) return;
     const ownRows = queued.filter((r) => String(r.user_id) === session.user.id);
     if (!ownRows.length) return;
-    const normalizedOwnRows = ownRows.map((row, idx) => {
+    const validOwnRows = ownRows.filter((row) => !isFutureIsoDay(String(row.created_at || "").slice(0, 10), today));
+    if (validOwnRows.length !== ownRows.length) {
+      const keptOwnRows = ownRows.filter((row) => !isFutureIsoDay(String(row.created_at || "").slice(0, 10), today));
+      const nonOwnRows = queued.filter((r) => String(r.user_id) !== session.user.id);
+      writeOfflineLogQueue([...nonOwnRows, ...keptOwnRows]);
+    }
+    if (!validOwnRows.length) return;
+
+    const normalizedOwnRows = validOwnRows.map((row, idx) => {
       const key = String(row.idempotency_key || "").trim();
       if (key) return row;
       return {
@@ -2470,6 +2501,16 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       idempotencyKey: "",
     }
   ): Promise<GuardedInsertOutcome> {
+    const rowDay = String(row.created_at || "").slice(0, 10);
+    if (isFutureIsoDay(rowDay, today)) {
+      return {
+        ok: false,
+        limited: false,
+        fallbackLegacy: false,
+        message: tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."),
+      };
+    }
+
     const { data, error } = await supabase.rpc("create_checkin_guarded", {
       p_beer_name: row.beer_name,
       p_rating: row.rating,
@@ -2506,11 +2547,25 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         message: tx(lang, "Cok hizli log atiyorsun. Biraz bekleyip tekrar dene.", "You're logging too fast. Wait a bit and try again."),
       };
     }
+    if (rowRes?.reason === "future_date_blocked") {
+      return {
+        ok: false,
+        limited: false,
+        fallbackLegacy: false,
+        message: tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."),
+      };
+    }
 
     return { ok: true, limited: false, fallbackLegacy: false, message: "" };
   }
 
   async function insertLegacyCheckins(rows: CheckinInsertPayload[]): Promise<{ message: string } | null> {
+    if (rows.some((row) => isFutureIsoDay(String(row.created_at || "").slice(0, 10), today))) {
+      return {
+        message: tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."),
+      };
+    }
+
     let payloadRows = rows.map((r) => ({ ...r })) as Array<Record<string, any>>;
     let strippedIdempotency = false;
     let strippedMedia = false;
@@ -2541,7 +2596,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     const name = (beerName || "").trim();
     const targets = isBackDate && batchBeerNames.length > 0 ? batchBeerNames : name ? [name] : [];
     if (!targets.length) return;
-    if (dateISO > today) {
+    if (isFutureIsoDay(dateISO, today)) {
       alert(tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."));
       return;
     }
@@ -2900,7 +2955,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           }}
           onClose={() => setSelectedDay(null)}
           onAdd={async ({ day, beer_name, rating }) => {
-            if (day > today) {
+            if (isFutureIsoDay(day, today)) {
               alert(tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."));
               return;
             }
@@ -3162,7 +3217,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       <input
                         type="date"
                         value={dateISO}
-                        onChange={(e) => setDateISO(e.target.value)}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          setDateISO(isFutureIsoDay(next, today) ? today : next);
+                        }}
                         max={today}
                         className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none"
                       />
@@ -3367,7 +3425,15 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           <div>
             <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
               <div className="text-xs opacity-70">{tx(lang, "Log ozeti", "Log summary")}</div>
-              <div className="mt-1 text-sm font-semibold">{beerName || tx(lang, "Bira secilmedi", "No beer selected")}</div>
+              <div className="mt-1 text-sm font-semibold">
+                {isBackDate && bulkImportTotalCount > 0
+                  ? tx(
+                      lang,
+                      `${bulkImportTotalCount} kayitlik toplu import`,
+                      `Bulk import of ${bulkImportTotalCount} records`
+                    )
+                  : beerName || tx(lang, "Bira secilmedi", "No beer selected")}
+              </div>
               <div className="mt-1 text-xs opacity-75">Format: {format}</div>
               <div className="text-xs opacity-75">{tx(lang, "Tarih", "Date")}: {dateISO}</div>
               <div className="flex items-center gap-2 text-xs opacity-75">
@@ -3376,6 +3442,35 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               </div>
               <div className="text-xs opacity-75">{tx(lang, "Konum", "Location")}: {city}{resolvedDistrict ? ` / ${resolvedDistrict}` : ""}</div>
             </div>
+
+            {isBackDate && bulkImportTotalCount > 0 ? (
+              <div className="mb-3 rounded-2xl border border-amber-300/25 bg-amber-500/10 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs text-amber-200">{tx(lang, "Import onizleme", "Import preview")}</div>
+                  <div className="text-[11px] text-amber-100/85">
+                    {bulkImportTotalCount} {tx(lang, "kayit", "records")} • {bulkImportUniqueCount} {tx(lang, "farkli bira", "unique beers")}
+                  </div>
+                </div>
+                <div className="mt-2 max-h-36 space-y-1 overflow-auto pr-1">
+                  {bulkImportPreview.map((row) => (
+                    <div
+                      key={row.beer}
+                      className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs"
+                    >
+                      <div className="truncate pr-2">{row.beer}</div>
+                      <div className="opacity-75">{row.qty}x</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 text-[11px] opacity-75">
+                  {tx(
+                    lang,
+                    "Kaydetmeden once listeyi kontrol et; adetleri bir onceki adimdan duzenleyebilirsin.",
+                    "Review the list before saving; you can adjust counts from the previous step."
+                  )}
+                </div>
+              </div>
+            ) : null}
 
             <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
               <label className="flex items-center gap-2 text-xs opacity-85">
@@ -3664,7 +3759,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       }}
       onClose={() => setSelectedDay(null)}
       onAdd={async ({ day, beer_name, rating }) => {
-        if (day > today) {
+        if (isFutureIsoDay(day, today)) {
           alert(tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."));
           return;
         }

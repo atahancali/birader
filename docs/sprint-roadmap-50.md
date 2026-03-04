@@ -29,8 +29,8 @@ Hedef: performansi olcebilir, alarm verebilir ve cache/queue kismini stabilize e
 Hedef: log akisinda duplicate, veri tutarliligi ve geri alma senaryolarini kapatmak.
 
 - [x] `#12` Coklu log akisi icin merkezi double-submit korumasi (`S`, `done`)
-- [ ] `#14` Eski tarih toplu giriste import-preview adimi (`M`, `todo`)
-- [ ] `#15` Gelecek tarihe log atmayi tum entry pointlerde engelleme (`S`, `todo`)
+- [x] `#14` Eski tarih toplu giriste import-preview adimi (`M`, `done`)
+- [x] `#15` Gelecek tarihe log atmayi tum entry pointlerde engelleme (`S`, `done`)
 - [ ] `#16` Log silme icin soft-delete + undo (`L`, `todo`)
 - [ ] `#17` Bira katalog normalize (`beer_master`, `beer_alias`) (`L`, `todo`)
 - [ ] `#18` Custom beer adlarini moderasyon kuyruguna dusurme (`M`, `todo`)
@@ -97,6 +97,6 @@ Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 
 ## Yurutme Notu
 - Aktif sprint: `Sprint 2`
-- Aktif paket: `#14 + #15`
+- Aktif paket: `#16 + #20`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.

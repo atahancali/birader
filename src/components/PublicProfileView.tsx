@@ -80,6 +80,20 @@ function avgRating(checkins: CheckinRow[]) {
   return Math.round((sum / rated.length) * 100) / 100;
 }
 
+function isoTodayLocal() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function isFutureIsoDay(dayIso: string, todayIso = isoTodayLocal()) {
+  const normalized = String(dayIso || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return false;
+  return normalized > todayIso;
+}
+
 export default function PublicProfileView({ username }: { username: string }) {
   const router = useRouter();
   const { lang, setLang } = useAppLang("tr");
@@ -658,8 +672,7 @@ export default function PublicProfileView({ username }: { username: string }) {
 
   async function addCheckinOnDay(payload: { day: string; beer_name: string; rating: number | null }) {
     if (!sessionUserId || !isOwnProfile) return;
-    const todayIso = new Date().toISOString().slice(0, 10);
-    if (payload.day > todayIso) {
+    if (isFutureIsoDay(payload.day, isoTodayLocal())) {
       alert(tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."));
       return;
     }

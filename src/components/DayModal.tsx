@@ -15,6 +15,20 @@ type Checkin = {
 
 const RATINGS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
 
+function isoTodayLocal() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function isFutureIsoDay(dayIso: string, todayIso = isoTodayLocal()) {
+  const normalized = String(dayIso || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return false;
+  return normalized > todayIso;
+}
+
 export default function DayModal({
   open,
   day,
@@ -62,10 +76,15 @@ export default function DayModal({
     if (rated.length === 0) return 0;
     return rated.reduce((s, c) => s + Number(c.rating ?? 0), 0) / rated.length;
   }, [checkins]);
+  const isFutureDay = useMemo(() => isFutureIsoDay(day), [day]);
 
   async function handleAdd() {
     const name = beerName.trim();
     if (!name) return;
+    if (isFutureDay) {
+      alert(lang === "en" ? "You cannot log a future date." : "Bugunden sonraki tarihe log atilamaz.");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -142,7 +161,8 @@ export default function DayModal({
               <button
                 type="button"
                 onClick={() => onOpenLogForDay(day)}
-                className="rounded-xl border border-white/10 bg-black/20 px-2 py-1 text-[11px]"
+                disabled={isFutureDay}
+                className="rounded-xl border border-white/10 bg-black/20 px-2 py-1 text-[11px] disabled:opacity-50"
               >
                 {lang === "en" ? "Go to guided log" : "Secimli ekrana git"}
               </button>
@@ -154,6 +174,7 @@ export default function DayModal({
             onChange={(e) => setBeerName(e.target.value)}
             placeholder={lang === "en" ? "Beer name" : "Bira adı"}
             list="daymodal-beer-options"
+            disabled={isFutureDay}
             className="w-full rounded-2xl bg-black/20 border border-white/10 px-3 py-3 outline-none"
           />
           <datalist id="daymodal-beer-options">
@@ -165,6 +186,7 @@ export default function DayModal({
           <button
             type="button"
             onClick={() => setRating((r) => (r === null ? 3.5 : null))}
+            disabled={isFutureDay}
             className={`mt-2 px-3 py-2 rounded-2xl border text-sm ${
               rating === null ? "bg-white text-black" : "border-white/10 bg-black/20"
             }`}
@@ -178,6 +200,7 @@ export default function DayModal({
                 key={r}
                 type="button"
                 onClick={() => setRating(r)}
+                disabled={isFutureDay}
                 className={`px-3 py-2 rounded-2xl border text-sm ${
                   rating === r ? "bg-white text-black" : "border-white/10 bg-black/20"
                 }`}
@@ -188,12 +211,17 @@ export default function DayModal({
           </div>
 
           <button
-            disabled={saving}
+            disabled={saving || isFutureDay}
             onClick={handleAdd}
             className="mt-3 w-full rounded-2xl bg-white text-black py-3 font-semibold disabled:opacity-60"
           >
             {saving ? (lang === "en" ? "Adding..." : "Ekleniyor...") : (lang === "en" ? "Add" : "Ekle")}
           </button>
+          {isFutureDay ? (
+            <div className="mt-2 text-xs text-amber-200/85">
+              {lang === "en" ? "Future days are locked for logging." : "Gelecek gunlere log atilamaz."}
+            </div>
+          ) : null}
         </div>
 
         {/* LIST */}

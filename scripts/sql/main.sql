@@ -307,6 +307,10 @@ begin
   if nullif(trim(coalesce(p_beer_name, '')), '') is null then
     raise exception 'beer_name_required';
   end if;
+  if coalesce(p_created_at, now()) > now() then
+    return query select null::text, false, false, 'future_date_blocked';
+    return;
+  end if;
 
   if v_key is not null then
     select c.id::text
