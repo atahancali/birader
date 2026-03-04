@@ -214,6 +214,7 @@ create index if not exists idx_checkins_city_district on public.checkins (city, 
 create index if not exists idx_checkins_location_text on public.checkins (location_text);
 create index if not exists idx_checkins_geo on public.checkins (latitude, longitude);
 create index if not exists idx_checkins_created_at on public.checkins (created_at desc);
+create index if not exists idx_checkins_user_created_at on public.checkins (user_id, created_at desc);
 
 -- refresh checks / constraints
 alter table public.favorite_beers drop constraint if exists favorite_beers_rank_check;
@@ -779,8 +780,79 @@ as $$
   order by t.priority;
 $$;
 
+create or replace function public.get_social_leaderboard(
+  p_window text default '7d',
+  p_scope text default 'all'
+)
+returns table (
+  user_id uuid,
+  username text,
+  display_name text,
+  logs int,
+  avg_rating numeric
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with params as (
+    select
+      auth.uid() as uid,
+      case when lower(coalesce(p_scope, 'all')) = 'followed' then 'followed' else 'all' end as scope,
+      case
+        when lower(coalesce(p_window, '7d')) = '30d' then interval '30 day'
+        when lower(coalesce(p_window, '7d')) = '90d' then interval '90 day'
+        when lower(coalesce(p_window, '7d')) = '365d' then interval '365 day'
+        else interval '7 day'
+      end as lookback
+  ),
+  scope_users as (
+    select p.user_id
+    from public.profiles p
+    join params pa on true
+    where pa.scope = 'all'
+      and (p.is_public = true or p.user_id = pa.uid)
+    union
+    select f.following_id
+    from public.follows f
+    join params pa on pa.scope = 'followed' and pa.uid = f.follower_id
+    union
+    select pa.uid
+    from params pa
+    where pa.scope = 'followed' and pa.uid is not null
+  ),
+  filtered_checkins as (
+    select c.user_id, c.rating
+    from public.checkins c
+    join scope_users su on su.user_id = c.user_id
+    join params pa on true
+    where c.created_at >= now() - pa.lookback
+  ),
+  agg as (
+    select
+      fc.user_id,
+      count(*)::int as logs,
+      round(avg(case when fc.rating is not null and fc.rating > 0 then fc.rating end)::numeric, 2) as avg_rating
+    from filtered_checkins fc
+    group by fc.user_id
+  )
+  select
+    a.user_id,
+    p.username,
+    p.display_name,
+    a.logs,
+    coalesce(a.avg_rating, 0)::numeric as avg_rating
+  from agg a
+  join public.profiles p on p.user_id = a.user_id
+  order by a.logs desc, coalesce(a.avg_rating, 0) desc, p.username asc
+  limit 25;
+$$;
+
 revoke all on function public.get_weekly_highlights(text) from public;
 grant execute on function public.get_weekly_highlights(text) to authenticated;
+revoke all on function public.get_social_leaderboard(text, text) from public;
+grant execute on function public.get_social_leaderboard(text, text) to authenticated;
 
 do $do$
 begin
@@ -1800,6 +1872,44 @@ revoke all on function public.latest_user_daily_metrics() from public;
 revoke all on function public.crm_at_risk_users(int, int) from public;
 grant execute on function public.latest_user_daily_metrics() to authenticated;
 grant execute on function public.crm_at_risk_users(int, int) to authenticated;
+
+create or replace function public.get_discover_profiles(p_limit int default 12)
+returns table(
+  user_id uuid,
+  username text,
+  display_name text,
+  bio text,
+  follower_count int,
+  recent_logs_30d int
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with latest as (
+    select * from public.latest_user_daily_metrics()
+  )
+  select
+    p.user_id,
+    p.username,
+    p.display_name,
+    p.bio,
+    coalesce(l.followers_count, 0)::int as follower_count,
+    coalesce(l.checkins_30d, 0)::int as recent_logs_30d
+  from public.profiles p
+  left join latest l on l.user_id = p.user_id
+  where p.is_public = true
+    and (auth.uid() is null or p.user_id <> auth.uid())
+  order by
+    coalesce(l.checkins_30d, 0) desc,
+    coalesce(l.followers_count, 0) desc,
+    p.username asc
+  limit greatest(coalesce(p_limit, 12), 1);
+$$;
+
+revoke all on function public.get_discover_profiles(int) from public;
+grant execute on function public.get_discover_profiles(int) to authenticated;
 
 create or replace function public.delete_my_account()
 returns boolean

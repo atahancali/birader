@@ -169,9 +169,31 @@ type WeeklyHighlightRow = {
   priority: number;
 };
 
+type LeaderboardRpcRow = {
+  user_id: string;
+  username: string;
+  display_name?: string | null;
+  logs: number;
+  avg_rating: number | null;
+};
+
+type DiscoverRpcRow = {
+  user_id: string;
+  username: string;
+  display_name?: string | null;
+  bio?: string | null;
+  follower_count: number;
+  recent_logs_30d: number;
+};
+
 const KEYBOARD_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
 const FEED_PAGE_SIZE = 25;
 const NOTIF_PAGE_SIZE = 30;
+const CHECKIN_STATS_LIMIT = 320;
+const SEARCH_SCAN_LIMIT = 120;
+const DISCOVER_SCAN_LIMIT = 40;
+const FEED_ENRICH_EAGER_COUNT = 8;
+const REALTIME_REFRESH_THROTTLE_MS = 2000;
 
 const NOTIF_PREFS_KEY = "birader:notif-prefs:v1";
 const FEED_PREFS_KEY = "birader:feed-prefs:v1";
@@ -483,6 +505,8 @@ export default function SocialPanel({
   const [checkinLikeBusyId, setCheckinLikeBusyId] = useState<string>("");
   const [commentLikeBusyId, setCommentLikeBusyId] = useState<number>(0);
   const [notifications, setNotifications] = useState<NotificationView[]>([]);
+  const [notifUnreadCountServer, setNotifUnreadCountServer] = useState(0);
+  const [notifLoaded, setNotifLoaded] = useState(false);
   const [notifBusy, setNotifBusy] = useState(false);
   const [notifLimit, setNotifLimit] = useState(NOTIF_PAGE_SIZE);
   const [notifFilter, setNotifFilter] = useState<NotificationFilter>("all");
@@ -493,7 +517,7 @@ export default function SocialPanel({
     comment_like: true,
     checkin_like: true,
   });
-  const [notifPanelOpen, setNotifPanelOpen] = useState(true);
+  const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   const [notifSummaryMode, setNotifSummaryMode] = useState(false);
   const [notifActionBusyId, setNotifActionBusyId] = useState<number>(0);
   const [reportBusyKey, setReportBusyKey] = useState("");
@@ -521,9 +545,12 @@ export default function SocialPanel({
   const [discoverBusy, setDiscoverBusy] = useState(false);
   const followingIdsRef = useRef<Set<string>>(new Set());
   const followingNameRef = useRef<Map<string, { username: string; display_name?: string | null }>>(new Map());
+  const notifPanelOpenRef = useRef(false);
   const leaderboardReloadRef = useRef<(() => Promise<void>) | null>(null);
   const feedIdsRef = useRef<string[]>([]);
   const feedLoadMoreRef = useRef<HTMLDivElement | null>(null);
+  const weeklyRefreshTimerRef = useRef<number | null>(null);
+  const leaderboardRefreshTimerRef = useRef<number | null>(null);
 
   const fallbackBase = useMemo(() => {
     const fromEmail = usernameFromEmail(sessionEmail);
@@ -599,8 +626,9 @@ export default function SocialPanel({
   }, [feedFormat, feedItems, feedMinRating, feedOnlyMyCity, feedQuery, feedScope, feedWindow, followingIds, primaryCity, userId]);
   const followerIds = useMemo(() => new Set(followerProfiles.map((p) => p.user_id)), [followerProfiles]);
   const unreadNotifCount = useMemo(
-    () =>
-      notifications.filter((n) => {
+    () => {
+      if (!notifLoaded) return notifUnreadCountServer;
+      return notifications.filter((n) => {
         if (!n.is_read) {
           if (n.type === "follow" && !notifPrefs.follow) return false;
           if (n.type === "comment" && !notifPrefs.comment) return false;
@@ -610,8 +638,9 @@ export default function SocialPanel({
           return true;
         }
         return false;
-      }).length,
-    [notifPrefs, notifications]
+      }).length;
+    },
+    [notifLoaded, notifPrefs, notifications, notifUnreadCountServer]
   );
   const filteredNotifications = useMemo(() => {
     const prefFiltered = notifications.filter((n) => {
@@ -671,6 +700,27 @@ export default function SocialPanel({
       return;
     }
     setDbError(message);
+  }
+
+  function isMissingFunctionError(message: string, fnName: string) {
+    const lower = String(message || "").toLowerCase();
+    return lower.includes("function") && lower.includes(fnName.toLowerCase());
+  }
+
+  function scheduleWeeklyHighlightsRefresh() {
+    if (weeklyRefreshTimerRef.current !== null) return;
+    weeklyRefreshTimerRef.current = window.setTimeout(() => {
+      weeklyRefreshTimerRef.current = null;
+      void loadWeeklyHighlights();
+    }, REALTIME_REFRESH_THROTTLE_MS);
+  }
+
+  function scheduleLeaderboardRefresh() {
+    if (leaderboardRefreshTimerRef.current !== null) return;
+    leaderboardRefreshTimerRef.current = window.setTimeout(() => {
+      leaderboardRefreshTimerRef.current = null;
+      void leaderboardReloadRef.current?.();
+    }, REALTIME_REFRESH_THROTTLE_MS);
   }
 
   function avatarPublicUrl(path?: string | null) {
@@ -814,8 +864,18 @@ export default function SocialPanel({
     });
     setFeedCursorCreatedAt(rows[rows.length - 1]?.created_at ?? null);
     setFeedHasMore(rows.length === FEED_PAGE_SIZE);
-    await loadCommentsForCheckins(rows.map((r) => String(r.id)));
-    await loadCheckinLikes(rows.map((r) => String(r.id)));
+    const rowIds = rows.map((r) => String(r.id));
+    const eagerIds = reset ? rowIds.slice(0, FEED_ENRICH_EAGER_COUNT) : rowIds;
+    if (eagerIds.length) {
+      void loadCommentsForCheckins(eagerIds);
+      void loadCheckinLikes(eagerIds);
+    }
+    if (reset && rowIds.length > eagerIds.length) {
+      window.setTimeout(() => {
+        void loadCommentsForCheckins(rowIds);
+        void loadCheckinLikes(rowIds);
+      }, 350);
+    }
     trackEvent({ eventName: "feed_loaded", userId, props: { count: rows.length, reset } });
   }
 
@@ -1031,6 +1091,20 @@ export default function SocialPanel({
     if (!inviteSourceCheckinId && rows.length > 0) setInviteSourceCheckinId(String(rows[0].id));
   }
 
+  async function loadNotificationUnreadCount() {
+    const { count, error } = await supabase
+      .from("notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("is_read", false);
+
+    if (error) {
+      markDbError(error.message);
+      return;
+    }
+    setNotifUnreadCountServer(Number(count || 0));
+  }
+
   async function loadNotifications(limit = notifLimit) {
     setNotifBusy(true);
     const { data, error } = await supabase
@@ -1074,6 +1148,10 @@ export default function SocialPanel({
       };
     });
     setNotifications(viewRows);
+    setNotifLoaded(true);
+    setNotifUnreadCountServer(
+      viewRows.filter((n) => !n.is_read).length
+    );
   }
 
   async function markAllNotificationsRead() {
@@ -1089,6 +1167,7 @@ export default function SocialPanel({
       return;
     }
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    setNotifUnreadCountServer(0);
   }
 
   async function ensureFeedCheckinLoaded(checkinId: string) {
@@ -1133,6 +1212,7 @@ export default function SocialPanel({
       .eq("user_id", userId);
     if (!error) {
       setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
+      setNotifUnreadCountServer((prev) => Math.max(0, prev - 1));
     }
   }
 
@@ -1167,7 +1247,7 @@ export default function SocialPanel({
     });
   }
 
-  async function loadLeaderboard() {
+  async function loadLeaderboardLegacy() {
     const now = new Date();
     const start = new Date(now);
     if (leaderWindow === "7d") start.setDate(now.getDate() - 7);
@@ -1280,6 +1360,48 @@ export default function SocialPanel({
     });
   }
 
+  async function loadLeaderboard() {
+    setLeaderBusy(true);
+    const { data, error } = await supabase.rpc("get_social_leaderboard", {
+      p_window: leaderWindow,
+      p_scope: leaderScope,
+    });
+    setLeaderBusy(false);
+
+    if (error) {
+      if (isMissingFunctionError(error.message, "get_social_leaderboard")) {
+        await loadLeaderboardLegacy();
+        return;
+      }
+      markDbError(error.message);
+      return;
+    }
+
+    const rows = (data as LeaderboardRpcRow[] | null) ?? [];
+    const mapped: LeaderboardRow[] = rows.map((row) => ({
+      user_id: row.user_id,
+      username: row.username,
+      display_name: row.display_name,
+      logs: Number(row.logs || 0),
+      avgRating: Math.round(Number(row.avg_rating || 0) * 100) / 100,
+    }));
+    if (leaderScope === "followed" && !mapped.some((x) => x.user_id === userId)) {
+      mapped.push({
+        user_id: userId,
+        username: profile?.username || fallbackBase,
+        display_name: profile?.display_name || profile?.username || fallbackBase,
+        logs: 0,
+        avgRating: 0,
+      });
+    }
+    setLeaderRows(mapped.slice(0, 25));
+    trackEvent({
+      eventName: "leaderboard_loaded",
+      userId,
+      props: { scope: leaderScope, window: leaderWindow, count: mapped.length, source: "rpc" },
+    });
+  }
+
   async function loadFollowing() {
     const { data: rows, error } = await supabase
       .from("follows")
@@ -1293,25 +1415,23 @@ export default function SocialPanel({
 
     const ids = (rows as FollowRow[] | null)?.map((r) => r.following_id) ?? [];
     setFollowingIds(new Set(ids));
-    await loadFeed(true);
 
     if (!ids.length) {
       setFollowingProfiles([]);
-      return;
+    } else {
+      const { data: people, error: peopleError } = await supabase
+        .from("profiles")
+        .select("user_id, username, display_name, bio, is_public")
+        .in("user_id", ids)
+        .order("username", { ascending: true });
+
+      if (peopleError) {
+        markDbError(peopleError.message);
+        return;
+      }
+
+      setFollowingProfiles((people as SearchProfile[] | null) ?? []);
     }
-
-    const { data: people, error: peopleError } = await supabase
-      .from("profiles")
-      .select("user_id, username, display_name, bio, is_public")
-      .in("user_id", ids)
-      .order("username", { ascending: true });
-
-    if (peopleError) {
-      markDbError(peopleError.message);
-      return;
-    }
-
-    setFollowingProfiles((people as SearchProfile[] | null) ?? []);
 
     const { data: followerRows, error: followerErr } = await supabase
       .from("follows")
@@ -1346,6 +1466,8 @@ export default function SocialPanel({
   async function loadAll() {
     setLoading(true);
     setDbError(null);
+    setNotifLoaded(false);
+    setNotifications([]);
 
     const ensured = await reserveProfile();
     if (!ensured) {
@@ -1370,7 +1492,7 @@ export default function SocialPanel({
         .select("beer_name, rating, created_at, day_period, city, district")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
-        .limit(1200),
+        .limit(CHECKIN_STATS_LIMIT),
     ]);
 
     if (favoritesRes.error) {
@@ -1389,14 +1511,17 @@ export default function SocialPanel({
       setCheckins((checkinsRes.data as CheckinRow[] | null) ?? []);
     }
 
-    await loadFollowing();
-    await Promise.all([
-      loadDiscoverProfiles(),
-      loadOwnRecentCheckins(),
-      loadPendingInvites(),
-      loadNotifications(notifLimit),
-    ]);
     setLoading(false);
+
+    void loadFollowing();
+    void loadFeed(true);
+    void loadOwnRecentCheckins();
+    void loadPendingInvites();
+    void loadNotificationUnreadCount();
+    void loadDiscoverProfiles();
+    if (notifPanelOpen) {
+      void loadNotifications(notifLimit);
+    }
   }
 
   async function loadServerPreferences() {
@@ -1528,9 +1653,10 @@ export default function SocialPanel({
   }, [feedFormat, feedMinRating, feedOnlyMyCity, feedScope, feedWindow, notifPrefs, profile?.user_id, userId]);
 
   useEffect(() => {
-    if (!loading) void loadNotifications(notifLimit);
+    if (loading || !notifPanelOpen) return;
+    void loadNotifications(notifLimit);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notifLimit]);
+  }, [loading, notifLimit, notifPanelOpen]);
 
   useEffect(() => {
     const q = normalizeUsername(searchQuery);
@@ -1558,6 +1684,10 @@ export default function SocialPanel({
     leaderboardReloadRef.current = loadLeaderboard;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   });
+
+  useEffect(() => {
+    notifPanelOpenRef.current = notifPanelOpen;
+  }, [notifPanelOpen]);
 
   useEffect(() => {
     feedIdsRef.current = feedItems.map((x) => String(x.id));
@@ -1648,8 +1778,8 @@ export default function SocialPanel({
               .slice(0, 200);
             return next;
           });
-          void leaderboardReloadRef.current?.();
-          void loadWeeklyHighlights();
+          scheduleLeaderboardRefresh();
+          scheduleWeeklyHighlightsRefresh();
         }
       )
       .on(
@@ -1682,8 +1812,8 @@ export default function SocialPanel({
               )
               .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
           );
-          void leaderboardReloadRef.current?.();
-          void loadWeeklyHighlights();
+          scheduleLeaderboardRefresh();
+          scheduleWeeklyHighlightsRefresh();
         }
       )
       .on(
@@ -1693,8 +1823,8 @@ export default function SocialPanel({
           const oldRow = payload.old as { id?: string; user_id?: string };
           if (!oldRow?.id) return;
           setFeedItems((prev) => prev.filter((x) => x.id !== oldRow.id));
-          void leaderboardReloadRef.current?.();
-          void loadWeeklyHighlights();
+          scheduleLeaderboardRefresh();
+          scheduleWeeklyHighlightsRefresh();
         }
       )
       .on(
@@ -1703,7 +1833,7 @@ export default function SocialPanel({
         () => {
           const ids = feedIdsRef.current;
           if (!ids.length) return;
-          void loadCommentsForCheckins(ids);
+          void loadCommentsForCheckins(ids.slice(0, FEED_ENRICH_EAGER_COUNT));
         }
       )
       .on(
@@ -1712,8 +1842,8 @@ export default function SocialPanel({
         () => {
           const ids = feedIdsRef.current;
           if (!ids.length) return;
-          void loadCheckinLikes(ids);
-          void loadWeeklyHighlights();
+          void loadCheckinLikes(ids.slice(0, FEED_ENRICH_EAGER_COUNT));
+          scheduleWeeklyHighlightsRefresh();
         }
       )
       .on(
@@ -1725,7 +1855,8 @@ export default function SocialPanel({
           filter: `user_id=eq.${userId}`,
         },
         () => {
-          void loadNotifications();
+          void loadNotificationUnreadCount();
+          if (notifPanelOpenRef.current) void loadNotifications();
         }
       )
       .on(
@@ -1758,7 +1889,7 @@ export default function SocialPanel({
         () => {
           const ids = feedIdsRef.current;
           if (!ids.length) return;
-          void loadCommentsForCheckins(ids);
+          void loadCommentsForCheckins(ids.slice(0, FEED_ENRICH_EAGER_COUNT));
         }
       )
       .on(
@@ -1776,6 +1907,14 @@ export default function SocialPanel({
       .subscribe();
 
     return () => {
+      if (weeklyRefreshTimerRef.current !== null) {
+        window.clearTimeout(weeklyRefreshTimerRef.current);
+        weeklyRefreshTimerRef.current = null;
+      }
+      if (leaderboardRefreshTimerRef.current !== null) {
+        window.clearTimeout(leaderboardRefreshTimerRef.current);
+        leaderboardRefreshTimerRef.current = null;
+      }
       void supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1957,7 +2096,7 @@ export default function SocialPanel({
       .neq("user_id", userId)
       .eq("is_public", true)
       .order("username", { ascending: true })
-      .limit(300);
+      .limit(SEARCH_SCAN_LIMIT);
     setSearchBusy(false);
 
     if (error) {
@@ -1994,13 +2133,36 @@ export default function SocialPanel({
 
   async function loadDiscoverProfiles() {
     setDiscoverBusy(true);
+    const { data: rpcRows, error: rpcErr } = await supabase.rpc("get_discover_profiles", {
+      p_limit: 12,
+    });
+    if (!rpcErr) {
+      const mapped = ((rpcRows as DiscoverRpcRow[] | null) ?? []).map((row) => ({
+        user_id: row.user_id,
+        username: row.username,
+        display_name: row.display_name,
+        bio: String(row.bio || ""),
+        is_public: true,
+        follower_count: Number(row.follower_count || 0),
+        recent_logs_30d: Number(row.recent_logs_30d || 0),
+      }));
+      setDiscoverProfiles(mapped);
+      setDiscoverBusy(false);
+      return;
+    }
+    if (!isMissingFunctionError(rpcErr.message, "get_discover_profiles")) {
+      setDiscoverBusy(false);
+      markDbError(rpcErr.message);
+      return;
+    }
+
     const { data: profiles, error: profileErr } = await supabase
       .from("profiles")
       .select("user_id, username, display_name, bio, is_public")
       .neq("user_id", userId)
       .eq("is_public", true)
       .order("username", { ascending: true })
-      .limit(120);
+      .limit(DISCOVER_SCAN_LIMIT);
 
     if (profileErr) {
       setDiscoverBusy(false);
@@ -2088,7 +2250,9 @@ export default function SocialPanel({
     });
     if (notifErr) markDbError(notifErr.message);
 
-    await loadFollowing();
+    void loadFollowing();
+    scheduleLeaderboardRefresh();
+    scheduleWeeklyHighlightsRefresh();
     trackEvent({ eventName: "follow_created", userId, props: { target_user_id: target.user_id } });
   }
 
@@ -2110,7 +2274,9 @@ export default function SocialPanel({
       return next;
     });
 
-    await loadFollowing();
+    void loadFollowing();
+    scheduleLeaderboardRefresh();
+    scheduleWeeklyHighlightsRefresh();
     trackEvent({ eventName: "follow_removed", userId, props: { target_user_id: target.user_id } });
   }
 
