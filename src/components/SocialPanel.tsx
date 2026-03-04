@@ -664,6 +664,15 @@ export default function SocialPanel({
     },
     [notifLoaded, notifPrefs, notifications, notifUnreadCountServer]
   );
+  const perfRiskRows = useMemo(
+    () =>
+      perfRows.filter((row) => {
+        const failRate = Number(row.fail_rate_pct || 0);
+        const p95 = Number(row.p95_ms || 0);
+        return failRate >= 5 || p95 >= 900;
+      }),
+    [perfRows]
+  );
   const filteredNotifications = useMemo(() => {
     const prefFiltered = notifications.filter((n) => {
       if (n.type === "follow") return notifPrefs.follow;
@@ -3088,6 +3097,11 @@ export default function SocialPanel({
               </button>
             </div>
             <div className="mt-2 space-y-2">
+              {perfRiskRows.length ? (
+                <div className="rounded-xl border border-red-400/35 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-100">
+                  {tx(lang, "Uyari:", "Alert:")} {perfRiskRows.length} {tx(lang, "metrikte p95/fail esigi asildi.", "metrics exceed p95/fail threshold.")}
+                </div>
+              ) : null}
               {perfRows.map((row) => {
                 const failRate = Number(row.fail_rate_pct || 0);
                 const p95 = Number(row.p95_ms || 0);
