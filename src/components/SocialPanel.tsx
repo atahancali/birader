@@ -21,6 +21,7 @@ type ProfileRow = {
   display_name?: string | null;
   bio: string;
   is_public: boolean;
+  is_admin?: boolean | null;
   avatar_path?: string | null;
 };
 
@@ -176,6 +177,18 @@ type LeaderboardRpcRow = {
   display_name?: string | null;
   logs: number;
   avg_rating: number | null;
+};
+
+type PerfOverviewRow = {
+  metric_key: string;
+  total_calls: number;
+  failed_calls: number;
+  fail_rate_pct: number | null;
+  avg_ms: number | null;
+  p95_ms: number | null;
+  max_ms: number | null;
+  unique_users: number;
+  last_seen_at: string | null;
 };
 
 type DiscoverRpcRow = {
@@ -536,6 +549,8 @@ export default function SocialPanel({
   const [leaderScope, setLeaderScope] = useState<LeaderScope>("all");
   const [leaderRows, setLeaderRows] = useState<LeaderboardRow[]>([]);
   const [leaderBusy, setLeaderBusy] = useState(false);
+  const [perfRows, setPerfRows] = useState<PerfOverviewRow[]>([]);
+  const [perfBusy, setPerfBusy] = useState(false);
   const [weeklyScope, setWeeklyScope] = useState<"all" | "followed">("all");
   const [weeklyBusy, setWeeklyBusy] = useState(false);
   const [weeklyItems, setWeeklyItems] = useState<WeeklyTickerItem[]>([]);
@@ -785,7 +800,7 @@ export default function SocialPanel({
   async function reserveProfile() {
     const { data, error } = await supabase
       .from("profiles")
-      .select("user_id, username, display_name, bio, is_public, avatar_path")
+      .select("user_id, username, display_name, bio, is_public, is_admin, avatar_path")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -815,6 +830,7 @@ export default function SocialPanel({
           display_name: candidate,
           bio: "",
           is_public: true,
+          is_admin: false,
           avatar_path: "",
         } as ProfileRow;
       }
@@ -1593,6 +1609,28 @@ export default function SocialPanel({
     finishPerf(true, mapped.length);
   }
 
+  async function loadPerfOverview(adminOverride = false) {
+    const canRead = adminOverride || Boolean(profile?.is_admin);
+    if (!canRead) {
+      setPerfRows([]);
+      return;
+    }
+    setPerfBusy(true);
+    const { data, error } = await supabase
+      .from("social_perf_overview_24h")
+      .select("metric_key, total_calls, failed_calls, fail_rate_pct, avg_ms, p95_ms, max_ms, unique_users, last_seen_at")
+      .order("p95_ms", { ascending: false, nullsFirst: false })
+      .limit(6);
+    setPerfBusy(false);
+
+    if (error) {
+      markDbError(error.message);
+      return;
+    }
+
+    setPerfRows((data as PerfOverviewRow[] | null) ?? []);
+  }
+
   async function loadFollowing() {
     const { data: rows, error } = await supabase
       .from("follows")
@@ -1739,6 +1777,8 @@ export default function SocialPanel({
     void loadPendingInvites();
     void loadNotificationUnreadCount();
     void loadDiscoverProfiles();
+    if (ensured.is_admin) void loadPerfOverview(true);
+    else setPerfRows([]);
     if (notifPanelOpen) {
       void loadNotifications(notifLimit);
     }
@@ -1969,6 +2009,15 @@ export default function SocialPanel({
     void loadLeaderboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leaderScope, leaderWindow, followingIds]);
+
+  useEffect(() => {
+    if (!profile?.is_admin) {
+      setPerfRows([]);
+      return;
+    }
+    void loadPerfOverview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.is_admin]);
 
   useEffect(() => {
     if (loading) return;
@@ -3018,6 +3067,76 @@ export default function SocialPanel({
             busy={weeklyBusy}
           />
         </div>
+
+        {profile?.is_admin ? (
+          <div className="rounded-2xl border border-cyan-300/20 bg-cyan-500/5 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs text-cyan-200/85">
+                  {tx(lang, "Admin gozlem", "Admin observability")}
+                </div>
+                <div className="text-sm font-semibold">
+                  {tx(lang, "Sosyal performans (son 24s)", "Social performance (last 24h)")}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadPerfOverview()}
+                className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+              >
+                {tx(lang, "Yenile", "Refresh")}
+              </button>
+            </div>
+            <div className="mt-2 space-y-2">
+              {perfRows.map((row) => {
+                const failRate = Number(row.fail_rate_pct || 0);
+                const p95 = Number(row.p95_ms || 0);
+                const isRisk = failRate >= 5 || p95 >= 900;
+                const isWarn = !isRisk && (failRate >= 1 || p95 >= 500);
+                return (
+                  <div
+                    key={`perf-${row.metric_key}`}
+                    className={`rounded-xl border p-2 ${
+                      isRisk
+                        ? "border-red-400/35 bg-red-500/10"
+                        : isWarn
+                        ? "border-amber-300/35 bg-amber-500/10"
+                        : "border-white/10 bg-black/25"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="truncate text-xs font-medium">{row.metric_key}</div>
+                      <div className="text-[11px] opacity-75">
+                        {tx(lang, "Cagri", "Calls")}: {row.total_calls}
+                      </div>
+                    </div>
+                    <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] opacity-80 md:grid-cols-4">
+                      <div>p95: {p95.toFixed(0)}ms</div>
+                      <div>avg: {Number(row.avg_ms || 0).toFixed(0)}ms</div>
+                      <div>fail: {failRate.toFixed(2)}%</div>
+                      <div>{tx(lang, "kullanici", "users")}: {row.unique_users}</div>
+                    </div>
+                  </div>
+                );
+              })}
+              {perfBusy ? (
+                <LoadingPulse
+                  lang={lang}
+                  labelTr="Perf metrikleri yukleniyor..."
+                  labelEn="Loading performance metrics..."
+                  compact
+                  inline
+                  className="text-xs"
+                />
+              ) : null}
+              {!perfBusy && !perfRows.length ? (
+                <div className="text-xs opacity-60">
+                  {tx(lang, "Perf verisi henuz yok.", "No performance data yet.")}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         <div className="rounded-2xl border border-white/10 bg-black/40 p-3">
           <div className="flex items-center justify-between gap-2">

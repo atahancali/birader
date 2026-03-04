@@ -18,7 +18,7 @@ Hedef: performansi olcebilir, alarm verebilir ve cache/queue kismini stabilize e
 
 - [ ] `#01` Feed/Sosyal SQL sorgulari icin `EXPLAIN ANALYZE` turu (`M`, `in-progress`)
 - [x] `#05` Sosyal sorgular icin eksik index taramasi + index ekleme (`M`, `done`)
-- [ ] `#06` `social_perf_overview_24h` admin kartina tasima (`S`, `todo`)
+- [x] `#06` `social_perf_overview_24h` admin kartina tasima (`S`, `done`)
 - [ ] `#08` Hata orani esik asiminda admin uyarisi (`M`, `todo`)
 - [ ] `#09` p95 yavas metrikleri kirmizi esik ile isaretleme (`S`, `todo`)
 - [ ] `#10` Frontend error tracking (Sentry vb.) entegrasyonu (`M`, `todo`)
