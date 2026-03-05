@@ -75,8 +75,8 @@ Hedef: profile, takip ve bildirim akisini daha net ve guvenli hale getirmek.
 ## Sprint 6 (Onboarding + I18N + Tasarim Tutarliligi)
 Hedef: yeni kullanici akisinda tekrar eden sikintilari kapatmak ve metin/tasarim kalitesini arttirmak.
 
-- [ ] `#41` Tutorial gosterimini DB flag ile kalici stabilize etme (`S`, `todo`)
-- [ ] `#42` TR/EN key parity tamamlama (`M`, `todo`)
+- [x] `#41` Tutorial gosterimini DB flag ile kalici stabilize etme (`S`, `done`)
+- [x] `#42` TR/EN key parity tamamlama (`M`, `done`)
 - [ ] `#43` EN metin QA turu (tasma/baglam/ton) (`S`, `todo`)
 - [ ] `#44` Footer/legal/health metinlerini tum viewportlarda toparlama (`S`, `todo`)
 - [ ] `#45` Rating UI'yi tamamen yarim/tam yildiz sistemine tasima (`M`, `todo`)
@@ -97,6 +97,6 @@ Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 
 ## Yurutme Notu
 - Aktif sprint: `Sprint 3`
-- Aktif paket: `#41 + #42`
+- Aktif paket: `#43 + #44`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.

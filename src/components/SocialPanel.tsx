@@ -3916,7 +3916,7 @@ export default function SocialPanel({
                   onClick={() => setNotifLimit((v) => v + NOTIF_PAGE_SIZE)}
                   className="w-full rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
                 >
-                  Daha fazla bildirim
+                  {tx(lang, "Daha fazla bildirim", "Show more notifications")}
                 </button>
               ) : null}
             </div>

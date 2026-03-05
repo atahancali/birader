@@ -200,6 +200,11 @@ type TutorialStep = {
   desc: string;
   section: HomeSection;
 };
+type TutorialStepKey = {
+  titleKey: string;
+  descKey: string;
+  section: HomeSection;
+};
 type AppTheme = "dark" | "light";
 type BugBashItem = { id: string; tr: string; en: string };
 
@@ -208,6 +213,29 @@ type BeerItem = {
   format: "Fici" | "Şişe/Kutu";
   ml: number;
 };
+
+const TUTORIAL_STEP_KEYS: TutorialStepKey[] = [
+  {
+    titleKey: "tutorial_step_log_title",
+    descKey: "tutorial_step_log_desc",
+    section: "log",
+  },
+  {
+    titleKey: "tutorial_step_social_title",
+    descKey: "tutorial_step_social_desc",
+    section: "social",
+  },
+  {
+    titleKey: "tutorial_step_map_title",
+    descKey: "tutorial_step_map_desc",
+    section: "heatmap",
+  },
+  {
+    titleKey: "tutorial_step_stats_title",
+    descKey: "tutorial_step_stats_desc",
+    section: "stats",
+  },
+];
 
 const BEER_CATALOG: BeerItem[] = [
   { brand: "Efes Pilsen", format: "Fici", ml: 300 },
@@ -1256,13 +1284,19 @@ export default function Home() {
       if (ref) localStorage.setItem(REFERRAL_KEY, ref);
       const tutorialParam = (params.get("tutorial") || "").trim();
       const accountDeleted = (params.get("account_deleted") || "").trim();
+      let shouldReplaceUrl = false;
       if (tutorialParam === "1") {
         setTutorialStepIdx(0);
         setTutorialOpen(true);
+        params.delete("tutorial");
+        shouldReplaceUrl = true;
       }
       if (accountDeleted === "1") {
         setAccountDeletedNotice(true);
         params.delete("account_deleted");
+        shouldReplaceUrl = true;
+      }
+      if (shouldReplaceUrl) {
         const q = params.toString();
         const nextUrl = q ? `/?${q}` : "/";
         window.history.replaceState({}, "", nextUrl);
@@ -1642,6 +1676,12 @@ export default function Home() {
     try {
       if (headerProfile?.onboarding_seen_at) return;
       const seen = localStorage.getItem(ONBOARDING_SEEN_KEY);
+      if (seen) {
+        const nowIso = new Date().toISOString();
+        void supabase.from("profiles").update({ onboarding_seen_at: nowIso }).eq("user_id", session.user.id);
+        setHeaderProfile((prev) => (prev ? { ...prev, onboarding_seen_at: nowIso } : prev));
+        return;
+      }
       if (!seen) {
         setOnboardingOpen(true);
         trackEvent({
@@ -1658,10 +1698,14 @@ export default function Home() {
     try {
       if (headerProfile?.tutorial_done_at) return;
       const done = localStorage.getItem(TUTORIAL_DONE_KEY);
-      if (!done) {
-        setTutorialOpen(true);
-        setTutorialStepIdx(0);
+      if (done) {
+        const nowIso = new Date().toISOString();
+        void supabase.from("profiles").update({ tutorial_done_at: nowIso }).eq("user_id", session.user.id);
+        setHeaderProfile((prev) => (prev ? { ...prev, tutorial_done_at: nowIso } : prev));
+        return;
       }
+      setTutorialOpen(true);
+      setTutorialStepIdx(0);
     } catch {}
   }, [headerProfile?.tutorial_done_at, profileFlagsLoaded, session?.user?.id]);
 
@@ -2165,51 +2209,11 @@ export default function Home() {
   }, [headerProfile?.username, session?.user?.email]);
   const tutorialSteps = useMemo<TutorialStep[]>(
     () =>
-      lang === "en"
-        ? [
-            {
-              title: "1) Log Wizard",
-              desc: "Choose format, select beer, add details, and confirm. First log in 30 seconds.",
-              section: "log",
-            },
-            {
-              title: "2) Social Feed",
-              desc: "Find users, follow them, and interact in feed with comments/likes.",
-              section: "social",
-            },
-            {
-              title: "3) Map",
-              desc: "Switch to grid or field mode. Tap a day to open details.",
-              section: "heatmap",
-            },
-            {
-              title: "4) Stats",
-              desc: "Track streak, badges and weekly recap.",
-              section: "stats",
-            },
-          ]
-        : [
-            {
-              title: "1) Log Wizard",
-              desc: "Format sec, bira sec, detay gir, onayla. Ilk logu 30 saniyede at.",
-              section: "log",
-            },
-            {
-              title: "2) Sosyal Akis",
-              desc: "Kullanici ara, takip et, akista yorum/begeni ile etkilesime gir.",
-              section: "social",
-            },
-            {
-              title: "3) Harita",
-              desc: "Grid veya saha moduna gec. Gune tiklayip detaylari ac.",
-              section: "heatmap",
-            },
-            {
-              title: "4) Istatistik",
-              desc: "Streak, rozet ve haftalik recap ile davranisini izle.",
-              section: "stats",
-            },
-          ],
+      TUTORIAL_STEP_KEYS.map((step) => ({
+        title: t(lang, step.titleKey),
+        desc: t(lang, step.descKey),
+        section: step.section,
+      })),
     [lang]
   );
   const activeTutorialStep = tutorialSteps[tutorialStepIdx] || tutorialSteps[0];
@@ -4515,7 +4519,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   disabled={badgeRefreshBusy}
                   className="rounded-lg border border-amber-300/35 bg-amber-500/10 px-2 py-1 text-xs disabled:opacity-60"
                 >
-                  {badgeRefreshBusy ? "Badges..." : "Badges refresh"}
+                  {badgeRefreshBusy ? t(lang, "admin_badges_loading") : t(lang, "admin_badges_refresh")}
                 </button>
                 <button
                   type="button"
@@ -4833,26 +4837,26 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
       {tutorialOpen ? (
         <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/75" onClick={() => closeTutorial(false)} />
+          <div className="absolute inset-0 bg-black/75" onClick={() => closeTutorial(true)} />
           <div className="absolute left-1/2 top-1/2 w-[92%] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-amber-300/30 bg-black p-4">
             <div className="flex items-center justify-between gap-2">
               <div className="text-xs text-amber-200/85">
-                {lang === "en" ? "Tutorial" : "Tutorial"} {tutorialStepIdx + 1}/{tutorialSteps.length}
+                {t(lang, "tutorial_title")} {tutorialStepIdx + 1}/{tutorialSteps.length}
               </div>
               <button
                 type="button"
                 onClick={() => closeTutorial(true)}
                 className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
               >
-                {lang === "en" ? "Finish" : "Bitir"}
+                {t(lang, "tutorial_finish")}
               </button>
             </div>
             <div className="mt-2 text-lg font-semibold">{activeTutorialStep.title}</div>
             <div className="mt-2 text-sm opacity-85">{activeTutorialStep.desc}</div>
             <div className="mt-2 rounded-xl border border-white/10 bg-black/25 p-2 text-xs opacity-75">
-              {tx(lang, "Bu adim icin otomatik olarak", "Automatically switched to")}{" "}
+              {t(lang, "tutorial_auto_switched")}{" "}
               <span className="font-semibold">{activeTutorialStep.section}</span>{" "}
-              {lang === "en" ? "section." : "sekmesine gecildi."}
+              {t(lang, "tutorial_section_suffix")}
             </div>
             <div className="mt-4 flex items-center justify-between gap-2">
               <button
@@ -4861,7 +4865,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 onClick={() => setTutorialStepIdx((i) => Math.max(0, i - 1))}
                 className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs disabled:opacity-40"
               >
-                {lang === "en" ? "Back" : "Geri"}
+                {t(lang, "tutorial_back")}
               </button>
               {tutorialStepIdx < tutorialSteps.length - 1 ? (
                 <button
@@ -4869,7 +4873,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   onClick={() => setTutorialStepIdx((i) => Math.min(tutorialSteps.length - 1, i + 1))}
                   className="rounded-xl border border-amber-300/35 bg-amber-500/20 px-3 py-2 text-xs text-amber-100"
                 >
-                  {tx(lang, "Ileri", "Next")}
+                  {t(lang, "tutorial_next")}
                 </button>
               ) : (
                 <button
@@ -4877,7 +4881,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   onClick={() => closeTutorial(true)}
                   className="rounded-xl border border-emerald-300/35 bg-emerald-500/20 px-3 py-2 text-xs text-emerald-100"
                 >
-                  {lang === "en" ? "Done" : "Tamamladim"}
+                  {t(lang, "tutorial_done")}
                 </button>
               )}
             </div>
