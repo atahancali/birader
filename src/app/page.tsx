@@ -679,14 +679,10 @@ function FormatBottleIcon({ active }: { active: boolean }) {
   return (
     <div className={`h-16 w-11 ${active ? "text-white/55" : "text-white/35"}`}>
       <svg viewBox="0 0 52 72" className="h-full w-full" aria-hidden="true">
-        <path
-          d="M22 7 H30 V15 H34 V61 Q34 64 31 66 H21 Q18 64 18 61 V15 H22 Z"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinejoin="round"
-        />
-        <path d="M19 57 Q26 59 33 57" fill="none" stroke="currentColor" strokeWidth="1.3" />
+        <rect x="16.5" y="9" width="19" height="54" rx="8.5" fill="none" stroke="currentColor" strokeWidth="2" />
+        <path d="M18.5 20.5 H33.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+        <path d="M18.5 53.5 H33.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+        <circle cx="26" cy="36.5" r="1.6" fill="currentColor" opacity="0.65" />
       </svg>
     </div>
   );
