@@ -475,7 +475,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       }
 
       if (error) {
-        setErrorText(apiErrorText(error, "Profil yuklenemedi.", "Profile could not be loaded."));
+        setErrorText(apiErrorText(error, "Profil yüklenemedi.", "Profile could not be loaded."));
         setLoading(false);
         return;
       }
@@ -544,11 +544,11 @@ export default function PublicProfileView({ username }: { username: string }) {
           .limit(8),
       ]);
 
-      if (favoritesRes.error) setErrorText(apiErrorText(favoritesRes.error, "Favoriler yuklenemedi.", "Favorites could not be loaded."));
-      if ((checkinsRes as any).error) setErrorText(apiErrorText((checkinsRes as any).error, "Loglar yuklenemedi.", "Check-ins could not be loaded."));
-      if (followersRes.error) setErrorText(apiErrorText(followersRes.error, "Takipci sayisi yuklenemedi.", "Follower count could not be loaded."));
-      if (followingRes.error) setErrorText(apiErrorText(followingRes.error, "Takip edilen sayisi yuklenemedi.", "Following count could not be loaded."));
-      if (badgesRes.error) setErrorText(apiErrorText(badgesRes.error, "Rozetler yuklenemedi.", "Badges could not be loaded."));
+      if (favoritesRes.error) setErrorText(apiErrorText(favoritesRes.error, "Favoriler yüklenemedi.", "Favorites could not be loaded."));
+      if ((checkinsRes as any).error) setErrorText(apiErrorText((checkinsRes as any).error, "Loglar yüklenemedi.", "Check-ins could not be loaded."));
+      if (followersRes.error) setErrorText(apiErrorText(followersRes.error, "Takipci sayisi yüklenemedi.", "Follower count could not be loaded."));
+      if (followingRes.error) setErrorText(apiErrorText(followingRes.error, "Takip edilen sayisi yüklenemedi.", "Following count could not be loaded."));
+      if (badgesRes.error) setErrorText(apiErrorText(badgesRes.error, "Rozetler yüklenemedi.", "Badges could not be loaded."));
 
       setFavorites((favoritesRes.data as FavoriteBeerRow[] | null) ?? []);
       setCheckins(((checkinsRes as any).data as CheckinRow[] | null) ?? []);
@@ -601,7 +601,7 @@ export default function PublicProfileView({ username }: { username: string }) {
         .eq("following_id", profile.user_id);
 
       if (error) {
-        alert(apiErrorText(error, "Islem basarisiz.", "Action failed."));
+        alert(apiErrorText(error, "Islem başarısız.", "Action failed."));
         return;
       }
 
@@ -621,7 +621,7 @@ export default function PublicProfileView({ username }: { username: string }) {
     });
 
     if (error) {
-      alert(apiErrorText(error, "Islem basarisiz.", "Action failed."));
+      alert(apiErrorText(error, "Islem başarısız.", "Action failed."));
       return;
     }
 
@@ -688,7 +688,7 @@ export default function PublicProfileView({ username }: { username: string }) {
         .eq("username", nextHandle)
         .maybeSingle();
       if (takenErr) {
-        alert(apiErrorText(takenErr, "Handle kontrolu basarisiz.", "Handle validation failed."));
+        alert(apiErrorText(takenErr, "Handle kontrolu başarısız.", "Handle validation failed."));
         return;
       }
       if (takenRow && String((takenRow as any).user_id || "") !== sessionUserId) {
@@ -702,7 +702,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       const { data: authData, error: authErr } = await supabase.auth.updateUser({ email: targetEmail });
       if (authErr) {
         setSavingProfile(false);
-        alert(apiErrorText(authErr, "E-posta guncellenemedi.", "E-mail could not be updated."));
+        alert(apiErrorText(authErr, "E-posta güncellenemedi.", "E-mail could not be updated."));
         return;
       }
       finalEmail = (authData.user?.email || targetEmail).trim().toLowerCase();
@@ -746,7 +746,7 @@ export default function PublicProfileView({ username }: { username: string }) {
     }
     if (error) {
       setSavingProfile(false);
-      alert(apiErrorText(error, "Islem basarisiz.", "Action failed."));
+      alert(apiErrorText(error, "Islem başarısız.", "Action failed."));
       return;
     }
 
@@ -793,7 +793,7 @@ export default function PublicProfileView({ username }: { username: string }) {
         .from("avatars")
         .upload(uploadPath, prepared.blob, { upsert: true, contentType: "image/jpeg" });
       if (upErr) {
-        alert(apiErrorText(upErr, "Avatar yuklenemedi.", "Avatar upload failed."));
+        alert(apiErrorText(upErr, "Avatar yüklenemedi.", "Avatar upload failed."));
         return;
       }
       const { error: dbErr } = await supabase
@@ -801,7 +801,7 @@ export default function PublicProfileView({ username }: { username: string }) {
         .update({ avatar_path: uploadPath })
         .eq("user_id", sessionUserId);
       if (dbErr) {
-        alert(apiErrorText(dbErr, "Profil avatari guncellenemedi.", "Profile avatar update failed."));
+        alert(apiErrorText(dbErr, "Profil avatari güncellenemedi.", "Profile avatar update failed."));
         return;
       }
       const queueRes = await supabase.rpc("queue_avatar_moderation", {
@@ -878,7 +878,7 @@ export default function PublicProfileView({ username }: { username: string }) {
         setFavorites(refreshed);
         return;
       }
-      alert(apiErrorText(error, "Islem basarisiz.", "Action failed."));
+      alert(apiErrorText(error, "Islem başarısız.", "Action failed."));
       return;
     }
     setFavorites((prev) => {
@@ -896,7 +896,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       .eq("user_id", sessionUserId)
       .eq("rank", rank);
     if (error) {
-      alert(apiErrorText(error, "Islem basarisiz.", "Action failed."));
+      alert(apiErrorText(error, "Islem başarısız.", "Action failed."));
       return;
     }
     setFavorites((prev) => prev.filter((f) => Number(f.rank) !== rank));
@@ -956,7 +956,7 @@ export default function PublicProfileView({ username }: { username: string }) {
   async function addCheckinOnDay(payload: { day: string; beer_name: string; rating: number | null }) {
     if (!sessionUserId || !isOwnProfile) return;
     if (isFutureIsoDay(payload.day, isoTodayLocal())) {
-      alert(tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."));
+      alert(tx(lang, "Bugünden sonraki tarihe log atilamaz.", "You cannot log a future date."));
       return;
     }
     const rawBeer = payload.beer_name.trim();
@@ -975,7 +975,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       day_period: "evening",
     });
     if (error) {
-      alert(apiErrorText(error, "Islem basarisiz.", "Action failed."));
+      alert(apiErrorText(error, "Islem başarısız.", "Action failed."));
       return;
     }
     const refreshed = await fetchYearCheckins(sessionUserId, year);
@@ -998,7 +998,7 @@ export default function PublicProfileView({ username }: { username: string }) {
     const deleted = checkins.find((c) => String(c.id) === String(id));
     const { data, error } = await supabase.rpc("delete_own_checkin", { p_id: String(id) });
     if (error || data !== true) {
-      alert(apiErrorText(error || "Kayit bulunamadi.", "Kayit bulunamadi.", "Record not found."));
+      alert(apiErrorText(error || "Kayıt bulunamadi.", "Kayıt bulunamadi.", "Record not found."));
       return;
     }
     setCheckins((prev) => prev.filter((c) => c.id !== id));
@@ -1017,7 +1017,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       alert(
         tx(
           lang,
-          "Geri alma suresi dolmus olabilir veya kayit bulunamadi.",
+          "Geri alma suresi dolmus olabilir veya kayıt bulunamadi.",
           "Undo window may be over or the record was not found."
         )
       );
@@ -1047,7 +1047,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       .eq("id", payload.id)
       .eq("user_id", sessionUserId);
     if (error) {
-      alert(apiErrorText(error, "Islem basarisiz.", "Action failed."));
+      alert(apiErrorText(error, "Islem başarısız.", "Action failed."));
       return;
     }
     setCheckins((prev) =>
@@ -1072,7 +1072,7 @@ export default function PublicProfileView({ username }: { username: string }) {
     const { data, error } = await supabase.rpc("delete_my_account");
     if (error || data !== true) {
       setDeletingAccount(false);
-      alert(apiErrorText(error || "delete_my_account_failed", "Hesap silme islemi basarisiz.", "Account deletion failed."));
+      alert(apiErrorText(error || "delete_my_account_failed", "Hesap silme islemi başarısız.", "Account deletion failed."));
       return;
     }
     await supabase.auth.signOut();
@@ -1085,7 +1085,7 @@ export default function PublicProfileView({ username }: { username: string }) {
     const { data, error } = await supabase.rpc("export_my_data");
     setExportingData(false);
     if (error) {
-      alert(apiErrorText(error, "Veri disa aktarma basarisiz.", "Data export failed."));
+      alert(apiErrorText(error, "Veri disa aktarma başarısız.", "Data export failed."));
       return;
     }
     const payload = JSON.stringify(data ?? {}, null, 2);
@@ -1103,7 +1103,7 @@ export default function PublicProfileView({ username }: { username: string }) {
   if (loading) {
     return (
       <main className="min-h-screen max-w-md md:max-w-3xl lg:max-w-5xl mx-auto p-4 pb-24">
-        <LoadingPulse lang={lang} labelTr="Profil yukleniyor..." labelEn="Loading profile..." />
+        <LoadingPulse lang={lang} labelTr="Profil yükleniyor..." labelEn="Loading profile..." />
       </main>
     );
   }
@@ -1187,7 +1187,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                 {tx(lang, "Log silindi:", "Log deleted:")} <span className="font-semibold">{pendingUndoCheckin.beer_name}</span>
               </div>
               <div className="text-xs opacity-75">
-                {tx(lang, "15 saniye icinde geri alabilirsin.", "You can undo within 15 seconds.")}
+                {tx(lang, "15 saniye içinde geri alabilirsin.", "You can undo within 15 seconds.")}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -1227,7 +1227,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                   {tx(lang, "Aktariliyor...", "Uploading...")}
                 </span>
               ) : (
-                tx(lang, "Avatar yukle", "Upload avatar")
+                tx(lang, "Avatar yükle", "Upload avatar")
               )}
               <input
                 type="file"
@@ -1254,12 +1254,12 @@ export default function PublicProfileView({ username }: { username: string }) {
             <div className="text-[11px] opacity-65">
               {tx(
                 lang,
-                "E-posta degisimi Supabase tarafinda dogrulama isteyebilir.",
+                "E-posta değişimi Supabase tarafinda doğrulama isteyebilir.",
                 "E-mail change may require confirmation on Supabase side."
               )}
             </div>
             <div className="text-[11px] opacity-70">
-              {tx(lang, "Giris kullanici adi", "Login username")}: <span className="font-semibold">@{shownLoginUsername}</span>
+              {tx(lang, "Giriş kullanıcı adi", "Login username")}: <span className="font-semibold">@{shownLoginUsername}</span>
             </div>
             <input
               value={editDisplayName}
@@ -1280,7 +1280,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                 checked={editIsPublic}
                 onChange={(e) => setEditIsPublic(e.target.checked)}
               />
-              {tx(lang, "Profil herkese acik", "Public profile")}
+              {tx(lang, "Profil herkese açık", "Public profile")}
             </label>
             <div className="rounded-xl border border-white/10 bg-black/20 p-2">
               <div className="text-xs opacity-70">{tx(lang, "Grid renk gecisi", "Grid color gradient")}</div>
@@ -1302,7 +1302,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                       {p.label}
                     </option>
                   ))}
-                  <option value={CUSTOM_GRID_THEME_VALUE}>{tx(lang, "Birader Atolye (Ozel)", "Birader Atelier (Custom)")}</option>
+                  <option value={CUSTOM_GRID_THEME_VALUE}>{tx(lang, "Birader Atolye (Özel)", "Birader Atelier (Custom)")}</option>
                 </select>
                 {selectedGridPaletteValue === CUSTOM_GRID_THEME_VALUE ? (
                   <>
@@ -1333,11 +1333,11 @@ export default function PublicProfileView({ username }: { username: string }) {
           </div>
 
           <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
-            <div className="text-xs opacity-70">{tx(lang, "Nick degisim gecmisi", "Handle change history")}</div>
+            <div className="text-xs opacity-70">{tx(lang, "Nick değişim geçmişi", "Handle change history")}</div>
             {identityHistoryLoading ? (
               <LoadingPulse
                 lang={lang}
-                labelTr="Yukleniyor..."
+                labelTr="Yükleniyor..."
                 labelEn="Loading..."
                 compact
                 inline
@@ -1359,10 +1359,10 @@ export default function PublicProfileView({ username }: { username: string }) {
                     <div key={h.id} className="rounded-xl border border-white/10 bg-black/30 p-2 text-xs">
                       <div className="opacity-65">{new Date(h.created_at).toLocaleString(dateLocale)}</div>
                       {handleChanged ? <div>@{oldHandle} → <span className="font-semibold">@{newHandle}</span></div> : null}
-                      {displayChanged ? <div>{tx(lang, "Gorunen ad", "Display name")}: {oldDisplay} → <span className="font-semibold">{newDisplay}</span></div> : null}
-                      {loginChanged ? <div>{tx(lang, "Giris kullanici adi", "Login username")}: @{oldLogin} → <span className="font-semibold">@{newLogin}</span></div> : null}
+                      {displayChanged ? <div>{tx(lang, "Görünen ad", "Display name")}: {oldDisplay} → <span className="font-semibold">{newDisplay}</span></div> : null}
+                      {loginChanged ? <div>{tx(lang, "Giriş kullanıcı adi", "Login username")}: @{oldLogin} → <span className="font-semibold">@{newLogin}</span></div> : null}
                       {!handleChanged && !displayChanged && !loginChanged ? (
-                        <div className="opacity-70">{tx(lang, "Profil kimlik bilgileri guncellendi.", "Profile identity fields updated.")}</div>
+                        <div className="opacity-70">{tx(lang, "Profil kimlik bilgileri güncellendi.", "Profile identity fields updated.")}</div>
                       ) : null}
                     </div>
                   );
@@ -1370,7 +1370,7 @@ export default function PublicProfileView({ username }: { username: string }) {
               </div>
             ) : (
               <div className="mt-2 text-xs opacity-60">
-                {tx(lang, "Henuz bir degisim kaydi yok.", "No identity changes yet.")}
+                {tx(lang, "Henüz bir değişim kaydi yok.", "No identity changes yet.")}
               </div>
             )}
           </div>
@@ -1389,7 +1389,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                   #{f.rank} {f.beer_name} ×
                 </button>
               ))}
-              {!favorites.length ? <div className="text-xs opacity-60">{tx(lang, "Henuz favori yok.", "No favorites yet.")}</div> : null}
+              {!favorites.length ? <div className="text-xs opacity-60">{tx(lang, "Henüz favori yok.", "No favorites yet.")}</div> : null}
             </div>
             <div className="mt-2 rounded-xl border border-white/10 bg-black/30 p-2">
               <input
@@ -1410,7 +1410,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                   </button>
                 ))}
                 {filteredFavoriteOptions.length === 0 ? (
-                  <div className="text-xs opacity-60">{tx(lang, "Oneri yok, yazarak ekleyebilirsin.", "No suggestions, you can type and add.")}</div>
+                  <div className="text-xs opacity-60">{tx(lang, "Öneri yok, yazarak ekleyebilirsin.", "No suggestions, you can type and add.")}</div>
                 ) : null}
               </div>
               <button
@@ -1426,7 +1426,7 @@ export default function PublicProfileView({ username }: { username: string }) {
           <div className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/10 p-3">
             <div className="text-xs opacity-80">KVKK / GDPR</div>
             <div className="mt-1 text-sm">
-              {tx(lang, "Hesabini ve tum verilerini kalici olarak silebilirsin.", "You can permanently delete your account and all data.")}
+              {tx(lang, "Hesabını ve tüm verilerini kalıcı olarak silebilirsin.", "You can permanently delete your account and all data.")}
             </div>
             <button
               type="button"
@@ -1454,7 +1454,7 @@ export default function PublicProfileView({ username }: { username: string }) {
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">
             <div className="flex items-center justify-between gap-2">
               <span>{tx(lang, "Ortalama", "Average")}:</span>
-              <RatingStars value={avg > 0 ? avg : null} size="xs" unratedLabel={tx(lang, "Puansiz", "Unrated")} />
+              <RatingStars value={avg > 0 ? avg : null} size="xs" unratedLabel={tx(lang, "Puansız", "Unrated")} />
             </div>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">{year} {tx(lang, "log", "logs")}: {checkins.length}</div>
@@ -1496,13 +1496,13 @@ export default function PublicProfileView({ username }: { username: string }) {
               #{f.rank} {f.beer_name}
             </div>
           ))}
-          {!favorites.length ? <div className="text-xs opacity-60">{tx(lang, "Favori secilmemis.", "No favorites selected.")}</div> : null}
+          {!favorites.length ? <div className="text-xs opacity-60">{tx(lang, "Favori seçilmemis.", "No favorites selected.")}</div> : null}
         </div>
       </section>
 
       <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
         <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div className="text-sm opacity-80">{tx(lang, "Isi haritasi", "Heatmap")} ({year})</div>
+          <div className="text-sm opacity-80">{tx(lang, "Isı haritası", "Heatmap")} ({year})</div>
           <div className="grid w-full grid-cols-2 gap-2 md:w-auto md:grid-cols-[repeat(4,minmax(0,auto))] md:items-center">
             <select
               value={heatmapMode}
@@ -1550,7 +1550,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                       {p.label}
                     </option>
                   ))}
-                  <option value={CUSTOM_GRID_THEME_VALUE}>{tx(lang, "Birader Atolye (Ozel)", "Birader Atelier (Custom)")}</option>
+                  <option value={CUSTOM_GRID_THEME_VALUE}>{tx(lang, "Birader Atolye (Özel)", "Birader Atelier (Custom)")}</option>
                 </select>
               </>
             ) : null}
@@ -1665,7 +1665,7 @@ export default function PublicProfileView({ username }: { username: string }) {
           <div className="w-full max-w-md rounded-2xl border border-white/15 bg-black/90 p-4">
             <div className="text-base font-semibold text-amber-200">{tx(lang, "Hesabimi Sil", "Delete My Account")}</div>
             <p className="mt-2 text-sm">
-              {tx(lang, "Tum verileriniz kalici olarak silinecektir. Emin misiniz?", "All your data will be permanently deleted. Are you sure?")}
+              {tx(lang, "Tüm verileriniz kalıcı olarak silinecektir. Emin misiniz?", "All your data will be permanently deleted. Are you sure?")}
             </p>
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
@@ -1673,7 +1673,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                 onClick={() => setDeleteModalOpen(false)}
                 className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-sm"
               >
-                {tx(lang, "Vazgec", "Cancel")}
+                {tx(lang, "Vazgeç", "Cancel")}
               </button>
               <button
                 type="button"

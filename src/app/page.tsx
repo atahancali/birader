@@ -30,7 +30,7 @@ const SocialPanel = dynamic(() => import("@/components/SocialPanel"), {
   ssr: false,
   loading: () => (
     <div className="mt-6">
-      <LoadingPulse labelTr="Sosyal yukleniyor..." labelEn="Loading social..." compact />
+      <LoadingPulse labelTr="Sosyal yükleniyor..." labelEn="Loading social..." compact />
     </div>
   ),
 });
@@ -812,9 +812,9 @@ function ComboboxBeer({
       {pinned.length > 0 && (
         <div className="mb-3 rounded-xl border border-white/10 bg-black/25 p-2.5">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="text-[11px] uppercase tracking-[0.12em] text-amber-200/85">{tx(lang, "★ En cok ictiklerin", "★ Most consumed")}</div>
+            <div className="text-[11px] uppercase tracking-[0.12em] text-amber-200/85">{tx(lang, "★ En çok içtiklerin", "★ Most consumed")}</div>
             <div className="rounded-full border border-white/15 bg-black/25 px-2 py-0.5 text-[10px] text-white/65">
-              {pinned.length} {tx(lang, "oneri", "suggestions")}
+              {pinned.length} {tx(lang, "öneri", "suggestions")}
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -851,7 +851,7 @@ function ComboboxBeer({
             }}
             onFocus={() => setOpen(true)}
             data-testid="beer-combobox-input"
-            placeholder={tx(lang, `${formatLabel} icin ara... (orn. efes, 330)`, `Search in ${formatLabel}... (e.g. efes, 330)`)}
+            placeholder={tx(lang, ` için ara... (örn. efes, 330)`, `Search in ${formatLabel}... (e.g. efes, 330)`)}
             className="w-full rounded-xl border border-white/12 bg-black/35 px-3 py-3 pr-20 text-sm outline-none transition focus:border-amber-300/40"
           />
           <button
@@ -1035,7 +1035,7 @@ export default function Home() {
     const isEmail = looksLikeEmail(identifier);
     const emailCandidates = isEmail ? [identifier] : usernameToCandidateEmails(identifier);
     if (!emailCandidates.length) {
-      alert(tx(lang, "Gecerli bir kullanici adi veya e-posta gir.", "Enter a valid username or e-mail."));
+      alert(tx(lang, "Gecerli bir kullanıcı adi veya e-posta gir.", "Enter a valid username or e-mail."));
       return;
     }
 
@@ -1043,7 +1043,7 @@ export default function Home() {
     try {
       if (authMode === "signup") {
         if (!isEmail) {
-          alert(tx(lang, "Kayit icin e-posta girmen gerekiyor.", "You need an e-mail address to sign up."));
+          alert(tx(lang, "Kayıt için e-posta girmen gerekiyor.", "You need an e-mail address to sign up."));
           return;
         }
         if (!signupBirthDate) {
@@ -1052,14 +1052,14 @@ export default function Home() {
         }
         const age = ageFromBirthDate(signupBirthDate);
         if (age < 18) {
-          alert(tx(lang, "Birader 18+ kullanicilar icindir.", "Birader is for 18+ users."));
+          alert(tx(lang, "Birader 18+ kullanıcılar içindir.", "Birader is for 18+ users."));
           return;
         }
         if (!signupTermsAccepted || !signupPrivacyAccepted || !signupCommercialAccepted) {
           alert(
             tx(
               lang,
-              "Devam etmek icin yasal ve ticari onay kutularini isaretle.",
+              "Devam etmek için yasal ve ticari onay kutularını işaretle.",
               "To continue, accept legal and commercial consent checkboxes."
             )
           );
@@ -1087,9 +1087,9 @@ export default function Home() {
         if (error) {
           const msg = (error.message || "").toLowerCase();
           if (msg.includes("rate limit")) {
-            alert(tx(lang, "Cok sik kayit denemesi yapildi. 1-2 dakika bekleyip tekrar dene.", "Too many signup attempts. Wait 1-2 minutes and try again."));
+            alert(tx(lang, "Çok sık kayıt denemesi yapıldı. 1-2 dakika bekleyip tekrar dene.", "Too many signup attempts. Wait 1-2 minutes and try again."));
           } else {
-            alert(apiErrorText(error, "Kayit basarisiz.", "Signup failed."));
+            alert(apiErrorText(error, "Kayıt başarısız.", "Signup failed."));
           }
           return;
         }
@@ -1118,9 +1118,9 @@ export default function Home() {
         if (e2) {
           const msg = (e2.message || "").toLowerCase();
           if (msg.includes("email not confirmed")) {
-            alert(tx(lang, "Hesap olusturuldu. Giris icin e-postani dogrula.", "Account created. Confirm your e-mail to sign in."));
+            alert(tx(lang, "Hesap oluşturuldu. Giriş için e-postanı doğrula.", "Account created. Confirm your e-mail to sign in."));
           } else {
-            alert(apiErrorText(e2, "Giris basarisiz.", "Sign in failed."));
+            alert(apiErrorText(e2, "Giriş başarısız.", "Sign in failed."));
           }
         } else {
           const { data: s } = await supabase.auth.getSession();
@@ -1156,7 +1156,7 @@ export default function Home() {
         }
 
         if (!loggedIn && lastError) {
-          alert(apiErrorText(lastError, "Giris basarisiz.", "Sign in failed."));
+          alert(apiErrorText(lastError, "Giriş başarısız.", "Sign in failed."));
         } else if (loggedIn) {
           trackEvent({
             eventName: "auth_success",
@@ -1180,7 +1180,7 @@ export default function Home() {
   const [beerQuery, setBeerQuery] = useState("");
   const [beerName, setBeerName] = useState<string>("");
   const [rating, setRating] = useState<number | null>(null);
-  const [city, setCity] = useState<string>(TURKEY_CITIES[39] ?? "Istanbul");
+  const [city, setCity] = useState<string>(TURKEY_CITIES[39] ?? "İstanbul");
   const [district, setDistrict] = useState<string>("");
   const [customDistrict, setCustomDistrict] = useState("");
   const [locationSuggestQuery, setLocationSuggestQuery] = useState("");
@@ -1279,7 +1279,7 @@ export default function Home() {
   const isBackDate = dateISO !== today;
   const districtOptions = useMemo(() => districtsForCity(city), [city]);
   const resolvedDistrict = useMemo(
-    () => (district === "Diger" ? customDistrict.trim() : district.trim()),
+    () => ((district === "Diğer" || district === "Diger") ? customDistrict.trim() : district.trim()),
     [customDistrict, district]
   );
   const canManageSuggestions = useMemo(
@@ -1336,8 +1336,8 @@ export default function Home() {
       return;
     }
     if (!canOpenLogStep(step)) {
-      if (!formatConfirmed) alert(tx(lang, "Once Adim 1'de sunum tarzini sec.", "Complete Step 1 first by selecting serving style."));
-      else alert(tx(lang, "Once bira secimini tamamla.", "Complete beer selection first."));
+      if (!formatConfirmed) alert(tx(lang, "Önce Adım 1'de sunum tarzını seç.", "Complete Step 1 first by selecting serving style."));
+      else alert(tx(lang, "Önce bira seçimini tamamla.", "Complete beer selection first."));
       return;
     }
     setLogStep(step);
@@ -1987,7 +1987,7 @@ export default function Home() {
       badges.push({ key: "night", title: "Gece Kusu", detail: `${hourBuckets.night} gece logu` });
     }
     if (uniqueCities >= 5) {
-      badges.push({ key: "explorer", title: "Sehir Kasifi", detail: `${uniqueCities} farkli sehir` });
+      badges.push({ key: "explorer", title: "Şehir Kasifi", detail: `${uniqueCities} farklı şehir` });
     }
     if (topLocationCount >= 8 && topLocationShare >= 0.5) {
       badges.push({ key: "local", title: "Mahalle Muhtari", detail: `%${Math.round(topLocationShare * 100)} ayni bolge` });
@@ -2238,7 +2238,7 @@ export default function Home() {
   }, [district, districtOptions]);
 
   useEffect(() => {
-    if (district !== "Diger" && customDistrict) setCustomDistrict("");
+    if (district !== "Diğer" && district !== "Diger" && customDistrict) setCustomDistrict("");
   }, [customDistrict, district]);
 
   async function syncFavoriteAfterCheckin(beer: string): Promise<"applied" | "pending" | "noop"> {
@@ -2252,7 +2252,7 @@ export default function Home() {
       .eq("user_id", session.user.id)
       .order("rank", { ascending: true });
     if (currentErr) {
-      alert(apiErrorText(currentErr, "Favoriler yuklenemedi.", "Favorites could not be loaded."));
+      alert(apiErrorText(currentErr, "Favoriler yüklenemedi.", "Favorites could not be loaded."));
       return "noop";
     }
     const current = ((currentRows as FavoriteBeer[] | null) ?? []).map((f) => ({
@@ -2285,7 +2285,7 @@ export default function Home() {
           await loadFavorites();
           return "noop";
         }
-        alert(apiErrorText(error, "Favori ekleme basarisiz.", "Favorite add failed."));
+        alert(apiErrorText(error, "Favori ekleme başarısız.", "Favorite add failed."));
         return "noop";
       }
 
@@ -2317,7 +2317,7 @@ export default function Home() {
         .eq("user_id", session.user.id)
         .order("rank", { ascending: true });
       if (currentErr) {
-        alert(apiErrorText(currentErr, "Favoriler yuklenemedi.", "Favorites could not be loaded."));
+        alert(apiErrorText(currentErr, "Favoriler yüklenemedi.", "Favorites could not be loaded."));
         return;
       }
       const current = ((currentRows as FavoriteBeer[] | null) ?? []).map((f) => ({
@@ -2347,7 +2347,7 @@ export default function Home() {
           setFavoriteReplaceOptions([]);
           return;
         }
-        alert(apiErrorText(error, "Favori degistirme basarisiz.", "Favorite replace failed."));
+        alert(apiErrorText(error, "Favori degistirme başarısız.", "Favorite replace failed."));
         return;
       }
 
@@ -2400,7 +2400,7 @@ export default function Home() {
   const locationSuggestions = useMemo<LocationSuggestion[]>(() => {
     const staticPairs = TURKEY_CITIES.flatMap((c) =>
       districtsForCity(c)
-        .filter((d) => d !== "Diger")
+        .filter((d) => d !== "Diğer" && d !== "Diger")
         .map((d) => ({ city: c, district: d, base: 1 }))
     );
 
@@ -2524,7 +2524,7 @@ export default function Home() {
     });
     setSuggestionBusy(false);
     if (error) {
-      alert(apiErrorText(error, "Oneri gonderilemedi.", "Suggestion failed."));
+      alert(apiErrorText(error, "Öneri gönderilemedi.", "Suggestion failed."));
       return;
     }
     trackEvent({
@@ -2547,7 +2547,7 @@ export default function Home() {
       .limit(200);
     setAdminSuggestionsBusy(false);
     if (error) {
-      alert(apiErrorText(error, "Oneri listesi yuklenemedi.", "Suggestion list could not be loaded."));
+      alert(apiErrorText(error, "Öneri listesi yüklenemedi.", "Suggestion list could not be loaded."));
       return;
     }
 
@@ -2645,7 +2645,7 @@ export default function Home() {
     const { data, error } = await supabase.rpc("run_retention_nudges", { p_limit: 240 });
     setRetentionNudgeBusy(false);
     if (error) {
-      alert(apiErrorText(error, "Retention nudge basarisiz.", "Retention nudge failed."));
+      alert(apiErrorText(error, "Retention nudge başarısız.", "Retention nudge failed."));
       return;
     }
     setRetentionNudgeRows((data as RetentionNudgeRow[] | null) ?? []);
@@ -2774,7 +2774,7 @@ export default function Home() {
       await pushSystemNotification(
         userId,
         "weekly_goal_progress",
-        `Haftalik gorev ilerliyor: ${logLeft} log ve ${beerLeft} farkli bira kaldi.`,
+        `Haftalık görev ilerliyor: ${logLeft} log ve ${beerLeft} farklı bira kaldi.`,
         `Weekly mission in progress: ${logLeft} logs and ${beerLeft} unique beers left.`,
         "weekly-goal"
       );
@@ -2783,7 +2783,7 @@ export default function Home() {
       await pushSystemNotification(
         userId,
         "weekly_goal_done",
-        `Haftalik gorev tamamlandi: ${missionTargets.logGoal} log + ${missionTargets.beerGoal} farkli bira.`,
+        `Haftalık görev tamamlandı: ${missionTargets.logGoal} log + ${missionTargets.beerGoal} farklı bira.`,
         `Weekly mission completed: ${missionTargets.logGoal} logs + ${missionTargets.beerGoal} unique beers.`,
         "weekly-goal"
       );
@@ -2801,7 +2801,7 @@ export default function Home() {
       await pushSystemNotification(
         userId,
         `weekly_recap_${weekKey}`,
-        `Haftalik recap: ${weeklyLogs} log, en cok ${topBeer}.`,
+        `Haftalık özet: ${weeklyLogs} log, en çok ${topBeer}.`,
         `Weekly recap: ${weeklyLogs} logs, top beer ${topBeer}.`,
         "weekly-recap",
         24 * 8
@@ -2853,7 +2853,7 @@ export default function Home() {
       return;
     }
     await loadMyBadges();
-    alert(tx(lang, "Tum rozetler yenilendi.", "All badges were refreshed."));
+    alert(tx(lang, "Tüm rozetler yenilendi.", "All badges were refreshed."));
   }
 
   async function saveHeatmapThemeToProfile(nextFrom: string, nextTo: string) {
@@ -2916,7 +2916,7 @@ export default function Home() {
       .update({ status: nextStatus })
       .eq("id", id);
     if (error) {
-      alert(apiErrorText(error, "Durum guncellenemedi.", "Status update failed."));
+      alert(apiErrorText(error, "Durum güncellenemedi.", "Status update failed."));
       return;
     }
     setAdminSuggestions((prev) => prev.map((r) => (r.id === id ? { ...r, status: nextStatus } : r)));
@@ -2976,8 +2976,8 @@ export default function Home() {
         await loadCheckins();
         return;
       }
-      const reason = error?.message || "Kayit bulunamadi ya da yetki yok.";
-      alert(`${tx(lang, "Silme basarisiz", "Delete failed")}: ${reason}`);
+      const reason = error?.message || "Kayıt bulunamadi ya da yetki yok.";
+      alert(`${tx(lang, "Silme başarısız", "Delete failed")}: ${reason}`);
       return;
     }
 
@@ -3005,7 +3005,7 @@ export default function Home() {
         alert(
           tx(
             lang,
-            "Geri alma suresi dolmus olabilir veya kayit bulunamadi.",
+            "Geri alma suresi dolmus olabilir veya kayıt bulunamadi.",
             "Undo window may be over or the record was not found."
           )
         );
@@ -3058,7 +3058,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       await loadCheckins();
       return;
     }
-    alert(apiErrorText(error, "Guncelleme basarisiz.", "Update failed."));
+    alert(apiErrorText(error, "Guncelleme başarısız.", "Update failed."));
     return;
   }
 
@@ -3089,7 +3089,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         ok: false,
         limited: false,
         fallbackLegacy: false,
-        message: tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."),
+        message: tx(lang, "Bugünden sonraki tarihe log atilamaz.", "You cannot log a future date."),
       };
     }
 
@@ -3134,7 +3134,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         ok: false,
         limited: false,
         fallbackLegacy: false,
-        message: tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."),
+        message: tx(lang, "Bugünden sonraki tarihe log atilamaz.", "You cannot log a future date."),
       };
     }
 
@@ -3195,7 +3195,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
   async function insertLegacyCheckins(rows: CheckinInsertPayload[]): Promise<{ message: string } | null> {
     if (rows.some((row) => isFutureIsoDay(String(row.created_at || "").slice(0, 10), today))) {
       return {
-        message: tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."),
+        message: tx(lang, "Bugünden sonraki tarihe log atilamaz.", "You cannot log a future date."),
       };
     }
 
@@ -3222,7 +3222,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       return { message: error.message };
     }
 
-    return { message: tx(lang, "Log kaydi basarisiz.", "Check-in failed.") };
+    return { message: tx(lang, "Log kaydi başarısız.", "Check-in failed.") };
   }
 
   async function addCheckin() {
@@ -3230,11 +3230,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     const rawTargets = isBackDate && batchBeerNames.length > 0 ? batchBeerNames : name ? [name] : [];
     if (!rawTargets.length) return;
     if (isFutureIsoDay(dateISO, today)) {
-      alert(tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."));
+      alert(tx(lang, "Bugünden sonraki tarihe log atilamaz.", "You cannot log a future date."));
       return;
     }
     if (isBackDate && rawTargets.length > 1 && !batchConfirmed) {
-      alert(tx(lang, "Toplu kayit icin once onay kutusunu isaretle.", "Tick confirmation before bulk save."));
+      alert(tx(lang, "Toplu kayıt için önce onay kutusunu işaretle.", "Tick confirmation before bulk save."));
       return;
     }
     const normalizedRating = sanitizeRating(rating);
@@ -3246,7 +3246,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
     const normalizedCity = city.trim();
     const normalizedDistrict = resolvedDistrict;
     if (!normalizedDistrict) {
-      alert(tx(lang, "Ilce sec veya Diger icin ilce adini yaz.", "Select district or type district name for Other."));
+      alert(tx(lang, "İlçe seç veya Diğer için ilçe adını yaz.", "Select district or type district name for Other."));
       return;
     }
     if (!beginLogMutation()) return;
@@ -3318,7 +3318,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             break;
           }
           if (!guarded.ok) {
-            error = { message: guarded.message || tx(lang, "Log kaydi basarisiz.", "Check-in failed.") };
+            error = { message: guarded.message || tx(lang, "Log kaydi başarısız.", "Check-in failed.") };
             break;
           }
         }
@@ -3558,7 +3558,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     checked={signupTermsAccepted}
                     onChange={(e) => setSignupTermsAccepted(e.target.checked)}
                   />
-                  {tx(lang, "Kullanim kosullarini kabul ediyorum (zorunlu).", "I accept terms of use (required).")}
+                  {tx(lang, "Kullanım koşullarını kabul ediyorum (zorunlu).", "I accept terms of use (required).")}
                 </label>
                 <label className="flex items-start gap-2 text-xs opacity-80">
                   <input
@@ -3640,7 +3640,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           onClose={() => setSelectedDay(null)}
           onAdd={async ({ day, beer_name, rating }) => {
             if (isFutureIsoDay(day, today)) {
-              alert(tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."));
+              alert(tx(lang, "Bugünden sonraki tarihe log atilamaz.", "You cannot log a future date."));
               return;
             }
             if (!beginLogMutation()) return;
@@ -3734,7 +3734,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               </div>
               <div className="max-w-[120px] truncate text-xs text-amber-100">
                 {(headerProfile?.display_name || "").trim() ||
-                  `@${headerProfile?.username || usernameFromEmail(session?.user?.email) || tx(lang, "kullanici", "user")}`}
+                  `@${headerProfile?.username || usernameFromEmail(session?.user?.email) || tx(lang, "kullanıcı", "user")}`}
               </div>
             </Link>
             <Link
@@ -3762,15 +3762,15 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             <div>
               <div className="text-xs text-amber-200/90">
                 {weeklyMission.completed
-                  ? tx(lang, "Haftalik gorev tamamlandi", "Weekly mission completed")
-                  : tx(lang, "Haftalik gorev bildirimi", "Weekly mission update")}
+                  ? tx(lang, "Haftalık görev tamamlandı", "Weekly mission completed")
+                  : tx(lang, "Haftalık görev bildirimi", "Weekly mission update")}
               </div>
               <div className="mt-1 text-sm">
                 {weeklyMission.completed
-                  ? tx(lang, "5 log + 3 farkli bira hedefini tamamladin.", "You completed 5 logs + 3 unique beers.")
+                  ? tx(lang, "5 log + 3 farklı bira hedefini tamamladin.", "You completed 5 logs + 3 unique beers.")
                   : tx(
                       lang,
-                      `${weeklyMission.logLeft} log ve ${weeklyMission.beerLeft} farkli bira daha gerekiyor.`,
+                      `${weeklyMission.logLeft} log ve ${weeklyMission.beerLeft} farklı bira daha gerekiyor.`,
                       `${weeklyMission.logLeft} logs and ${weeklyMission.beerLeft} unique beers left.`
                     )}
               </div>
@@ -3797,7 +3797,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 {tx(lang, "Log silindi:", "Log deleted:")} <span className="font-semibold">{pendingUndoCheckin.beer_name}</span>
               </div>
               <div className="text-xs opacity-75">
-                {tx(lang, "15 saniye icinde geri alabilirsin.", "You can undo within 15 seconds.")}
+                {tx(lang, "15 saniye içinde geri alabilirsin.", "You can undo within 15 seconds.")}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -3855,7 +3855,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
         {logStep === 1 ? (
           <div>
-            <div className="mb-2 text-xs opacity-70">{tx(lang, "Sunum tarzini sec", "Choose serving style")}</div>
+            <div className="mb-2 text-xs opacity-70">{tx(lang, "Sunum tarzını seç", "Choose serving style")}</div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <button
                 type="button"
@@ -3899,7 +3899,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 <div className="relative flex items-center justify-between gap-3">
                   <div>
                     <div className="text-lg font-semibold">{tx(lang, "Sise / Kutu", "Bottle / Can")}</div>
-                    <div className="mt-1 text-xs opacity-75">{tx(lang, "Market / paket secimleri", "Market / package options")}</div>
+                    <div className="mt-1 text-xs opacity-75">{tx(lang, "Market / paket seçimleri", "Market / package options")}</div>
                     <div className="mt-2 inline-flex items-center rounded-full border border-white/15 bg-black/25 px-2 py-0.5 text-[10px] opacity-80">
                       {tx(lang, "Sisede servis", "Bottle service")}
                     </div>
@@ -3914,7 +3914,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         {logStep === 2 ? (
           <div data-testid="log-step-beer-panel" className="rounded-2xl border border-white/10 bg-black/20 p-3">
             <div className="mb-3 flex items-center justify-between gap-2">
-              <div className="text-xs uppercase tracking-[0.12em] text-amber-200/90">{tx(lang, "Birani sec", "Choose your beer")}</div>
+              <div className="text-xs uppercase tracking-[0.12em] text-amber-200/90">{tx(lang, "Biranı seç", "Choose your beer")}</div>
               <div className="rounded-full border border-white/15 bg-black/30 px-2 py-0.5 text-[10px] text-white/65">
                 {tx(lang, "Format", "Format")}: {format}
               </div>
@@ -3987,7 +3987,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                             setDateOpen(false);
                           }}
                         >
-                          {tx(lang, "Bugun", "Today")}
+                          {tx(lang, "Bugün", "Today")}
                         </button>
                       </div>
                     </div>
@@ -4030,7 +4030,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       : "border-white/15 bg-white/8 text-white/80 hover:border-white/25"
                   }`}
                 >
-                  {rating === null ? tx(lang, "Puansiz log (acik)", "Unrated log (on)") : tx(lang, "Puansiz log", "Unrated log")}
+                  {rating === null ? tx(lang, "Puansız log (açık)", "Unrated log (on)") : tx(lang, "Puansız log", "Unrated log")}
                 </button>
               </div>
               <div className="rounded-xl border border-white/10 bg-black/20 p-2">
@@ -4078,7 +4078,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     onChange={(e) => setLocationSuggestQuery(e.target.value)}
                     placeholder={tx(
                       lang,
-                      "Il/ilce onerisi ara (typo toleransli, orn: kadikpy, besiktaz)",
+                      "İl/ilçe önerisi ara (typo toleranslı, örn: kadıköy, beşiktaş)",
                       "Search city/district suggestion (typo-tolerant, e.g. kadikpy, besiktaz)"
                     )}
                     className="w-full rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none transition hover:border-white/25"
@@ -4095,7 +4095,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                             setDistrict(s.district);
                             setCustomDistrict("");
                           } else {
-                            setDistrict("Diger");
+                            setDistrict("Diğer");
                             setCustomDistrict(s.district);
                           }
                           setLocationSuggestQuery(`${s.city} / ${s.district}`);
@@ -4107,11 +4107,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     ))}
                   </div>
                 </div>
-                {district === "Diger" ? (
+                {district === "Diğer" || district === "Diger" ? (
                   <input
                     value={customDistrict}
                     onChange={(e) => setCustomDistrict(e.target.value)}
-                    placeholder={tx(lang, "Ilce adini yaz", "Type district name")}
+                    placeholder={tx(lang, "İlçe adını yaz", "Type district name")}
                     className="w-full rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none transition hover:border-white/25"
                   />
                 ) : null}
@@ -4124,7 +4124,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 <input
                   value={mediaUrl}
                   onChange={(e) => setMediaUrl(e.target.value)}
-                  placeholder="Gorsel/video URL (opsiyonel)"
+                  placeholder="Görsel/video URL (opsiyonel)"
                   className="w-full rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none transition hover:border-white/25"
                 />
                 <div className="grid gap-2 sm:grid-cols-[180px_minmax(0,1fr)]">
@@ -4150,7 +4150,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               <div className="mb-3 rounded-2xl border border-amber-300/18 bg-gradient-to-br from-amber-500/8 via-black/25 to-black/30 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-[11px] uppercase tracking-[0.14em] text-amber-200/90">
-                    {tx(lang, "Eski tarih icin coklu log", "Bulk log for past dates")}
+                    {tx(lang, "Eski tarih için çoklu log", "Bulk log for past dates")}
                   </div>
                 </div>
                 <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
@@ -4190,15 +4190,15 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       {b} ×
                     </button>
                   ))}
-                  {!batchBeerNames.length ? <div className="text-xs opacity-60">{tx(lang, "Henuz listede bira yok.", "No beers in list yet.")}</div> : null}
+                  {!batchBeerNames.length ? <div className="text-xs opacity-60">{tx(lang, "Henüz listede bira yok.", "No beers in list yet.")}</div> : null}
                 </div>
                 {batchBeerNames.length > 1 ? (
                   <div className="mt-3 text-xs opacity-70">
-                    {tx(lang, "Toplu kayit onayi son adimda alinacak.", "Bulk save confirmation will be requested at the final step.")}
+                    {tx(lang, "Toplu kayıt onayi son adımda alinacak.", "Bulk save confirmation will be requested at the final step.")}
                   </div>
                 ) : null}
                 <div className="mt-2 text-xs opacity-65">
-                  {tx(lang, "Not: Toplu kayitlar puansiz birakilip sonradan guncellenebilir.", "Note: Bulk logs can be left unrated and updated later.")}
+                  {tx(lang, "Not: Toplu kayıtlar puansiz birakilip sonradan güncellenebilir.", "Note: Bulk logs can be left unrated and updated later.")}
                 </div>
               </div>
             ) : null}
@@ -4220,10 +4220,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 {isBackDate && bulkImportTotalCount > 0
                   ? tx(
                       lang,
-                      `${bulkImportTotalCount} kayitlik toplu import`,
+                      `${bulkImportTotalCount} kayıtlik toplu import`,
                       `Bulk import of ${bulkImportTotalCount} records`
                     )
-                  : beerName || tx(lang, "Bira secilmedi", "No beer selected")}
+                  : beerName || tx(lang, "Bira seçilmedi", "No beer selected")}
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <div className="rounded-xl border border-white/12 bg-black/25 px-3 py-2 text-xs">
@@ -4244,7 +4244,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 <div className="rounded-xl border border-white/12 bg-black/25 px-3 py-2 text-xs">
                   <div className="opacity-65">{tx(lang, "Puan", "Rating")}</div>
                   <div className="mt-1">
-                    <RatingStars value={rating} size="xs" unratedLabel={tx(lang, "Puansiz", "Unrated")} />
+                    <RatingStars value={rating} size="xs" unratedLabel={tx(lang, "Puansız", "Unrated")} />
                   </div>
                 </div>
               </div>
@@ -4257,7 +4257,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     {tx(lang, "Import onizleme", "Import preview")}
                   </div>
                   <div className="rounded-full border border-white/15 bg-black/30 px-2 py-0.5 text-[11px] text-amber-100/90">
-                    {bulkImportTotalCount} {tx(lang, "kayit", "records")} • {bulkImportUniqueCount} {tx(lang, "farkli bira", "unique beers")}
+                    {bulkImportTotalCount} {tx(lang, "kayıt", "records")} • {bulkImportUniqueCount} {tx(lang, "farklı bira", "unique beers")}
                   </div>
                 </div>
                 <div className="mt-2 max-h-36 space-y-1 overflow-auto pr-1">
@@ -4274,7 +4274,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 <div className="mt-2 text-[11px] opacity-75">
                   {tx(
                     lang,
-                    "Kaydetmeden once listeyi kontrol et; adetleri bir onceki adimdan duzenleyebilirsin.",
+                    "Kaydetmeden önce listeyi kontrol et; adetleri bir önceki adımdan düzenleyebilirsin.",
                     "Review the list before saving; you can adjust counts from the previous step."
                   )}
                 </div>
@@ -4406,7 +4406,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             </div>
           ))}
           {checkins.length === 0 ? (
-            <div className="text-sm opacity-70">{tx(lang, "Henuz check-in yok. Ilkini gir.", "No check-ins yet. Add your first one.")}</div>
+            <div className="text-sm opacity-70">{tx(lang, "Henüz check-in yok. Ilkini gir.", "No check-ins yet. Add your first one.")}</div>
           ) : null}
         </div>
 
@@ -4420,7 +4420,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               ? tx(lang, "5 tane daha goster", "Show 5 more")
               : recentExpandStep === 1
                 ? tx(lang, "10 tane daha goster", "Show 10 more")
-                : tx(lang, "Tumunu goster", "Show all")}
+                : tx(lang, "Tümünü göster", "Show all")}
           </button>
         ) : null}
       </section>
@@ -4493,7 +4493,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                           {p.label}
                         </option>
                       ))}
-                      <option value={CUSTOM_GRID_THEME_VALUE}>{tx(lang, "Birader Atolye (Ozel)", "Birader Atelier (Custom)")}</option>
+                      <option value={CUSTOM_GRID_THEME_VALUE}>{tx(lang, "Birader Atolye (Özel)", "Birader Atelier (Custom)")}</option>
                     </select>
                     {gridPaletteMode === "custom" ? (
                       <>
@@ -4505,7 +4505,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                             setGridColorFrom(next);
                             void saveHeatmapThemeToProfile(next, gridColorTo);
                           }}
-                          title={tx(lang, "Gradient baslangic", "Gradient start")}
+                          title={tx(lang, "Gradient başlangıç", "Gradient start")}
                           className="h-8 w-full rounded border border-white/20 bg-black/20 p-0.5"
                         />
                         <input
@@ -4569,7 +4569,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       onClose={() => setSelectedDay(null)}
       onAdd={async ({ day, beer_name, rating }) => {
         if (isFutureIsoDay(day, today)) {
-          alert(tx(lang, "Bugunden sonraki tarihe log atilamaz.", "You cannot log a future date."));
+          alert(tx(lang, "Bugünden sonraki tarihe log atilamaz.", "You cannot log a future date."));
           return;
         }
         if (!beginLogMutation()) return;
@@ -4622,11 +4622,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             if (!guarded.ok && guarded.fallbackLegacy) {
               const legacyError = await insertLegacyCheckins([serverRow]);
               if (legacyError) {
-                alert(apiErrorText(legacyError, "Kayit eklenemedi.", "Check-in could not be added."));
+                alert(apiErrorText(legacyError, "Kayıt eklenemedi.", "Check-in could not be added."));
                 return;
               }
             } else if (!guarded.ok) {
-              alert(apiErrorText(guarded, "Kayit eklenemedi.", "Check-in could not be added."));
+              alert(apiErrorText(guarded, "Kayıt eklenemedi.", "Check-in could not be added."));
               return;
             }
 
@@ -4707,7 +4707,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">
             <div className="flex items-center justify-between gap-2">
               <span>{tx(lang, "Son 7g ort", "Last 7d avg")}:</span>
-              <RatingStars value={weeklyRecap.avg > 0 ? weeklyRecap.avg : null} size="xs" unratedLabel={tx(lang, "Puansiz", "Unrated")} />
+              <RatingStars value={weeklyRecap.avg > 0 ? weeklyRecap.avg : null} size="xs" unratedLabel={tx(lang, "Puansız", "Unrated")} />
             </div>
           </div>
           <div className="col-span-2 rounded-xl border border-white/10 bg-black/20 p-2">
@@ -4729,23 +4729,23 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               <RatingStars
                 value={monthComparison.currentAvg > 0 ? monthComparison.currentAvg : null}
                 size="xs"
-                unratedLabel={tx(lang, "Puansiz", "Unrated")}
+                unratedLabel={tx(lang, "Puansız", "Unrated")}
               />
             </div>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-            {tx(lang, "Puansiz oran", "Unrated share")}: <span className="font-semibold">%{monthComparison.unratedShare}</span>
+            {tx(lang, "Puansız oran", "Unrated share")}: <span className="font-semibold">%{monthComparison.unratedShare}</span>
           </div>
         </div>
 
         <div className="mb-4 rounded-2xl border border-amber-300/25 bg-amber-500/10 p-3">
-          <div className="text-sm text-amber-200">{tx(lang, "Haftalik gorevler", "Weekly missions")}</div>
+          <div className="text-sm text-amber-200">{tx(lang, "Haftalık görevler", "Weekly missions")}</div>
           <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
             <div className="rounded-xl border border-white/10 bg-black/20 p-2">
               {tx(lang, "Log hedefi", "Log goal")}: <span className="font-semibold">{weeklyMission.logs}/{weeklyMission.logGoal}</span>
             </div>
             <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-              {tx(lang, "Farkli bira", "Unique beers")}: <span className="font-semibold">{weeklyMission.uniqueBeer}/{weeklyMission.beerGoal}</span>
+              {tx(lang, "Farklı bira", "Unique beers")}: <span className="font-semibold">{weeklyMission.uniqueBeer}/{weeklyMission.beerGoal}</span>
             </div>
           </div>
           <div className="mt-2 h-1.5 w-full rounded-full bg-black/25">
@@ -4753,17 +4753,17 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           </div>
           <div className="mt-2 text-xs opacity-80">
             {weeklyMission.completed
-              ? tx(lang, "Bu haftayi kilitledin. Yeni gorev penceresi devam edecek.", "Weekly mission done. New mission window will continue.")
+              ? tx(lang, "Bu haftayı kilitledin. Yeni görev penceresi devam edecek.", "Weekly mission done. New mission window will continue.")
               : tx(
                   lang,
-                  `${weeklyMission.logLeft} log ve ${weeklyMission.beerLeft} farkli bira kaldi.`,
+                  `${weeklyMission.logLeft} log ve ${weeklyMission.beerLeft} farklı bira kaldi.`,
                   `${weeklyMission.logLeft} logs and ${weeklyMission.beerLeft} unique beers left.`
                 )}
           </div>
         </div>
 
         <div className="mb-4 rounded-2xl border border-white/10 bg-black/20 p-3">
-          <div className="text-sm text-amber-200">{tx(lang, "En cok loglanan biralar (Top 5)", "Most logged beers (Top 5)")}</div>
+          <div className="text-sm text-amber-200">{tx(lang, "En çok loglanan biralar (Top 5)", "Most logged beers (Top 5)")}</div>
           <div className="mt-2 space-y-2 text-sm">
             {topBeersOverall.map((b, idx) => (
               <div key={b.beer} className="flex items-center justify-between rounded-lg border border-white/10 bg-black/25 px-2 py-1.5">
@@ -4774,7 +4774,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 <div className="flex items-center gap-2 text-xs opacity-80">
                   <span>{b.logs} {tx(lang, "log", "logs")}</span>
                   <span>•</span>
-                  <RatingStars value={b.avg > 0 ? b.avg : null} size="xs" unratedLabel={tx(lang, "Puansiz", "Unrated")} />
+                  <RatingStars value={b.avg > 0 ? b.avg : null} size="xs" unratedLabel={tx(lang, "Puansız", "Unrated")} />
                 </div>
               </div>
             ))}
@@ -4783,7 +4783,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         </div>
 
         <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="text-sm text-amber-200">{tx(lang, "Puan dagilimi (0.5 adim)", "Rating distribution (0.5 step)")}</div>
+          <div className="text-sm text-amber-200">{tx(lang, "Puan dağılımı (0.5 adım)", "Rating distribution (0.5 step)")}</div>
           <div className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs">
             {tx(lang, "Toplam log", "Total logs")}: {ratingDistribution.total}
           </div>
@@ -4892,7 +4892,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         </div>
 
         <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-3">
-          <div className="text-sm text-amber-200">{tx(lang, "Streak ve davranis analizi", "Streak and behavior analysis")}</div>
+          <div className="text-sm text-amber-200">{tx(lang, "Streak ve davranış analizi", "Streak and behavior analysis")}</div>
           <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
             <div className="rounded-xl border border-white/10 bg-black/20 p-2">
               {tx(lang, "Aktif streak", "Current streak")}: <span className="font-semibold">{behaviorStats.currentStreak} {tx(lang, "gun", "days")}</span>
@@ -4910,7 +4910,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               {tx(lang, "Gece orani", "Night ratio")}: <span className="font-semibold">%{Math.round(behaviorStats.nightShare * 100)}</span>
             </div>
             <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-              {tx(lang, "Sehir cesidi", "City variety")}: <span className="font-semibold">{behaviorStats.uniqueCities}</span>
+              {tx(lang, "Şehir cesidi", "City variety")}: <span className="font-semibold">{behaviorStats.uniqueCities}</span>
             </div>
           </div>
 
@@ -4934,7 +4934,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               );
             })}
             {behaviorStats.badges.length === 0 ? (
-              <div className="text-xs opacity-60">{tx(lang, "Henuz rozet yok. Log arttikca acilacak.", "No badges yet. They unlock as you log.")}</div>
+              <div className="text-xs opacity-60">{tx(lang, "Henüz rozet yok. Log arttikca acilacak.", "No badges yet. They unlock as you log.")}</div>
             ) : null}
           </div>
 
@@ -4957,14 +4957,14 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 </div>
               );
             })}
-            {!stereotypeBadges.length ? <div className="text-xs opacity-60">{tx(lang, "Henuz stereotip rozet yok.", "No stereotype badges yet.")}</div> : null}
+            {!stereotypeBadges.length ? <div className="text-xs opacity-60">{tx(lang, "Henüz stereotip rozet yok.", "No stereotype badges yet.")}</div> : null}
           </div>
         </div>
 
         {canManageSuggestions ? (
           <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
             <div className="flex items-center justify-between gap-2">
-              <div className="text-sm text-amber-200">{tx(lang, "Oneri yonetimi", "Suggestion management")}</div>
+              <div className="text-sm text-amber-200">{tx(lang, "Öneri yönetimi", "Suggestion management")}</div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -4987,7 +4987,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   disabled={retentionNudgeBusy}
                   className="rounded-lg border border-emerald-300/35 bg-emerald-500/10 px-2 py-1 text-xs disabled:opacity-60"
                 >
-                  {retentionNudgeBusy ? tx(lang, "Nudge calisiyor...", "Running nudges...") : tx(lang, "Retention nudge calistir", "Run retention nudges")}
+                  {retentionNudgeBusy ? tx(lang, "Nudge çalışıyor...", "Running nudges...") : tx(lang, "Retention nudge çalıştır", "Run retention nudges")}
                 </button>
                 <button
                   type="button"
@@ -5006,7 +5006,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 </div>
                 <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
                   <div className="rounded-lg border border-white/10 bg-black/25 p-2">
-                    <div className="opacity-70">{tx(lang, "Perf cagri", "Perf calls")}</div>
+                    <div className="opacity-70">{tx(lang, "Perf çağrı", "Perf calls")}</div>
                     <div className="mt-1 font-semibold">{adminPerfSummary.totalCalls}</div>
                   </div>
                   <div className="rounded-lg border border-white/10 bg-black/25 p-2">
@@ -5022,7 +5022,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     </div>
                   </div>
                   <div className="rounded-lg border border-white/10 bg-black/25 p-2">
-                    <div className="opacity-70">{tx(lang, "Yeni oneriler", "New suggestions")}</div>
+                    <div className="opacity-70">{tx(lang, "Yeni öneriler", "New suggestions")}</div>
                     <div className="mt-1 font-semibold">
                       {adminSuggestions.filter((s) => s.status === "new").length}
                     </div>
@@ -5040,7 +5040,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   <>
                     <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
                       <div className="rounded-lg border border-white/10 bg-black/25 p-2">
-                        <div className="opacity-70">{tx(lang, "Kayit", "Signups")}</div>
+                        <div className="opacity-70">{tx(lang, "Kayıt", "Signups")}</div>
                         <div className="mt-1 font-semibold">{adminRetentionFunnel.signups}</div>
                       </div>
                       <div className="rounded-lg border border-white/10 bg-black/25 p-2">
@@ -5084,7 +5084,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 <div className="mt-1 text-base font-semibold">{adminKpis.activeUsers}</div>
               </div>
               <div className="rounded-xl border border-white/10 bg-black/25 p-2 text-xs">
-                <div className="opacity-70">{tx(lang, "Yeni kullanici", "New users")}</div>
+                <div className="opacity-70">{tx(lang, "Yeni kullanıcı", "New users")}</div>
                 <div className="mt-1 text-base font-semibold">{adminKpis.newUsers}</div>
               </div>
               <div className="rounded-xl border border-white/10 bg-black/25 p-2 text-xs">
@@ -5149,7 +5149,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               </div>
 
               <div className="rounded-xl border border-white/10 bg-black/25 p-2">
-                <div className="text-xs opacity-75">{tx(lang, "Riskli kullanicilar (7g+)", "At-risk users (7d+)")}</div>
+                <div className="text-xs opacity-75">{tx(lang, "Riskli kullanıcılar (7g+)", "At-risk users (7d+)")}</div>
                 <div className="mt-2 space-y-1">
                   {adminAtRiskUsers.map((u) => (
                     <div key={`risk-${u.user_id}`} className="flex items-center justify-between gap-2 text-[11px]">
@@ -5157,7 +5157,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       <div className="opacity-80">{u.inactive_days}g • 30g:{u.checkins_30d} • f:{u.followers_count}</div>
                     </div>
                   ))}
-                  {!adminAtRiskUsers.length ? <div className="text-[11px] opacity-60">{tx(lang, "Riskli kullanici yok.", "No at-risk users.")}</div> : null}
+                  {!adminAtRiskUsers.length ? <div className="text-[11px] opacity-60">{tx(lang, "Riskli kullanıcı yok.", "No at-risk users.")}</div> : null}
                 </div>
               </div>
             </div>
@@ -5167,7 +5167,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 onChange={(e) => setAdminSuggestionStatusFilter(e.target.value as "all" | "new" | "in_progress" | "done")}
                 className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
               >
-                <option value="all">{tx(lang, "Durum: Tum", "Status: All")}</option>
+                <option value="all">{tx(lang, "Durum: Tüm", "Status: All")}</option>
                 <option value="new">{tx(lang, "Yeni", "New")}</option>
                 <option value="in_progress">In progress</option>
                 <option value="done">Done</option>
@@ -5177,7 +5177,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 onChange={(e) => setAdminSuggestionCategoryFilter(e.target.value)}
                 className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
               >
-                <option value="all">{tx(lang, "Kategori: Tum", "Category: All")}</option>
+                <option value="all">{tx(lang, "Kategori: Tüm", "Category: All")}</option>
                 {Array.from(new Set(adminSuggestions.map((s) => s.category).filter(Boolean)))
                   .sort((a, b) => a.localeCompare(b, "tr"))
                   .map((cat) => (
@@ -5220,7 +5220,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               {adminSuggestionsBusy ? (
                 <LoadingPulse
                   lang={lang}
-                  labelTr="Oneriler yukleniyor..."
+                  labelTr="Öneriler yükleniyor..."
                   labelEn="Loading suggestions..."
                   compact
                   inline
@@ -5228,7 +5228,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 />
               ) : null}
               {!adminSuggestionsBusy && !adminSuggestions.length ? (
-                <div className="text-xs opacity-60">{tx(lang, "Oneri kaydi yok veya yetki bulunmuyor.", "No suggestion records or no permission.")}</div>
+                <div className="text-xs opacity-60">{tx(lang, "Öneri kaydi yok veya yetki bulunmuyor.", "No suggestion records or no permission.")}</div>
               ) : null}
             </div>
 
@@ -5269,7 +5269,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 {adminReportsBusy ? (
                   <LoadingPulse
                     lang={lang}
-                    labelTr="Raporlar yukleniyor..."
+                    labelTr="Raporlar yükleniyor..."
                     labelEn="Loading reports..."
                     compact
                     inline
@@ -5291,7 +5291,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         onClick={() => setSuggestionOpen(true)}
         className="fixed bottom-20 right-4 z-40 rounded-full border border-amber-300/35 bg-amber-500/20 px-4 py-2 text-xs font-semibold text-amber-100 shadow-[0_0_20px_rgba(245,158,11,0.25)]"
       >
-        {tx(lang, "Oneri", "Suggest")}
+        {tx(lang, "Öneri", "Suggest")}
       </button>
 
       {suggestionOpen ? (
@@ -5300,8 +5300,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           <div className="absolute left-1/2 top-1/2 w-[92%] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/10 bg-black p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold">{tx(lang, "Oneri gonder", "Send suggestion")}</div>
-                <div className="text-xs opacity-70">{tx(lang, "Yazdiklarin ekibe dusecek.", "Your message goes to the team.")}</div>
+                <div className="text-sm font-semibold">{tx(lang, "Öneri gönder", "Send suggestion")}</div>
+                <div className="text-xs opacity-70">{tx(lang, "Yazdıkların ekibe düşecek.", "Your message goes to the team.")}</div>
               </div>
               <button
                 type="button"
@@ -5321,7 +5321,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 <option value="general">{tx(lang, "Genel", "General")}</option>
                 <option value="bug">Bug</option>
                 <option value="ux">UX/UI</option>
-                <option value="feature">{tx(lang, "Yeni Ozellik", "New feature")}</option>
+                <option value="feature">{tx(lang, "Yeni Özellik", "New feature")}</option>
               </select>
               <textarea
                 value={suggestionMessage}
@@ -5337,7 +5337,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 disabled={suggestionBusy || !suggestionMessage.trim()}
                 className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm disabled:opacity-40"
               >
-                {suggestionBusy ? tx(lang, "Gonderiliyor...", "Sending...") : tx(lang, "Gonder", "Send")}
+                {suggestionBusy ? tx(lang, "Gönderiliyor...", "Sending...") : tx(lang, "Gönder", "Send")}
               </button>
             </div>
           </div>
@@ -5348,12 +5348,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/70" onClick={() => closeOnboarding(true)} />
           <div className="absolute left-1/2 top-1/2 w-[92%] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/10 bg-black p-4">
-            <div className="text-lg font-semibold">{abOnboardingVariant === "A" ? tx(lang, "Hizli baslangic", "Quick start") : tx(lang, "2 dakikada basla", "Start in 2 minutes")}</div>
+            <div className="text-lg font-semibold">{abOnboardingVariant === "A" ? tx(lang, "Hızlı başlangıç", "Quick start") : tx(lang, "2 dakikada başla", "Start in 2 minutes")}</div>
             <div className="mt-3 space-y-2 text-sm opacity-90">
-              <div>{tx(lang, "1. `Log` sekmesinde adim adim bira ekle.", "1. Add beer step by step in `Log`.")}</div>
-              <div>{tx(lang, "2. Gecmis gun icin `adet` ile toplu log at, sonra puanlari duzenle.", "2. Use bulk count for past dates, then edit ratings.")}</div>
+              <div>{tx(lang, "1. `Log` sekmesinde adım adım bira ekle.", "1. Add beer step by step in `Log`.")}</div>
+              <div>{tx(lang, "2. Geçmiş gün için `adet` ile toplu log at, sonra puanları düzenle.", "2. Use bulk count for past dates, then edit ratings.")}</div>
               <div>{tx(lang, "3. `Harita`da gun/konum yogunlugunu gor.", "3. View day/location density in `Map`.")}</div>
-              <div>{tx(lang, "4. `Sosyal`de takip et, akis ve leaderboard'u kullan.", "4. Follow people and use feed/leaderboard in `Social`.")}</div>
+              <div>{tx(lang, "4. `Sosyal`de takip et, akış ve leaderboard'u kullan.", "4. Follow people and use feed/leaderboard in `Social`.")}</div>
             </div>
             <div className="mt-4 flex items-center justify-between gap-2">
               <Link
@@ -5368,7 +5368,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 onClick={() => closeOnboarding(true)}
                 className="rounded-xl border border-amber-300/35 bg-amber-500/20 px-3 py-2 text-xs text-amber-100"
               >
-                {tx(lang, "Basla", "Start")}
+                {tx(lang, "Başla", "Start")}
               </button>
             </div>
           </div>

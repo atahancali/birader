@@ -352,7 +352,7 @@ export default function FootballHeatmap({
     <div className="mt-6">
       <div className="flex items-end justify-between">
         <div>
-          <div className="text-sm opacity-80">{lang === "en" ? "Heatmap" : "Isi haritasi"}</div>
+          <div className="text-sm opacity-80">{lang === "en" ? "Heatmap" : "Isı haritası"}</div>
           <div className="text-xl font-bold">{year}</div>
         </div>
 
@@ -366,7 +366,7 @@ export default function FootballHeatmap({
                 "linear-gradient(90deg, hsl(120 100% 60%), hsl(60 100% 60%), hsl(30 100% 60%), hsl(0 100% 60%))",
             }}
             aria-label="Heatmap legend"
-            title={lang === "en" ? `Density scale (max: ${maxCount})` : `Yogunluk olcegi (max: ${maxCount})`}
+            title={lang === "en" ? `Density scale (max: ${maxCount})` : `Yoğunluk ölçeği (max: ${maxCount})`}
           />
           <div className="text-[11px] opacity-60">High</div>
         </div>
@@ -409,7 +409,7 @@ export default function FootballHeatmap({
                       : "Gelecek gun kilitli"
                     : lang === "en"
                     ? "Click: select day"
-                    : "Click: gunu sec"}{" "}
+                    : "Tıkla: günü seç"}{" "}
                   • Max: {maxCount}
                 </div>
               </div>
@@ -421,7 +421,7 @@ export default function FootballHeatmap({
       <div className="mt-2 text-xs opacity-60">
         {lang === "en"
           ? "Hint: scroll right. Hover a day for tooltip; click to select."
-          : "Ipucu: saga kaydir. Haritada bir gune gelince tooltip cikar; tikla -> sec."}
+          : "İpucu: sağa kaydır. Haritada bir güne gelince bilgi kutusu çıkar; tıkla -> seç."}
       </div>
     </div>
   );

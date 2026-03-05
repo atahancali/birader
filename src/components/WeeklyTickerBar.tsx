@@ -59,7 +59,7 @@ export default function WeeklyTickerBar({
               onClick={() => onScopeChange("all")}
               className={`rounded-md px-2 py-1 text-[11px] ${scope === "all" ? "bg-amber-400/15 text-amber-100" : "bg-black/20 text-white/75"}`}
             >
-              {tx(lang, "Tum", "All")}
+              {tx(lang, "Tüm", "All")}
             </button>
             <button
               type="button"

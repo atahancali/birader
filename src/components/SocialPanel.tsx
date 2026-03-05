@@ -363,7 +363,7 @@ function badgeProgress(checkins: CheckinRow[]) {
       hintTr: `${Math.max(0, BADGE_THRESHOLDS.draft_loyalist.minTotal - total)} toplam log + ${Math.max(
         0,
         BADGE_THRESHOLDS.draft_loyalist.minSpecific - draftLogs
-      )} fici logu daha gerekiyor.`,
+      )} fıçı logu daha gerekiyor.`,
       hintEn: `${Math.max(0, BADGE_THRESHOLDS.draft_loyalist.minTotal - total)} more logs + ${Math.max(
         0,
         BADGE_THRESHOLDS.draft_loyalist.minSpecific - draftLogs
@@ -375,7 +375,7 @@ function badgeProgress(checkins: CheckinRow[]) {
     },
     {
       key: "bottle_lover",
-      titleTr: "Siseci",
+      titleTr: "Şişeci",
       titleEn: "Bottle Lover",
       progress: Math.min(
         ratio(total, BADGE_THRESHOLDS.bottle_lover.minTotal),
@@ -385,7 +385,7 @@ function badgeProgress(checkins: CheckinRow[]) {
       hintTr: `${Math.max(0, BADGE_THRESHOLDS.bottle_lover.minTotal - total)} toplam log + ${Math.max(
         0,
         BADGE_THRESHOLDS.bottle_lover.minSpecific - bottleLogs
-      )} sise/kutu logu daha gerekiyor.`,
+      )} şişe/kutu logu daha gerekiyor.`,
       hintEn: `${Math.max(0, BADGE_THRESHOLDS.bottle_lover.minTotal - total)} more logs + ${Math.max(
         0,
         BADGE_THRESHOLDS.bottle_lover.minSpecific - bottleLogs
@@ -400,7 +400,7 @@ function badgeProgress(checkins: CheckinRow[]) {
       titleTr: "Pub Nomadi",
       titleEn: "Pub Nomad",
       progress: ratio(uniqueCities, BADGE_THRESHOLDS.nomad.minSpecific),
-      hintTr: `${Math.max(0, BADGE_THRESHOLDS.nomad.minSpecific - uniqueCities)} farkli sehir daha logla.`,
+      hintTr: `${Math.max(0, BADGE_THRESHOLDS.nomad.minSpecific - uniqueCities)} farklı şehir daha logla.`,
       hintEn: `Log from ${Math.max(0, BADGE_THRESHOLDS.nomad.minSpecific - uniqueCities)} more cities.`,
       done: uniqueCities >= BADGE_THRESHOLDS.nomad.minSpecific,
     },
@@ -965,7 +965,7 @@ export default function SocialPanel({
     );
   }, [filteredNotifications, lang]);
 
-  function markDbError(error: unknown, fallbackTr = "Sosyal panel istegi basarisiz.", fallbackEn = "Social panel request failed.") {
+  function markDbError(error: unknown, fallbackTr = "Sosyal panel istegi başarısız.", fallbackEn = "Social panel request failed.") {
     const prepared = normalizeApiError(error, {
       lang,
       fallbackTr,
@@ -983,7 +983,7 @@ export default function SocialPanel({
     });
   }
 
-  function errorText(error: unknown, fallbackTr = "Islem basarisiz.", fallbackEn = "Action failed.") {
+  function errorText(error: unknown, fallbackTr = "Islem başarısız.", fallbackEn = "Action failed.") {
     return formatApiErrorText(
       normalizeApiError(error, {
         lang,
@@ -1184,7 +1184,7 @@ export default function SocialPanel({
       }
     }
 
-    setDbError("Kullanici adi olusturulamadi. Farkli bir ad dene.");
+    setDbError("Kullanıcı adi oluşturulamadi. Farklı bir ad dene.");
     return null;
   }
 
@@ -1334,7 +1334,7 @@ export default function SocialPanel({
       const ref = miniProfileForUser(r.user_id);
       return {
         ...r,
-        username: ref?.username ?? "kullanici",
+        username: ref?.username ?? "kullanıcı",
         display_name: ref?.display_name ?? "",
       };
     });
@@ -1414,7 +1414,7 @@ export default function SocialPanel({
       const ref = miniProfileForUser(c.user_id);
       const enriched: FeedComment = {
         ...c,
-        username: ref?.username ?? "kullanici",
+        username: ref?.username ?? "kullanıcı",
         display_name: ref?.display_name ?? "",
       };
       if (!grouped[c.checkin_id]) grouped[c.checkin_id] = [];
@@ -1557,7 +1557,7 @@ export default function SocialPanel({
         ...inv,
         source_beer_name: src.beer_name,
         source_created_at: src.created_at,
-        inviter_username: inviter?.username ?? "kullanici",
+        inviter_username: inviter?.username ?? "kullanıcı",
         inviter_display_name: inviter?.display_name ?? "",
       });
     }
@@ -1743,7 +1743,7 @@ export default function SocialPanel({
         upsertMiniProfiles([
           {
             user_id: String((p as any).user_id || checkin.user_id),
-            username: String((p as any).username || "kullanici"),
+            username: String((p as any).username || "kullanıcı"),
             display_name: String((p as any).display_name || ""),
           },
         ]);
@@ -1751,7 +1751,7 @@ export default function SocialPanel({
       profileRef = miniProfileForUser(checkin.user_id);
     }
 
-    const username = profileRef?.username || "kullanici";
+    const username = profileRef?.username || "kullanıcı";
     const displayName = profileRef?.display_name || "";
     setFeedItems((prev) =>
       [
@@ -2127,7 +2127,7 @@ export default function SocialPanel({
     setAvatarModerationRows(
       baseRows.map((row) => ({
         ...row,
-        username: byUser.get(row.user_id)?.username || "kullanici",
+        username: byUser.get(row.user_id)?.username || "kullanıcı",
         display_name: byUser.get(row.user_id)?.display_name || "",
       }))
     );
@@ -2795,7 +2795,7 @@ export default function SocialPanel({
             const next = [
               {
                 ...row,
-                username: profileRef?.username ?? "kullanici",
+                username: profileRef?.username ?? "kullanıcı",
                 display_name: profileRef?.display_name ?? "",
               },
               ...prev.filter((x) => x.id !== row.id),
@@ -2837,7 +2837,7 @@ export default function SocialPanel({
                 x.id === row.id
                   ? {
                       ...row,
-                      username: profileRef?.username ?? "kullanici",
+                      username: profileRef?.username ?? "kullanıcı",
                       display_name: profileRef?.display_name ?? "",
                     }
                   : x
@@ -3079,7 +3079,7 @@ export default function SocialPanel({
       if (upErr) {
         console.error("avatar upload error:", upErr.message);
         markDbError(upErr);
-        alert(errorText(upErr, "Avatar yuklenemedi.", "Avatar upload failed."));
+        alert(errorText(upErr, "Avatar yüklenemedi.", "Avatar upload failed."));
         return;
       }
 
@@ -3090,7 +3090,7 @@ export default function SocialPanel({
       if (dbErr) {
         console.error("avatar profile update error:", dbErr.message);
         markDbError(dbErr);
-        alert(errorText(dbErr, "Profil avatari guncellenemedi.", "Profile avatar update failed."));
+        alert(errorText(dbErr, "Profil avatari güncellenemedi.", "Profile avatar update failed."));
         return;
       }
       const queueRes = await supabase.rpc("queue_avatar_moderation", {
@@ -3482,7 +3482,7 @@ export default function SocialPanel({
 
     if (error) {
       markDbError(error);
-      alert(errorText(error, "Yorum gonderilemedi.", "Comment could not be sent."));
+      alert(errorText(error, "Yorum gönderilemedi.", "Comment could not be sent."));
       return;
     }
 
@@ -3656,7 +3656,7 @@ export default function SocialPanel({
     }
     if (item.type === "follow") {
       const actorUsername = String(item.actor_username || "");
-      if (actorUsername && actorUsername !== "kullanici") {
+      if (actorUsername && actorUsername !== "kullanıcı") {
         router.push(`/u/${encodeURIComponent(actorUsername)}`);
       } else {
         const targetUserId = String(item.actor_id || "");
@@ -3696,7 +3696,7 @@ export default function SocialPanel({
   async function createShareInvite() {
     if (!inviteSourceCheckinId || !inviteTargetUserId) return;
     if (inviteTargetUserId === userId) {
-      alert(tx(lang, "Kendine davet gonderemezsin.", "You cannot send an invite to yourself."));
+      alert(tx(lang, "Kendine davet gönderemezsin.", "You cannot send an invite to yourself."));
       return;
     }
 
@@ -3716,7 +3716,7 @@ export default function SocialPanel({
 
     if (error) {
       markDbError(error);
-      alert(errorText(error, "Davet gonderilemedi.", "Invite could not be sent."));
+      alert(errorText(error, "Davet gönderilemedi.", "Invite could not be sent."));
       return;
     }
 
@@ -3725,7 +3725,7 @@ export default function SocialPanel({
       userId,
       props: { source_checkin_id: inviteSourceCheckinId, invited_user_id: inviteTargetUserId },
     });
-    alert(tx(lang, "Davet gonderildi.", "Invite sent."));
+    alert(tx(lang, "Davet gönderildi.", "Invite sent."));
   }
 
   async function acceptInvite(inviteId: number) {
@@ -3772,7 +3772,7 @@ export default function SocialPanel({
   if (loading) {
     return (
       <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
-        <LoadingPulse lang={lang} labelTr="Sosyal panel yukleniyor..." labelEn="Loading social panel..." />
+        <LoadingPulse lang={lang} labelTr="Sosyal panel yükleniyor..." labelEn="Loading social panel..." />
       </section>
     );
   }
@@ -3892,7 +3892,7 @@ export default function SocialPanel({
                       <div>p95: {p95.toFixed(0)}ms</div>
                       <div>avg: {Number(row.avg_ms || 0).toFixed(0)}ms</div>
                       <div>fail: {failRate.toFixed(2)}%</div>
-                      <div>{tx(lang, "kullanici", "users")}: {row.unique_users}</div>
+                      <div>{tx(lang, "kullanıcı", "users")}: {row.unique_users}</div>
                     </div>
                   </div>
                 );
@@ -3940,7 +3940,7 @@ export default function SocialPanel({
                   {perfDailyBusy ? (
                     <LoadingPulse
                       lang={lang}
-                      labelTr="Haftalik trend yukleniyor..."
+                      labelTr="Haftalik trend yükleniyor..."
                       labelEn="Loading weekly trend..."
                       compact
                       inline
@@ -3952,7 +3952,7 @@ export default function SocialPanel({
               {perfBusy ? (
                 <LoadingPulse
                   lang={lang}
-                  labelTr="Perf metrikleri yukleniyor..."
+                  labelTr="Perf metrikleri yükleniyor..."
                   labelEn="Loading performance metrics..."
                   compact
                   inline
@@ -3990,7 +3990,7 @@ export default function SocialPanel({
             <div className="mt-2 space-y-2">
               {avatarModerationRows.map((row) => {
                 const visible = visibleName({
-                  username: String(row.username || "kullanici"),
+                  username: String(row.username || "kullanıcı"),
                   display_name: row.display_name || "",
                 });
                 const flagKeys = Object.keys((row.flags || {}) as Record<string, any>);
@@ -4043,7 +4043,7 @@ export default function SocialPanel({
               {avatarModerationBusy ? (
                 <LoadingPulse
                   lang={lang}
-                  labelTr="Avatar moderasyon kuyruğu yukleniyor..."
+                  labelTr="Avatar moderasyon kuyruğu yükleniyor..."
                   labelEn="Loading avatar moderation queue..."
                   compact
                   inline
@@ -4100,7 +4100,7 @@ export default function SocialPanel({
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-          <div className="text-xs opacity-70">{tx(lang, "Kullanici ara ve takip et", "Search users and follow")}</div>
+          <div className="text-xs opacity-70">{tx(lang, "Kullanıcı ara ve takip et", "Search users and follow")}</div>
           <div className="mt-2 flex gap-2">
             <input
               value={searchQuery}
@@ -4153,7 +4153,7 @@ export default function SocialPanel({
 
           <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-2.5">
             <div className="flex items-center justify-between gap-2">
-              <div className="text-xs opacity-70">{tx(lang, "Kullanici kesfet", "Discover users")}</div>
+              <div className="text-xs opacity-70">{tx(lang, "Kullanıcı keşfet", "Discover users")}</div>
               <button
                 type="button"
                 onClick={() => void loadDiscoverProfiles()}
@@ -4190,7 +4190,7 @@ export default function SocialPanel({
                 );
               })}
               {!discoverBusy && discoverProfiles.length === 0 ? (
-                <div className="text-xs opacity-60">{tx(lang, "Kesfet icin uygun profil yok.", "No profiles to discover.")}</div>
+                <div className="text-xs opacity-60">{tx(lang, "Keşfet için uygun profil yok.", "No profiles to discover.")}</div>
               ) : null}
             </div>
           </div>
@@ -4228,8 +4228,8 @@ export default function SocialPanel({
                   ["follow", tx(lang, "Takip", "Follow")],
                   ["comment", tx(lang, "Yorum", "Comment")],
                   ["mention", "Mention"],
-                  ["comment_like", tx(lang, "Yorum begeni", "Comment like")],
-                  ["checkin_like", tx(lang, "Log begeni", "Check-in like")],
+                  ["comment_like", tx(lang, "Yorum beğeni", "Comment like")],
+                  ["checkin_like", tx(lang, "Log beğeni", "Check-in like")],
                 ] as Array<[NotifTypeKey, string]>).map(([key, label]) => (
                   <label key={`notif-pref-${key}`} className="flex items-center gap-2 text-[11px]">
                     <input
@@ -4248,13 +4248,13 @@ export default function SocialPanel({
                   onChange={(e) => setNotifFilter(e.target.value as NotificationFilter)}
                   className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-[11px] outline-none"
                 >
-                  <option value="all">{tx(lang, "Tumu", "All")}</option>
+                  <option value="all">{tx(lang, "Tümü", "All")}</option>
                   <option value="unread">{tx(lang, "Sadece okunmamis", "Unread only")}</option>
                   <option value="follow">{tx(lang, "Takip", "Follow")}</option>
                   <option value="comment">{tx(lang, "Yorum", "Comment")}</option>
                   <option value="mention">Mention</option>
-                  <option value="comment_like">{tx(lang, "Yorum begeni", "Comment like")}</option>
-                  <option value="checkin_like">{tx(lang, "Log begeni", "Check-in like")}</option>
+                  <option value="comment_like">{tx(lang, "Yorum beğeni", "Comment like")}</option>
+                  <option value="checkin_like">{tx(lang, "Log beğeni", "Check-in like")}</option>
                   <option value="system">{tx(lang, "Sistem", "System")}</option>
                 </select>
                 <button
@@ -4262,7 +4262,7 @@ export default function SocialPanel({
                   onClick={() => void markAllNotificationsRead()}
                   className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
                 >
-                  {tx(lang, "Tumunu okundu yap", "Mark all read")}
+                  {tx(lang, "Tümünu okundu yap", "Mark all read")}
                 </button>
               </div>
               <button
@@ -4333,7 +4333,7 @@ export default function SocialPanel({
               {notifBusy ? (
                 <LoadingPulse
                   lang={lang}
-                  labelTr="Bildirimler yukleniyor..."
+                  labelTr="Bildirimler yükleniyor..."
                   labelEn="Loading notifications..."
                   compact
                   inline
@@ -4427,14 +4427,14 @@ export default function SocialPanel({
               onClick={() => void createShareInvite()}
               className="rounded-lg border border-white/15 bg-white/10 px-2 py-2 text-xs disabled:opacity-50"
             >
-              {inviteCreating ? tx(lang, "Gonderiliyor...", "Sending...") : tx(lang, "Davet gonder", "Send invite")}
+              {inviteCreating ? tx(lang, "Gönderiliyor...", "Sending...") : tx(lang, "Davet gönder", "Send invite")}
             </button>
           </div>
           {!ownRecentCheckins.length ? (
-            <div className="mt-2 text-xs opacity-60">{tx(lang, "Davet icin once en az bir logun olmasi gerekiyor.", "You need at least one log before sending invites.")}</div>
+            <div className="mt-2 text-xs opacity-60">{tx(lang, "Davet için önce en az bir logun olması gerekiyor.", "You need at least one log before sending invites.")}</div>
           ) : null}
           {!followingProfiles.length ? (
-            <div className="mt-2 text-xs opacity-60">{tx(lang, "Davet icin once birini takip etmen gerekiyor.", "You need to follow someone before sending invites.")}</div>
+            <div className="mt-2 text-xs opacity-60">{tx(lang, "Davet için önce birini takip etmen gerekiyor.", "You need to follow someone before sending invites.")}</div>
           ) : null}
         </div>
 
@@ -4501,13 +4501,13 @@ export default function SocialPanel({
                   </Link>
                   <div className="text-xs opacity-70">{row.logs} log</div>
                 </div>
-                <RatingStars value={row.avgRating > 0 ? row.avgRating : null} size="xs" unratedLabel={tx(lang, "Puansiz", "Unrated")} />
+                <RatingStars value={row.avgRating > 0 ? row.avgRating : null} size="xs" unratedLabel={tx(lang, "Puansız", "Unrated")} />
               </div>
             ))}
             {leaderBusy ? (
               <LoadingPulse
                 lang={lang}
-                labelTr="Leaderboard yukleniyor..."
+                labelTr="Leaderboard yükleniyor..."
                 labelEn="Loading leaderboard..."
                 compact
                 inline
@@ -4555,7 +4555,7 @@ export default function SocialPanel({
 
         <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-xs opacity-70">{tx(lang, "Sosyal akis", "Social feed")}</div>
+            <div className="text-xs opacity-70">{tx(lang, "Sosyal akış", "Social feed")}</div>
             <button
               type="button"
               onClick={() => void loadFeed(true)}
@@ -4571,7 +4571,7 @@ export default function SocialPanel({
               onClick={() => applyFeedPreset("discover")}
               className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
             >
-              {tx(lang, "Kesfet", "Discover")}
+              {tx(lang, "Keşfet", "Discover")}
             </button>
             <button
               type="button"
@@ -4595,7 +4595,7 @@ export default function SocialPanel({
               onChange={(e) => setFeedScope(e.target.value as FeedScope)}
               className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
             >
-              <option value="all">{tx(lang, "Tum akis", "All feed")}</option>
+              <option value="all">{tx(lang, "Tüm akış", "All feed")}</option>
               <option value="following">{tx(lang, "Takip ettiklerim", "Following only")}</option>
             </select>
             <select
@@ -4605,7 +4605,7 @@ export default function SocialPanel({
             >
               <option value="24h">{tx(lang, "Son 24s", "Last 24h")}</option>
               <option value="7d">{tx(lang, "Son 7g", "Last 7d")}</option>
-              <option value="all">{tx(lang, "Tum zaman", "All time")}</option>
+              <option value="all">{tx(lang, "Tüm zaman", "All time")}</option>
             </select>
             <select
               value={feedMinRating}
@@ -4631,9 +4631,9 @@ export default function SocialPanel({
               onChange={(e) => setFeedFormat(e.target.value as FeedFormat)}
               className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
             >
-              <option value="all">{tx(lang, "Tum formatlar", "All formats")}</option>
-              <option value="draft">{tx(lang, "Sadece fici", "Draft only")}</option>
-              <option value="bottle">{tx(lang, "Sadece sise/kutu", "Bottle/can only")}</option>
+              <option value="all">{tx(lang, "Tüm formatlar", "All formats")}</option>
+              <option value="draft">{tx(lang, "Sadece fıçı", "Draft only")}</option>
+              <option value="bottle">{tx(lang, "Sadece şişe/kutu", "Bottle/can only")}</option>
             </select>
             <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs">
               <input
@@ -4646,7 +4646,7 @@ export default function SocialPanel({
               <span>
                 {primaryCity
                   ? tx(lang, `Sadece ${primaryCity}`, `Only ${primaryCity}`)
-                  : tx(lang, "Sehir verin yok", "No city data")}
+                  : tx(lang, "Şehir verin yok", "No city data")}
               </span>
             </label>
           </div>
@@ -4681,7 +4681,7 @@ export default function SocialPanel({
                 <div className="mt-1 text-sm font-semibold">{item.beer_name}</div>
                 <div className="mt-1 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <RatingStars value={item.rating} size="xs" unratedLabel={tx(lang, "Puansiz", "Unrated")} className="opacity-90" />
+                    <RatingStars value={item.rating} size="xs" unratedLabel={tx(lang, "Puansız", "Unrated")} className="opacity-90" />
                     <button
                       type="button"
                       disabled={checkinLikeBusyId === checkinId}
@@ -4790,7 +4790,7 @@ export default function SocialPanel({
                     {commentsBusy ? (
                       <LoadingPulse
                         lang={lang}
-                        labelTr="Yorumlar yukleniyor..."
+                        labelTr="Yorumlar yükleniyor..."
                         labelEn="Loading comments..."
                         compact
                         inline
@@ -4798,7 +4798,7 @@ export default function SocialPanel({
                       />
                     ) : null}
                     {!commentsBusy && !comments.length ? (
-                      <div className="text-[11px] opacity-55">{tx(lang, "Henuz yorum yok.", "No comments yet.")}</div>
+                      <div className="text-[11px] opacity-55">{tx(lang, "Henüz yorum yok.", "No comments yet.")}</div>
                     ) : null}
                   </div>
                   <div className="mt-2 flex items-center gap-2">
@@ -4807,7 +4807,7 @@ export default function SocialPanel({
                       onChange={(e) =>
                         setCommentDraftByCheckin((prev) => ({ ...prev, [checkinId]: e.target.value }))
                       }
-                      placeholder={tx(lang, "Yorum yaz... (mention: @kullanici)", "Write a comment... (mention: @user)")}
+                      placeholder={tx(lang, "Yorum yaz... (mention: @kullanıcı)", "Write a comment... (mention: @user)")}
                       maxLength={240}
                       className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
                     />
@@ -4817,7 +4817,7 @@ export default function SocialPanel({
                       onClick={() => void addComment(checkinId)}
                       className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
                     >
-                      {commentSendingFor === checkinId ? "..." : tx(lang, "Gonder", "Send")}
+                      {commentSendingFor === checkinId ? "..." : tx(lang, "Gönder", "Send")}
                     </button>
                   </div>
                 </div>
@@ -4828,7 +4828,7 @@ export default function SocialPanel({
             {feedBusy ? (
               <LoadingPulse
                 lang={lang}
-                labelTr="Sosyal akis doluyor..."
+                labelTr="Sosyal akış doluyor..."
                 labelEn="Pouring social feed..."
                 compact
               />
@@ -4850,7 +4850,7 @@ export default function SocialPanel({
                       {tx(lang, "Devam ediyor...", "Continuing...")}
                     </span>
                   ) : (
-                    tx(lang, "Daha fazla log yukle", "Load more check-ins")
+                    tx(lang, "Daha fazla log yükle", "Load more check-ins")
                   )}
                 </button>
                 <div ref={feedLoadMoreRef} className="h-2 w-full" />

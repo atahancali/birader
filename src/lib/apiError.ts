@@ -24,7 +24,7 @@ type ErrorLike = {
   error_description?: unknown;
 };
 
-const SCHEMA_HINT_TR = "Supabase SQL Editor'de scripts/sql/main.sql calistirip sayfayi yenile.";
+const SCHEMA_HINT_TR = "Supabase SQL Editor'de scripts/sql/main.sql çalıştırip sayfayi yenile.";
 const SCHEMA_HINT_EN = "Run scripts/sql/main.sql in Supabase SQL Editor and refresh the page.";
 
 function asText(value: unknown) {
@@ -78,37 +78,37 @@ function messageForCode(code: string, lang: AppLang, rawMessage: string, fallbac
   switch (code) {
     case "NETWORK_ERROR":
       return {
-        message: tx(lang, "Ag baglantisi kurulamadigi icin islem tamamlanamadi.", "The action failed because the network request could not be completed."),
+        message: tx(lang, "Ağ bağlantısı kurulamadığı için işlem tamamlanamadı.", "The action failed because the network request could not be completed."),
         hint: tx(lang, "Baglantini kontrol edip tekrar dene.", "Check your connection and try again."),
       };
     case "SCHEMA_OUTDATED":
       return {
-        message: tx(lang, "Veritabani semasi guncel degil.", "Database schema is outdated."),
+        message: tx(lang, "Veritabani semasi güncel degil.", "Database schema is outdated."),
         hint: tx(lang, SCHEMA_HINT_TR, SCHEMA_HINT_EN),
       };
     case "FORBIDDEN_RLS":
       return {
-        message: tx(lang, "Bu islem icin yetkin yok.", "You do not have permission for this action."),
+        message: tx(lang, "Bu işlem için yetkin yok.", "You do not have permission for this action."),
         hint: tx(lang, "Hesap/rol ve RLS policy ayarlarini kontrol et.", "Check account role and RLS policy settings."),
       };
     case "DUPLICATE":
       return {
-        message: tx(lang, "Ayni kayit zaten mevcut.", "This record already exists."),
-        hint: tx(lang, "Mevcut kaydi guncelleyebilir veya farkli bir deger deneyebilirsin.", "You can update the existing record or try a different value."),
+        message: tx(lang, "Ayni kayıt zaten mevcut.", "This record already exists."),
+        hint: tx(lang, "Mevcut kaydi güncelleyebilir veya farklı bir deger deneyebilirsin.", "You can update the existing record or try a different value."),
       };
     case "FK_CONSTRAINT":
       return {
-        message: tx(lang, "Iliskili kayit bulunamadigi icin islem tamamlanamadi.", "The action failed because a related record is missing."),
-        hint: tx(lang, "Referans verilen kayitlarin var oldugunu dogrula.", "Verify referenced records exist."),
+        message: tx(lang, "İlişkili kayıt bulunamadığı için işlem tamamlanamadı.", "The action failed because a related record is missing."),
+        hint: tx(lang, "Referans verilen kayıtlarin var oldugunu doğrula.", "Verify referenced records exist."),
       };
     case "INVALID_INPUT":
       return {
-        message: tx(lang, "Gonderilen veri formati gecersiz.", "The submitted data format is invalid."),
+        message: tx(lang, "Gönderilen veri formati gecersiz.", "The submitted data format is invalid."),
         hint: tx(lang, "Alan degerlerini kontrol edip tekrar dene.", "Check field values and try again."),
       };
     case "AUTH_REQUIRED":
       return {
-        message: tx(lang, "Bu islem icin tekrar giris yapman gerekiyor.", "You need to sign in again for this action."),
+        message: tx(lang, "Bu işlem için tekrar giriş yapman gerekiyor.", "You need to sign in again for this action."),
         hint: tx(lang, "Oturumu yenileyip tekrar dene.", "Refresh your session and try again."),
       };
     default:
@@ -120,7 +120,7 @@ function messageForCode(code: string, lang: AppLang, rawMessage: string, fallbac
 }
 
 export function normalizeApiError(error: unknown, options: NormalizeApiErrorOptions): ApiErrorModel {
-  const fallbackTr = options.fallbackTr || "Islem basarisiz.";
+  const fallbackTr = options.fallbackTr || "Islem başarısız.";
   const fallbackEn = options.fallbackEn || "Action failed.";
   const fallback = tx(options.lang, fallbackTr, fallbackEn);
 

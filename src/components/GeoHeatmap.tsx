@@ -114,7 +114,7 @@ export default function GeoHeatmap({ year, checkins, lang = "tr" }: { year: numb
       <div className="mb-2 flex items-center justify-between gap-2">
         <div>
           <div className="text-sm opacity-80">{lang === "en" ? "Turkey location heatmap" : "Turkiye konum isi haritasi"}</div>
-          <div className="text-xs opacity-60">{lang === "en" ? `City/district layer density (${year})` : `Sehir/ilce katman yogunlugu (${year})`}</div>
+          <div className="text-xs opacity-60">{lang === "en" ? `City/district layer density (${year})` : `Şehir/ilçe katman yogunlugu (${year})`}</div>
         </div>
         <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-black/25 p-1">
           <button
@@ -122,34 +122,34 @@ export default function GeoHeatmap({ year, checkins, lang = "tr" }: { year: numb
             onClick={() => setLayer("city")}
             className={`rounded-md px-2 py-1 text-[11px] ${layer === "city" ? "bg-white/15" : "bg-black/20"}`}
           >
-            {lang === "en" ? "City" : "Sehir"}
+            {lang === "en" ? "City" : "Şehir"}
           </button>
           <button
             type="button"
             onClick={() => setLayer("district")}
             className={`rounded-md px-2 py-1 text-[11px] ${layer === "district" ? "bg-white/15" : "bg-black/20"}`}
           >
-            {lang === "en" ? "District" : "Ilce"}
+            {lang === "en" ? "District" : "İlçe"}
           </button>
           <button
             type="button"
             onClick={() => setLayer("pair")}
             className={`rounded-md px-2 py-1 text-[11px] ${layer === "pair" ? "bg-white/15" : "bg-black/20"}`}
           >
-            {lang === "en" ? "Pair" : "Il/Ilce"}
+            {lang === "en" ? "Pair" : "Il/İlçe"}
           </button>
         </div>
       </div>
 
       {!cityCounts.length ? (
         <div className="rounded-2xl border border-white/10 bg-black/20 p-3 text-xs opacity-70">
-          {lang === "en" ? "No city data. Select city/district while logging." : "Sehir verisi yok. Log eklerken sehir/ilce sec."}
+          {lang === "en" ? "No city data. Select city/district while logging." : "Şehir verisi yok. Log eklerken şehir/ilçe seç."}
         </div>
       ) : (
         <>
           {layer === "city" ? (
             <>
-              <div className="mb-2 text-xs opacity-70">{lang === "en" ? "Cities" : "Sehir"}: {cityCounts.length}</div>
+              <div className="mb-2 text-xs opacity-70">{lang === "en" ? "Cities" : "Şehir"}: {cityCounts.length}</div>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {cityCounts.slice(0, 24).map((row) => {
                   const intensity = row.count / cityMax;
@@ -181,7 +181,7 @@ export default function GeoHeatmap({ year, checkins, lang = "tr" }: { year: numb
           ) : layer === "district" ? (
             <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="text-xs opacity-70">{lang === "en" ? "Selected city" : "Secili sehir"}:</div>
+                <div className="text-xs opacity-70">{lang === "en" ? "Selected city" : "Secili şehir"}:</div>
                 <select
                   value={selectedCity}
                   onChange={(e) => setActiveCity(e.target.value)}
@@ -216,13 +216,13 @@ export default function GeoHeatmap({ year, checkins, lang = "tr" }: { year: numb
               </div>
               {!districtCounts.length ? (
                 <div className="mt-2 text-xs opacity-60">
-                  {lang === "en" ? "No district data for this city." : "Bu sehir icin ilce verisi yok."}
+                  {lang === "en" ? "No district data for this city." : "Bu şehir için ilçe verisi yok."}
                 </div>
               ) : null}
             </div>
           ) : (
             <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-              <div className="mb-2 text-xs opacity-75">{lang === "en" ? "Top city/district pairs" : "Top il/ilce kombinasyonlari"}</div>
+              <div className="mb-2 text-xs opacity-75">{lang === "en" ? "Top city/district pairs" : "Top il/ilçe kombinasyonlari"}</div>
               <div className="space-y-2">
                 {pairCounts.slice(0, 18).map((p) => (
                   <div key={p.key}>
@@ -238,7 +238,7 @@ export default function GeoHeatmap({ year, checkins, lang = "tr" }: { year: numb
                     </div>
                   </div>
                 ))}
-                {!pairCounts.length ? <div className="text-xs opacity-60">{lang === "en" ? "No district data." : "Ilce verisi yok."}</div> : null}
+                {!pairCounts.length ? <div className="text-xs opacity-60">{lang === "en" ? "No district data." : "İlçe verisi yok."}</div> : null}
               </div>
             </div>
           )}

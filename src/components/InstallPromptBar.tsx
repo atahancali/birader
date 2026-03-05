@@ -103,10 +103,10 @@ export default function InstallPromptBar() {
             <div className="text-sm font-semibold text-amber-200">{tx(lang, "Birader Mobile", "Birader Mobile")}</div>
             <div className="text-xs opacity-80">
               {showWebInstall
-                ? tx(lang, "Web uygulamayi tek tikla kur veya mobil uygulama magaza linklerini kullan.", "Install web app in one tap or use mobile store links.")
+                ? tx(lang, "Web uygulamayı tek tıkla kur veya mobil uygulama mağaza linklerini kullan.", "Install web app in one tap or use mobile store links.")
                 : ios
-                  ? tx(lang, "Safari'de Paylas > Ana Ekrana Ekle ile kurulum yapabilirsin.", "On Safari, use Share > Add to Home Screen.")
-                  : tx(lang, "Mobil magaza linklerinden uygulamayi acabilir veya indirebilirsin.", "Open or download the app from mobile store links.")}
+                  ? tx(lang, "Safari'de Paylaş > Ana Ekrana Ekle ile kurulum yapabilirsin.", "On Safari, use Share > Add to Home Screen.")
+                  : tx(lang, "Mobil mağaza linklerinden uygulamayı açabilir veya indirebilirsin.", "Open or download the app from mobile store links.")}
             </div>
           </div>
 
@@ -141,7 +141,7 @@ export default function InstallPromptBar() {
               href="/yardim"
               className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs"
             >
-              {tx(lang, "Yardim", "Help")}
+              {tx(lang, "Yardım", "Help")}
             </Link>
             <button
               type="button"

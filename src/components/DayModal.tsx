@@ -85,7 +85,7 @@ export default function DayModal({
     const name = beerName.trim();
     if (!name) return;
     if (isFutureDay) {
-      alert(lang === "en" ? "You cannot log a future date." : "Bugunden sonraki tarihe log atilamaz.");
+      alert(lang === "en" ? "You cannot log a future date." : "Bugünden sonraki tarihe log atilamaz.");
       return;
     }
 
@@ -158,7 +158,7 @@ export default function DayModal({
             {loading ? (
               <LoadingPulse
                 lang={lang}
-                labelTr="Gun detaylari yukleniyor..."
+                labelTr="Gun detaylari yükleniyor..."
                 labelEn="Loading day details..."
                 compact
                 inline
@@ -252,7 +252,7 @@ export default function DayModal({
               lang={lang}
               compact
               inline
-              labelTr="Yukleniyor..."
+              labelTr="Yükleniyor..."
               labelEn="Loading..."
               className="rounded-2xl border border-white/10 bg-white/5 p-2 text-sm"
             />

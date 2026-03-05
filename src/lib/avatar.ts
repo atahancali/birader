@@ -63,17 +63,17 @@ function fail(reason: string, errorTr: string, errorEn: string): AvatarPrepFailu
 export async function prepareAvatarUpload(file: File): Promise<AvatarPrepResult> {
   const mime = String(file.type || "").toLowerCase();
   if (!ALLOWED_MIME_TYPES.has(mime)) {
-    return fail("unsupported_type", "Sadece JPG, PNG veya WebP yukleyebilirsin.", "Only JPG, PNG, or WebP files are allowed.");
+    return fail("unsupported_type", "Sadece JPG, PNG veya WebP yükleyebilirsin.", "Only JPG, PNG, or WebP files are allowed.");
   }
   if (file.size > MAX_ORIGINAL_BYTES) {
-    return fail("file_too_large", "Avatar dosyasi en fazla 8MB olabilir.", "Avatar file size must be at most 8MB.");
+    return fail("file_too_large", "Avatar dosyası en fazla 8MB olabilir.", "Avatar file size must be at most 8MB.");
   }
 
   const keywordHits = extractKeywordHits(file.name || "");
   if (keywordHits.length > 0) {
     return fail(
       "filename_blocked",
-      "Dosya adi uygun degil. Lutfen farkli bir dosya sec.",
+      "Dosya adı uygun değil. Lütfen farklı bir dosya seç.",
       "File name is not allowed. Please choose a different file."
     );
   }
@@ -82,7 +82,7 @@ export async function prepareAvatarUpload(file: File): Promise<AvatarPrepResult>
   try {
     bitmap = await createImageBitmap(file);
   } catch {
-    return fail("decode_failed", "Gorsel dosyasi okunamadi.", "Image file could not be decoded.");
+    return fail("decode_failed", "Görsel dosyası okunamadı.", "Image file could not be decoded.");
   }
 
   const originalWidth = bitmap.width;
@@ -99,7 +99,7 @@ export async function prepareAvatarUpload(file: File): Promise<AvatarPrepResult>
     bitmap.close();
     return fail(
       "dimensions_too_large",
-      "Avatar boyutu cok buyuk. Lutfen daha kucuk bir gorsel sec.",
+      "Avatar boyutu çok büyük. Lütfen daha küçük bir görsel seç.",
       "Avatar dimensions are too large. Please choose a smaller image."
     );
   }
@@ -113,7 +113,7 @@ export async function prepareAvatarUpload(file: File): Promise<AvatarPrepResult>
   const ctx = canvas.getContext("2d");
   if (!ctx) {
     bitmap.close();
-    return fail("canvas_failed", "Gorsel islenemedi.", "Image could not be processed.");
+    return fail("canvas_failed", "Görsel işlenemedi.", "Image could not be processed.");
   }
   ctx.drawImage(bitmap, 0, 0, width, height);
   bitmap.close();

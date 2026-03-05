@@ -40,21 +40,21 @@ const BADGE_META_MAP: Record<string, BadgeMeta> = {
     icon: "🍺",
     colorFrom: "#f59e0b",
     colorTo: "#f97316",
-    ruleTr: "En az 12 log + en az 7 fici logu + %55 fici orani.",
+    ruleTr: "En az 12 log + en az 7 fıçı logu + %55 fıçı oranı.",
     ruleEn: "At least 12 logs + at least 7 draft logs + 55% draft ratio.",
   },
   bottle_lover: {
     icon: "🧴",
     colorFrom: "#10b981",
     colorTo: "#14b8a6",
-    ruleTr: "En az 12 log + en az 7 sise/kutu logu + %55 oran.",
+    ruleTr: "En az 12 log + en az 7 şişe/kutu logu + %55 oran.",
     ruleEn: "At least 12 logs + at least 7 bottle/can logs + 55% ratio.",
   },
   nomad: {
     icon: "🧭",
     colorFrom: "#3b82f6",
     colorTo: "#06b6d4",
-    ruleTr: "En az 5 farkli sehirde log.",
+    ruleTr: "En az 5 farklı şehirde log.",
     ruleEn: "Logs from at least 5 different cities.",
   },
   regular: {
@@ -96,7 +96,7 @@ const BADGE_META_MAP: Record<string, BadgeMeta> = {
     icon: "🗺️",
     colorFrom: "#3b82f6",
     colorTo: "#06b6d4",
-    ruleTr: "Sehir cesitliligi yuksek.",
+    ruleTr: "Şehir cesitliligi yuksek.",
     ruleEn: "High city variety.",
   },
   local: {

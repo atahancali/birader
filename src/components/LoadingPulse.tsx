@@ -19,7 +19,7 @@ export default function LoadingPulse({
   fullHeight = false,
   className = "",
 }: LoadingPulseProps) {
-  const label = lang === "en" ? labelEn || "Loading..." : labelTr || "Yukleniyor...";
+  const label = lang === "en" ? labelEn || "Loading..." : labelTr || "Yükleniyor...";
   const glassHeight = compact ? "h-8" : "h-10";
   const glassWidth = compact ? "w-6" : "w-7";
   const textSize = compact ? "text-xs" : "text-sm";

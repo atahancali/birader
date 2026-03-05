@@ -94,7 +94,7 @@ export default function ComplianceLayer() {
               {tx(lang, "18+ Yas Onayi", "18+ Age Check")}
             </div>
             <p className="mt-2 text-sm opacity-85">
-              {tx(lang, "18 yasinda veya daha buyuk musunuz?", "Are you 18 or older?")}
+              {tx(lang, "18 yaşında veya daha büyük müsünüz?", "Are you 18 or older?")}
             </p>
             <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
@@ -103,7 +103,7 @@ export default function ComplianceLayer() {
                 data-testid="age-gate-accept"
                 className="rounded-xl border border-amber-300/35 bg-amber-500/15 px-3 py-2 text-sm"
               >
-                {tx(lang, "Evet, 18+ yasindayim", "Yes, I am 18+")}
+                {tx(lang, "Evet, 18+ yaşındayım", "Yes, I am 18+")}
               </button>
               <button
                 type="button"
@@ -124,7 +124,7 @@ export default function ComplianceLayer() {
             <p className="text-xs opacity-80">
               {tx(
                 lang,
-                "Cerez tercihlerinizi yonetin. Zorunlu olmayan cerezler yalnizca izin verdiginizde kullanilir.",
+                "Çerez tercihlerinizi yönetin. Zorunlu olmayan çerezler yalnızca izin verdiğinizde kullanılır.",
                 "Manage your cookie preferences. Non-essential cookies are used only when you allow them."
               )}
             </p>
@@ -151,7 +151,7 @@ export default function ComplianceLayer() {
                 data-testid="cookie-consent-manage"
                 className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs"
               >
-                {tx(lang, "Tercihleri Yonet", "Manage Preferences")}
+                {tx(lang, "Tercihleri Yönet", "Manage Preferences")}
               </button>
             </div>
           </div>
@@ -163,7 +163,7 @@ export default function ComplianceLayer() {
                   checked={analyticsPref}
                   onChange={(e) => setAnalyticsPref(e.target.checked)}
                 />
-                {tx(lang, "Analitik cerezlerine izin ver", "Allow analytics cookies")}
+                {tx(lang, "Analitik çerezlerine izin ver", "Allow analytics cookies")}
               </label>
               <div className="mt-3 flex gap-2">
                 <button
@@ -178,7 +178,7 @@ export default function ComplianceLayer() {
                   onClick={() => setManageOpen(false)}
                   className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs"
                 >
-                  {tx(lang, "Vazgec", "Cancel")}
+                  {tx(lang, "Vazgeç", "Cancel")}
                 </button>
               </div>
             </div>

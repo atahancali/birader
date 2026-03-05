@@ -36,14 +36,14 @@ export default function HelpPage() {
         <div className="mt-1 text-sm opacity-85">
           {tx(
             lang,
-            "iOS/Android magaza linkleri ve web app (PWA) kurulum yonlendirmeleri.",
+            "iOS/Android mağaza linkleri ve web app (PWA) kurulum yönlendirmeleri.",
             "iOS/Android store links and web app (PWA) install guidance."
           )}
         </div>
         <div className="mt-2 text-xs opacity-75">
           {tx(
             lang,
-            "Safari: Paylas > Ana Ekrana Ekle. Android/Chrome: acilan kurulum onerisi ile tek tik kurulum.",
+            "Safari: Paylaş > Ana Ekrana Ekle. Android/Chrome: açılan kurulum önerisi ile tek tık kurulum.",
             "Safari: Share > Add to Home Screen. Android/Chrome: one-tap install via install prompt."
           )}
         </div>
@@ -71,13 +71,13 @@ export default function HelpPage() {
         <div className="flex items-center justify-between gap-3">
           <div className="text-sm font-semibold">{tx(lang, "0. Interaktif Tur", "0. Interactive Tour")}</div>
           <Link href="/?tutorial=1" className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs">
-            {tx(lang, "Turu Baslat", "Start Tour")}
+            {tx(lang, "Turu Başlat", "Start Tour")}
           </Link>
         </div>
         <div className="mt-2 text-sm opacity-85">
           {tx(
             lang,
-            "Uygulama icinde adim adim sekme degistiren turu ac. Log, sosyal, harita, istatistik akisini tek tek gosterir.",
+            "Uygulama içinde adım adım sekme değiştiren turu aç. Log, sosyal, harita, istatistik akışını tek tek gösterir.",
             "Open the in-app guided tour with step-by-step tab navigation. It shows log, social, map and stats flow."
           )}
         </div>
@@ -100,7 +100,7 @@ export default function HelpPage() {
 
       <section className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
         <div className="text-sm font-semibold">{tx(lang, "4. Sosyal ve Öneri", "4. Social and Feedback")}</div>
-        <div className="mt-2 text-sm opacity-85">{tx(lang, "Sosyalde takip/akış/leaderboard var. Sağ alttaki `Oneri` butonuyla istek ve bug bildirebilirsin.", "Social has follow/feed/leaderboard. Use `Suggest` button at bottom-right for requests and bug reports.")}</div>
+        <div className="mt-2 text-sm opacity-85">{tx(lang, "Sosyalde takip/akış/leaderboard var. Sağ alttaki `Öneri` butonuyla istek ve bug bildirebilirsin.", "Social has follow/feed/leaderboard. Use `Suggest` button at bottom-right for requests and bug reports.")}</div>
       </section>
     </main>
   );

@@ -74,14 +74,14 @@ export default function BeerWheel({ lang, options, topOptions = [], onPick }: Be
   return (
     <div className="mt-3 rounded-2xl border border-amber-300/25 bg-gradient-to-br from-amber-500/12 via-black/20 to-black/35 p-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-[11px] uppercase tracking-[0.12em] text-amber-200/90">{tx(lang, "Bugun ne icsem? Bira carki", "What should I drink today? Beer wheel")}</div>
+        <div className="text-[11px] uppercase tracking-[0.12em] text-amber-200/90">{tx(lang, "Bugün ne icsem? Bira çarkı", "What should I drink today? Beer wheel")}</div>
         <button
           type="button"
           onClick={spin}
           disabled={spinning || !pool.length}
           className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px] transition hover:border-amber-300/35 hover:bg-amber-500/15 disabled:opacity-50"
         >
-          {spinning ? tx(lang, "Donuyor...", "Spinning...") : tx(lang, "Carki cevir", "Spin wheel")}
+          {spinning ? tx(lang, "Dönüyor...", "Spinning...") : tx(lang, "Çarkı cevir", "Spin wheel")}
         </button>
       </div>
 
@@ -109,10 +109,10 @@ export default function BeerWheel({ lang, options, topOptions = [], onPick }: Be
                 onClick={() => onPick(pickedLabel)}
                 className="rounded-lg border border-amber-300/35 bg-amber-500/15 px-3 py-1.5 text-xs"
               >
-                {tx(lang, "Bunu sec", "Use this")} • {pickedLabel}
+                {tx(lang, "Bunu seç", "Use this")} • {pickedLabel}
               </button>
             ) : (
-              <div className="text-[11px] opacity-65">{tx(lang, "Secimden sonra tek tikla forma aktarabilirsin.", "After spin, add with one tap.")}</div>
+              <div className="text-[11px] opacity-65">{tx(lang, "Seçimden sonra tek tıkla forma aktarabilirsin.", "After spin, add with one tap.")}</div>
             )}
           </div>
         </div>
