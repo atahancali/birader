@@ -151,7 +151,7 @@ export default function FieldHeatmap({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3">
+      <div className="mt-4 grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
         {/* horizontal scroll "field" */}
         <div className="overflow-x-auto">
           <div className="min-w-[980px]">
@@ -243,6 +243,12 @@ export default function FieldHeatmap({
                               ? "-"
                               : avgRating.toFixed(1)
                             : "";
+                        const cellLabel =
+                          isFuture
+                            ? "🔒"
+                            : iso && count > 0 && cellMetric !== "color"
+                            ? textValue
+                            : "";
                         const isOutOfFocus = focusMode && iso && colMonthMap[col] !== focusMonth;
                         const radiusPx = !iso ? 6 : count <= 0 ? 6 : Math.round(5 + colorRatio * 9);
                         const weekCounts = Array.from({ length: 7 }).map((__, wRow) => {
@@ -276,7 +282,11 @@ export default function FieldHeatmap({
                             className={[
                               "rounded border border-white/10 text-[10px] font-semibold",
                               iso ? "" : "bg-transparent border-transparent",
-                              iso && count > 0 && cellMetric !== "color" ? "text-white/90" : "text-white/0",
+                              isFuture
+                                ? "text-white/45"
+                                : iso && count > 0 && cellMetric !== "color"
+                                ? "text-white/90"
+                                : "text-white/0",
                               isFuture ? "opacity-70" : "",
                               iso && !readOnly && !isFuture ? "active:scale-[0.98]" : "",
                             ].join(" ")}
@@ -287,7 +297,7 @@ export default function FieldHeatmap({
                                 !iso
                                   ? "rgba(255,255,255,0.06)"
                                   : isFuture
-                                  ? "rgba(255,255,255,0.025)"
+                                  ? "rgba(15,15,15,0.82)"
                                   : count <= 0
                                   ? "rgba(255,255,255,0.035)"
                                   : gradientColor(paletteFrom, paletteTo, colorRatio, 0.9),
@@ -295,24 +305,33 @@ export default function FieldHeatmap({
                                 !iso
                                   ? "rgba(255,255,255,0.03)"
                                   : isFuture
-                                  ? "rgba(255,255,255,0.05)"
+                                  ? "rgba(245,158,11,0.22)"
                                   : count <= 0
                                   ? "rgba(255,255,255,0.12)"
                                   : "rgba(255,255,255,0.16)",
                               boxShadow:
-                                iso && count <= 0 && !isFuture
+                                isFuture
+                                  ? "inset 0 0 0 1px rgba(245,158,11,0.1), inset 0 1px 0 rgba(255,255,255,0.03)"
+                                  : iso && count <= 0
                                   ? "inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.35)"
                                   : "none",
                               backgroundImage:
-                                iso && count <= 0 && !isFuture
+                                isFuture
+                                  ? "repeating-linear-gradient(135deg, rgba(245,158,11,0.16) 0, rgba(245,158,11,0.16) 1px, transparent 1px, transparent 5px)"
+                                  : iso && count <= 0
                                   ? "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.10) 0.8px, transparent 1px), linear-gradient(145deg, rgba(255,255,255,0.03), rgba(255,255,255,0))"
                                   : "none",
-                              backgroundSize: iso && count <= 0 && !isFuture ? "6px 6px, 100% 100%" : "auto",
+                              backgroundSize:
+                                isFuture
+                                  ? "6px 6px"
+                                  : iso && count <= 0
+                                  ? "6px 6px, 100% 100%"
+                                  : "auto",
                               borderRadius: `${radiusPx}px`,
                               filter: isOutOfFocus ? "saturate(0.65) brightness(0.82)" : "none",
                             }}
                           >
-                            {iso && count > 0 && cellMetric !== "color" ? textValue : ""}
+                            {cellLabel}
                           </button>
                         );
                       })}
@@ -336,7 +355,7 @@ export default function FieldHeatmap({
 
         <aside className="rounded-2xl border border-white/10 bg-black/25 p-3">
           <div className="text-[11px] opacity-70">{lang === "en" ? "Legend" : "Lejant"}</div>
-          <div className="mt-2 space-y-2">
+          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
             <div className="rounded-xl border border-white/10 bg-black/20 p-2">
               <div className="text-[10px] opacity-70">{lang === "en" ? "Palette mode" : "Palet modu"}</div>
               <div className="mt-1 grid grid-cols-2 gap-1">
@@ -360,6 +379,7 @@ export default function FieldHeatmap({
                 </button>
               </div>
             </div>
+
             <div className="rounded-xl border border-white/10 bg-black/20 p-2">
               <div className="flex items-center justify-between gap-2 text-[10px]">
                 <span className="opacity-70">{lang === "en" ? "Focus mode" : "Odak modu"}</span>
@@ -392,19 +412,23 @@ export default function FieldHeatmap({
                 </div>
               ) : null}
             </div>
-            <div className="flex items-center gap-1">
-              {legendStops.map((t) => (
-                <div
-                  key={`legend-${t}`}
-                  className="h-3 flex-1 rounded border border-white/10"
-                  style={{ backgroundColor: t === 0 ? "rgba(255,255,255,0.035)" : gradientColor(paletteFrom, paletteTo, t, 0.9) }}
-                />
-              ))}
+
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2 sm:col-span-2 lg:col-span-1">
+              <div className="flex items-center gap-1">
+                {legendStops.map((t) => (
+                  <div
+                    key={`legend-${t}`}
+                    className="h-3 flex-1 rounded border border-white/10"
+                    style={{ backgroundColor: t === 0 ? "rgba(255,255,255,0.035)" : gradientColor(paletteFrom, paletteTo, t, 0.9) }}
+                  />
+                ))}
+              </div>
+              <div className="mt-1 flex items-center justify-between text-[10px] opacity-65">
+                <span>{lang === "en" ? "Low" : "Dusuk"}</span>
+                <span>{lang === "en" ? "High" : "Yuksek"}</span>
+              </div>
             </div>
-            <div className="flex items-center justify-between text-[10px] opacity-65">
-              <span>{lang === "en" ? "Low" : "Dusuk"}</span>
-              <span>{lang === "en" ? "High" : "Yuksek"}</span>
-            </div>
+
             <div className="rounded-xl border border-white/10 bg-black/20 p-2 text-[11px]">
               <div className="flex items-center justify-between gap-2">
                 <span className="opacity-70">{lang === "en" ? "Active days" : "Aktif gun"}</span>
@@ -423,12 +447,15 @@ export default function FieldHeatmap({
                 <span className="font-semibold">{avgRated.toFixed(2)}⭐</span>
               </div>
             </div>
-            <div className="space-y-1 text-[10px] opacity-70">
+
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2 text-[10px] opacity-75 sm:col-span-2 lg:col-span-1">
               <div className="flex items-center gap-2">
-                <span className="inline-block h-2.5 w-2.5 rounded border border-white/20 bg-white/5" />
+                <span className="inline-flex h-4 w-4 items-center justify-center rounded border border-amber-300/35 bg-black/70 text-[10px] text-amber-200">
+                  🔒
+                </span>
                 <span>{lang === "en" ? "Future day (locked)" : "Gelecek gun (kilitli)"}</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="mt-1 flex items-center gap-2">
                 <span
                   className="inline-block h-2.5 w-2.5 rounded border border-white/20"
                   style={{

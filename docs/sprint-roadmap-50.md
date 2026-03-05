@@ -43,8 +43,8 @@ Hedef: harita deneyimini temiz, hizli ve tutarli yapmak.
 - [x] `#21` Favori degistirme modalini tek ortak komponent yapisi (`S`, `done`)
 - [x] `#22` Heatmap hucre detayinda gunun tum loglarini tek sorgu (`M`, `done`)
 - [x] `#23` Heatmap/Grid tercihini profilde kalici saklama (`S`, `done`)
-- [ ] `#24` Gelecek gunleri koyu + kilit ikonuyla gosterme (`S`, `todo`)
-- [ ] `#25` Legend yerlesimini responsive breakpoint bazli duzenleme (`M`, `todo`)
+- [x] `#24` Gelecek gunleri koyu + kilit ikonuyla gosterme (`S`, `done`)
+- [x] `#25` Legend yerlesimini responsive breakpoint bazli duzenleme (`M`, `done`)
 - [ ] `#26` Cografi haritada il/ilce katman ayristirma (`L`, `todo`)
 - [ ] `#27` Il/ilce seciminde typo toleransli oneriler (`M`, `todo`)
 - [ ] `#28` Lokasyonsuz loglari geo analizden kesin dislama (`S`, `todo`)
@@ -97,6 +97,6 @@ Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 
 ## Yurutme Notu
 - Aktif sprint: `Sprint 3`
-- Aktif paket: `#24 + #25`
+- Aktif paket: `#26 + #27`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.
