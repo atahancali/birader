@@ -700,8 +700,7 @@ export default function SocialPanel({
     const query = feedQuery.trim().toLowerCase();
     const now = Date.now();
     const windowMs = feedWindow === "24h" ? 24 * 60 * 60 * 1000 : feedWindow === "7d" ? 7 * 24 * 60 * 60 * 1000 : 0;
-
-    return feedItems.filter((item) => {
+    const rows = feedItems.filter((item) => {
       if (feedScope === "following" && item.user_id !== userId && !followingIds.has(item.user_id)) return false;
       if (feedOnlyMyCity && primaryCity) {
         const city = String(item.city || "").trim().toLowerCase();
@@ -723,6 +722,24 @@ export default function SocialPanel({
         item.beer_name.toLowerCase().includes(query)
       );
     });
+    if (feedScope !== "all") return rows;
+
+    // Discover mode: keep chronology but slightly boost followed users and high-rated fresh logs.
+    return rows
+      .slice()
+      .sort((a, b) => {
+        const aTs = new Date(a.created_at).getTime();
+        const bTs = new Date(b.created_at).getTime();
+        const aFresh = Number.isFinite(aTs) && now - aTs <= 24 * 60 * 60 * 1000;
+        const bFresh = Number.isFinite(bTs) && now - bTs <= 24 * 60 * 60 * 1000;
+        const aBoost =
+          (a.user_id === userId ? 3 : followingIds.has(a.user_id) ? 2 : 0) * (aFresh ? 60 * 60 * 1000 : 20 * 60 * 1000) +
+          (Number(a.rating || 0) >= 4 ? 20 * 60 * 1000 : 0);
+        const bBoost =
+          (b.user_id === userId ? 3 : followingIds.has(b.user_id) ? 2 : 0) * (bFresh ? 60 * 60 * 1000 : 20 * 60 * 1000) +
+          (Number(b.rating || 0) >= 4 ? 20 * 60 * 1000 : 0);
+        return (bTs + bBoost) - (aTs + aBoost);
+      });
   }, [feedFormat, feedItems, feedMinRating, feedOnlyMyCity, feedQuery, feedScope, feedWindow, followingIds, primaryCity, userId]);
   const followerIds = useMemo(() => new Set(followerProfiles.map((p) => p.user_id)), [followerProfiles]);
   const followingIdsSig = useMemo(

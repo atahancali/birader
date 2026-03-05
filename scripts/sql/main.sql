@@ -3799,6 +3799,352 @@ $$;
 revoke all on function public.export_my_data() from public;
 grant execute on function public.export_my_data() to authenticated;
 
+create or replace function public.retention_funnel_30d()
+returns table(
+  signups int,
+  first_log int,
+  first_follow int,
+  reached_3_logs_week int,
+  conv_first_log_pct numeric(6,2),
+  conv_first_follow_pct numeric(6,2),
+  conv_power_pct numeric(6,2),
+  drop_after_signup int,
+  drop_after_first_log int,
+  drop_after_first_follow int
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is not null and not exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  ) then
+    raise exception 'not allowed';
+  end if;
+
+  return query
+  with cohort as (
+    select p.user_id, p.created_at
+    from public.profiles p
+    where p.created_at >= now() - interval '30 days'
+  ),
+  flags as (
+    select
+      c.user_id,
+      exists (
+        select 1
+        from public.checkins ch
+        where ch.user_id = c.user_id
+          and ch.deleted_at is null
+      ) as has_first_log,
+      exists (
+        select 1
+        from public.follows f
+        where f.follower_id = c.user_id
+      ) as has_first_follow,
+      exists (
+        select 1
+        from public.checkins ch
+        where ch.user_id = c.user_id
+          and ch.deleted_at is null
+          and ch.created_at >= c.created_at
+          and ch.created_at < c.created_at + interval '7 days'
+        group by ch.user_id
+        having count(*) >= 3
+      ) as has_power_week
+    from cohort c
+  ),
+  agg as (
+    select
+      count(*)::int as signups,
+      count(*) filter (where f.has_first_log)::int as first_log,
+      count(*) filter (where f.has_first_follow)::int as first_follow,
+      count(*) filter (where f.has_power_week)::int as reached_3_logs_week
+    from flags f
+  )
+  select
+    a.signups,
+    a.first_log,
+    a.first_follow,
+    a.reached_3_logs_week,
+    case when a.signups = 0 then 0::numeric else round((a.first_log::numeric / a.signups::numeric) * 100, 2) end as conv_first_log_pct,
+    case when a.signups = 0 then 0::numeric else round((a.first_follow::numeric / a.signups::numeric) * 100, 2) end as conv_first_follow_pct,
+    case when a.signups = 0 then 0::numeric else round((a.reached_3_logs_week::numeric / a.signups::numeric) * 100, 2) end as conv_power_pct,
+    greatest(a.signups - a.first_log, 0)::int as drop_after_signup,
+    greatest(a.first_log - a.first_follow, 0)::int as drop_after_first_log,
+    greatest(a.first_follow - a.reached_3_logs_week, 0)::int as drop_after_first_follow
+  from agg a;
+end;
+$$;
+
+revoke all on function public.retention_funnel_30d() from public;
+grant execute on function public.retention_funnel_30d() to authenticated;
+
+create or replace function public.run_retention_nudges(p_limit int default 240)
+returns table(kind text, sent_count int)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_batch int := greatest(coalesce(p_limit, 240), 20);
+  v_onboarding int := 0;
+  v_first_follow int := 0;
+  v_winback7 int := 0;
+  v_winback14 int := 0;
+  v_weekly_recap int := 0;
+  v_weekly_code text := 'ret_weekly_recap_' || to_char(date_trunc('week', now()), 'YYYY-MM-DD');
+begin
+  if auth.uid() is not null and not exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  ) then
+    raise exception 'not allowed';
+  end if;
+
+  with targets as (
+    select p.user_id
+    from public.profiles p
+    where p.created_at >= now() - interval '24 hours'
+      and not exists (
+        select 1
+        from public.checkins c
+        where c.user_id = p.user_id
+          and c.deleted_at is null
+      )
+    order by p.created_at desc
+    limit greatest(v_batch / 5, 1)
+  ),
+  ins as (
+    insert into public.notifications (user_id, actor_id, type, ref_id, payload)
+    select
+      t.user_id,
+      null,
+      'system',
+      'retention',
+      jsonb_build_object(
+        'code', 'ret_nudge_first_log',
+        'message_tr', 'Ilk logunu girerek haritani baslat. Bugun 1 bira yeter.',
+        'message_en', 'Start your heatmap with your first log. One beer log today is enough.'
+      )
+    from targets t
+    where not exists (
+      select 1
+      from public.notifications n
+      where n.user_id = t.user_id
+        and n.type = 'system'
+        and n.created_at >= now() - interval '24 hours'
+        and n.payload @> jsonb_build_object('code', 'ret_nudge_first_log')
+    )
+    returning 1
+  )
+  select count(*)::int into v_onboarding from ins;
+
+  with targets as (
+    select p.user_id
+    from public.profiles p
+    where p.created_at >= now() - interval '72 hours'
+      and exists (
+        select 1
+        from public.checkins c
+        where c.user_id = p.user_id
+          and c.deleted_at is null
+      )
+      and not exists (
+        select 1
+        from public.follows f
+        where f.follower_id = p.user_id
+      )
+    order by p.created_at desc
+    limit greatest(v_batch / 5, 1)
+  ),
+  ins as (
+    insert into public.notifications (user_id, actor_id, type, ref_id, payload)
+    select
+      t.user_id,
+      null,
+      'system',
+      'retention',
+      jsonb_build_object(
+        'code', 'ret_nudge_first_follow',
+        'message_tr', 'Sosyal akis icin birini takip et. Birlikte loglamak daha kolay.',
+        'message_en', 'Follow someone to unlock social feed momentum. Logging together is easier.'
+      )
+    from targets t
+    where not exists (
+      select 1
+      from public.notifications n
+      where n.user_id = t.user_id
+        and n.type = 'system'
+        and n.created_at >= now() - interval '48 hours'
+        and n.payload @> jsonb_build_object('code', 'ret_nudge_first_follow')
+    )
+    returning 1
+  )
+  select count(*)::int into v_first_follow from ins;
+
+  with latest as (
+    select * from public.latest_user_daily_metrics()
+  ),
+  targets as (
+    select l.user_id
+    from latest l
+    where l.total_checkins > 0
+      and l.last_checkin_at is not null
+      and l.last_checkin_at < now() - interval '7 days'
+      and l.last_checkin_at >= now() - interval '14 days'
+    order by l.last_checkin_at asc
+    limit greatest(v_batch / 5, 1)
+  ),
+  ins as (
+    insert into public.notifications (user_id, actor_id, type, ref_id, payload)
+    select
+      t.user_id,
+      null,
+      'system',
+      'retention',
+      jsonb_build_object(
+        'code', 'ret_winback_7d',
+        'message_tr', '7 gundur log yok. Kisa bir check-in ile geri don.',
+        'message_en', 'No logs for 7 days. Come back with a quick check-in.'
+      )
+    from targets t
+    where not exists (
+      select 1
+      from public.notifications n
+      where n.user_id = t.user_id
+        and n.type = 'system'
+        and n.created_at >= now() - interval '3 days'
+        and n.payload @> jsonb_build_object('code', 'ret_winback_7d')
+    )
+    returning 1
+  )
+  select count(*)::int into v_winback7 from ins;
+
+  with latest as (
+    select * from public.latest_user_daily_metrics()
+  ),
+  targets as (
+    select l.user_id
+    from latest l
+    where l.total_checkins > 0
+      and l.last_checkin_at is not null
+      and l.last_checkin_at < now() - interval '14 days'
+    order by l.last_checkin_at asc
+    limit greatest(v_batch / 5, 1)
+  ),
+  ins as (
+    insert into public.notifications (user_id, actor_id, type, ref_id, payload)
+    select
+      t.user_id,
+      null,
+      'system',
+      'retention',
+      jsonb_build_object(
+        'code', 'ret_winback_14d',
+        'message_tr', '14+ gundur ara verdin. Haritani kaldigin yerden devam ettir.',
+        'message_en', '14+ days break detected. Continue your heatmap where you left off.'
+      )
+    from targets t
+    where not exists (
+      select 1
+      from public.notifications n
+      where n.user_id = t.user_id
+        and n.type = 'system'
+        and n.created_at >= now() - interval '7 days'
+        and n.payload @> jsonb_build_object('code', 'ret_winback_14d')
+    )
+    returning 1
+  )
+  select count(*)::int into v_winback14 from ins;
+
+  with recent as (
+    select
+      c.user_id,
+      count(*)::int as logs_7d,
+      round(avg(c.rating)::numeric, 2) as avg_7d
+    from public.checkins c
+    where c.deleted_at is null
+      and c.created_at >= now() - interval '7 days'
+    group by c.user_id
+  ),
+  targets as (
+    select
+      r.user_id,
+      r.logs_7d,
+      r.avg_7d,
+      tb.beer_name as top_beer
+    from recent r
+    left join lateral (
+      select c.beer_name, count(*)::int as cnt
+      from public.checkins c
+      where c.user_id = r.user_id
+        and c.deleted_at is null
+        and c.created_at >= now() - interval '7 days'
+      group by c.beer_name
+      order by cnt desc, c.beer_name asc
+      limit 1
+    ) tb on true
+    limit greatest(v_batch / 3, 1)
+  ),
+  ins as (
+    insert into public.notifications (user_id, actor_id, type, ref_id, payload)
+    select
+      t.user_id,
+      null,
+      'system',
+      'retention',
+      jsonb_build_object(
+        'code', v_weekly_code,
+        'message_tr', format(
+          'Haftalik recap: son 7 gunde %s log, ortalama %s⭐, en cok %s.',
+          t.logs_7d,
+          coalesce(t.avg_7d::text, '-'),
+          coalesce(nullif(trim(t.top_beer), ''), 'bilinmeyen bira')
+        ),
+        'message_en', format(
+          'Weekly recap: %s logs in last 7 days, avg %s⭐, top beer %s.',
+          t.logs_7d,
+          coalesce(t.avg_7d::text, '-'),
+          coalesce(nullif(trim(t.top_beer), ''), 'unknown beer')
+        )
+      )
+    from targets t
+    where not exists (
+      select 1
+      from public.notifications n
+      where n.user_id = t.user_id
+        and n.type = 'system'
+        and n.created_at >= date_trunc('week', now())
+        and n.payload @> jsonb_build_object('code', v_weekly_code)
+    )
+    returning 1
+  )
+  select count(*)::int into v_weekly_recap from ins;
+
+  return query
+  select 'first_log_24h'::text, v_onboarding
+  union all
+  select 'first_follow_72h'::text, v_first_follow
+  union all
+  select 'winback_7d'::text, v_winback7
+  union all
+  select 'winback_14d'::text, v_winback14
+  union all
+  select 'weekly_recap'::text, v_weekly_recap;
+end;
+$$;
+
+revoke all on function public.run_retention_nudges(int) from public;
+grant execute on function public.run_retention_nudges(int) to authenticated;
+
 create or replace function public.delete_my_account()
 returns boolean
 language plpgsql

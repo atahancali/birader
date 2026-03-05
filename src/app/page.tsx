@@ -170,6 +170,24 @@ type AdminPerfOverviewRow = {
   last_seen_at: string | null;
 };
 
+type RetentionFunnelRow = {
+  signups: number;
+  first_log: number;
+  first_follow: number;
+  reached_3_logs_week: number;
+  conv_first_log_pct: number;
+  conv_first_follow_pct: number;
+  conv_power_pct: number;
+  drop_after_signup: number;
+  drop_after_first_log: number;
+  drop_after_first_follow: number;
+};
+
+type RetentionNudgeRow = {
+  kind: string;
+  sent_count: number;
+};
+
 type HomeSection = "log" | "social" | "heatmap" | "stats";
 type LocationSuggestion = { city: string; district: string; score: number };
 type HeatmapMode = "football" | "grid";
@@ -557,6 +575,40 @@ function ageFromBirthDate(isoDate: string) {
   const m = today.getMonth() - birth.getMonth();
   if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age -= 1;
   return age;
+}
+
+function clampInt(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+function derivePersonalizedMissionGoalsFromCheckins(checkins: Array<{ beer_name: string; created_at: string }>) {
+  const now = new Date();
+  const start28 = new Date(now);
+  start28.setHours(0, 0, 0, 0);
+  start28.setDate(start28.getDate() - 27);
+  const recent28 = checkins.filter((c) => {
+    const dt = new Date(c.created_at);
+    return dt >= start28 && dt <= now;
+  });
+  if (!recent28.length) return { logGoal: 4, beerGoal: 2 };
+
+  const avgWeeklyLogs = recent28.length / 4;
+  const uniqueBeers28 = new Set(recent28.map((c) => favoriteBeerName(c.beer_name)).filter(Boolean)).size;
+  const avgWeeklyUnique = uniqueBeers28 / 4;
+
+  let logGoal = clampInt(avgWeeklyLogs + 1, 3, 10);
+  let beerGoal = clampInt(avgWeeklyUnique + 1, 2, 5);
+  beerGoal = Math.min(beerGoal, Math.max(2, Math.floor(logGoal * 0.8)));
+  return { logGoal, beerGoal };
+}
+
+function isoWeekKey(date = new Date()) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
 }
 
 const COMMON_EMAIL_DOMAINS = [
@@ -1132,6 +1184,9 @@ export default function Home() {
   const [adminRetentionCohorts, setAdminRetentionCohorts] = useState<RetentionCohortRow[]>([]);
   const [adminAtRiskUsers, setAdminAtRiskUsers] = useState<AtRiskUserRow[]>([]);
   const [adminPerfRows, setAdminPerfRows] = useState<AdminPerfOverviewRow[]>([]);
+  const [adminRetentionFunnel, setAdminRetentionFunnel] = useState<RetentionFunnelRow | null>(null);
+  const [retentionNudgeBusy, setRetentionNudgeBusy] = useState(false);
+  const [retentionNudgeRows, setRetentionNudgeRows] = useState<RetentionNudgeRow[]>([]);
   const [adminAnalyticsBusy, setAdminAnalyticsBusy] = useState(false);
   const [adminSuggestionStatusFilter, setAdminSuggestionStatusFilter] = useState<"all" | "new" | "in_progress" | "done">("all");
   const [adminSuggestionCategoryFilter, setAdminSuggestionCategoryFilter] = useState<string>("all");
@@ -1971,8 +2026,9 @@ export default function Home() {
       return dt >= start && dt <= now;
     });
     const uniqueBeer = new Set(weeklyRows.map((c) => favoriteBeerName(c.beer_name)).filter(Boolean)).size;
-    const logGoal = 5;
-    const beerGoal = 3;
+    const personalized = derivePersonalizedMissionGoalsFromCheckins(checkins);
+    const logGoal = personalized.logGoal;
+    const beerGoal = personalized.beerGoal;
     const logLeft = Math.max(0, logGoal - weeklyRows.length);
     const beerLeft = Math.max(0, beerGoal - uniqueBeer);
     const completed = logLeft === 0 && beerLeft === 0;
@@ -2466,7 +2522,7 @@ export default function Home() {
   async function loadAdminAnalyticsPanel() {
     if (!canManageSuggestions) return;
     setAdminAnalyticsBusy(true);
-    const [growthRes, cohortRes, riskRes, perfRes] = await Promise.all([
+    const [growthRes, cohortRes, riskRes, perfRes, funnelRes] = await Promise.all([
       supabase
         .from("growth_weekly_overview")
         .select("week_start, new_users, active_users, total_checkins, avg_checkins_per_active_user")
@@ -2483,6 +2539,7 @@ export default function Home() {
         .select("metric_key, total_calls, failed_calls, fail_rate_pct, avg_ms, p95_ms, max_ms, unique_users, last_seen_at")
         .order("p95_ms", { ascending: false, nullsFirst: false })
         .limit(12),
+      supabase.rpc("retention_funnel_30d"),
     ]);
     setAdminAnalyticsBusy(false);
 
@@ -2498,6 +2555,23 @@ export default function Home() {
     if (!perfRes.error) {
       setAdminPerfRows((perfRes.data as AdminPerfOverviewRow[] | null) ?? []);
     }
+    if (!funnelRes.error) {
+      const row = ((funnelRes.data as RetentionFunnelRow[] | null) ?? [])[0] ?? null;
+      setAdminRetentionFunnel(row);
+    }
+  }
+
+  async function runRetentionNudgesNow() {
+    if (!canManageSuggestions || retentionNudgeBusy) return;
+    setRetentionNudgeBusy(true);
+    const { data, error } = await supabase.rpc("run_retention_nudges", { p_limit: 240 });
+    setRetentionNudgeBusy(false);
+    if (error) {
+      alert(`${tx(lang, "Retention nudge basarisiz", "Retention nudge failed")}: ${error.message}`);
+      return;
+    }
+    setRetentionNudgeRows((data as RetentionNudgeRow[] | null) ?? []);
+    await loadAdminAnalyticsPanel();
   }
 
   async function updateReportStatus(id: number, status: "open" | "reviewed" | "resolved") {
@@ -2523,8 +2597,15 @@ export default function Home() {
     setDbBadges((data as UserBadgeRow[] | null) ?? []);
   }
 
-  async function pushSystemNotification(userId: string, code: string, messageTr: string, messageEn: string, refId = "system") {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  async function pushSystemNotification(
+    userId: string,
+    code: string,
+    messageTr: string,
+    messageEn: string,
+    refId = "system",
+    dedupeHours = 24
+  ) {
+    const since = new Date(Date.now() - Math.max(1, dedupeHours) * 60 * 60 * 1000).toISOString();
     const { data: existsRows } = await supabase
       .from("notifications")
       .select("id")
@@ -2554,22 +2635,45 @@ export default function Home() {
     const rows = (weeklyRows as Array<{ beer_name: string }> | null) ?? [];
     const weeklyLogs = rows.length;
     const uniqueBeer = new Set(rows.map((r) => favoriteBeerName(r.beer_name)).filter(Boolean)).size;
-    if (weeklyLogs === 3) {
+    const missionTargets = derivePersonalizedMissionGoalsFromCheckins(checkins);
+    const logLeft = Math.max(0, missionTargets.logGoal - weeklyLogs);
+    const beerLeft = Math.max(0, missionTargets.beerGoal - uniqueBeer);
+
+    if (logLeft > 0 && (logLeft <= 2 || weeklyLogs >= Math.max(1, Math.floor(missionTargets.logGoal * 0.6)))) {
       await pushSystemNotification(
         userId,
-        "weekly_goal_3",
-        "Haftalik gorev ilerliyor: 5 log hedefi icin 2 log kaldi.",
-        "Weekly mission in progress: 2 logs left for the 5-log goal.",
+        "weekly_goal_progress",
+        `Haftalik gorev ilerliyor: ${logLeft} log ve ${beerLeft} farkli bira kaldi.`,
+        `Weekly mission in progress: ${logLeft} logs and ${beerLeft} unique beers left.`,
         "weekly-goal"
       );
     }
-    if (weeklyLogs >= 5 && uniqueBeer >= 3) {
+    if (logLeft === 0 && beerLeft === 0) {
       await pushSystemNotification(
         userId,
         "weekly_goal_done",
-        "Haftalik gorev tamamlandi: 5 log + 3 farkli bira.",
-        "Weekly mission completed: 5 logs + 3 unique beers.",
+        `Haftalik gorev tamamlandi: ${missionTargets.logGoal} log + ${missionTargets.beerGoal} farkli bira.`,
+        `Weekly mission completed: ${missionTargets.logGoal} logs + ${missionTargets.beerGoal} unique beers.`,
         "weekly-goal"
+      );
+    }
+
+    if (weeklyLogs > 0) {
+      const weekKey = isoWeekKey(new Date());
+      const topBeerMap = new Map<string, number>();
+      for (const r of rows) {
+        const name = favoriteBeerName(r.beer_name);
+        if (!name) continue;
+        topBeerMap.set(name, (topBeerMap.get(name) || 0) + 1);
+      }
+      const topBeer = Array.from(topBeerMap.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "-";
+      await pushSystemNotification(
+        userId,
+        `weekly_recap_${weekKey}`,
+        `Haftalik recap: ${weeklyLogs} log, en cok ${topBeer}.`,
+        `Weekly recap: ${weeklyLogs} logs, top beer ${topBeer}.`,
+        "weekly-recap",
+        24 * 8
       );
     }
 
@@ -4585,6 +4689,14 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 </button>
                 <button
                   type="button"
+                  onClick={() => void runRetentionNudgesNow()}
+                  disabled={retentionNudgeBusy}
+                  className="rounded-lg border border-emerald-300/35 bg-emerald-500/10 px-2 py-1 text-xs disabled:opacity-60"
+                >
+                  {retentionNudgeBusy ? tx(lang, "Nudge calisiyor...", "Running nudges...") : tx(lang, "Retention nudge calistir", "Run retention nudges")}
+                </button>
+                <button
+                  type="button"
                   onClick={() => void loadAdminSuggestions()}
                   className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
                 >
@@ -4625,6 +4737,53 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 <div className="mt-1 text-[10px] opacity-70">
                   p95 max: {Math.round(adminPerfSummary.maxP95)}ms • fail: %{adminPerfSummary.failRatePct.toFixed(1)} • W1: %{adminKpis.w1.toFixed(1)}
                 </div>
+              </div>
+              <div className="col-span-2 rounded-xl border border-amber-300/25 bg-amber-500/10 p-2 text-xs">
+                <div className="mb-1 text-[11px] text-amber-100/85">
+                  {tx(lang, "30g retention funnel", "30d retention funnel")}
+                </div>
+                {adminRetentionFunnel ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                      <div className="rounded-lg border border-white/10 bg-black/25 p-2">
+                        <div className="opacity-70">{tx(lang, "Kayit", "Signups")}</div>
+                        <div className="mt-1 font-semibold">{adminRetentionFunnel.signups}</div>
+                      </div>
+                      <div className="rounded-lg border border-white/10 bg-black/25 p-2">
+                        <div className="opacity-70">{tx(lang, "Ilk log", "First log")}</div>
+                        <div className="mt-1 font-semibold">
+                          {adminRetentionFunnel.first_log} • %{Number(adminRetentionFunnel.conv_first_log_pct || 0).toFixed(1)}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-white/10 bg-black/25 p-2">
+                        <div className="opacity-70">{tx(lang, "Ilk takip", "First follow")}</div>
+                        <div className="mt-1 font-semibold">
+                          {adminRetentionFunnel.first_follow} • %{Number(adminRetentionFunnel.conv_first_follow_pct || 0).toFixed(1)}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-white/10 bg-black/25 p-2">
+                        <div className="opacity-70">{tx(lang, "3 log / ilk hafta", "3 logs / first week")}</div>
+                        <div className="mt-1 font-semibold">
+                          {adminRetentionFunnel.reached_3_logs_week} • %{Number(adminRetentionFunnel.conv_power_pct || 0).toFixed(1)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-1 text-[10px] opacity-70">
+                      {tx(lang, "Drop-off", "Drop-off")}: signup→log {adminRetentionFunnel.drop_after_signup} • log→follow {adminRetentionFunnel.drop_after_first_log} • follow→3log {adminRetentionFunnel.drop_after_first_follow}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-[11px] opacity-60">{tx(lang, "Funnel verisi henuz yok.", "No funnel data yet.")}</div>
+                )}
+                {retentionNudgeRows.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {retentionNudgeRows.map((row) => (
+                      <span key={`nudge-${row.kind}`} className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[10px]">
+                        {row.kind}: {row.sent_count}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </div>
               <div className="rounded-xl border border-white/10 bg-black/25 p-2 text-xs">
                 <div className="opacity-70">DAU</div>
