@@ -353,7 +353,7 @@ const BEER_CATALOG: BeerItem[] = [
 
 const LS_KEY = "birader:checkins:v1";
 const RATING_GLASS_PATH =
-  "M18 14 Q50 7 82 14 C84 28 80 44 74 56 C67 72 66 92 68 124 C68 136 66 146 62 152 C58 155 54 156 50 156 C46 156 42 155 38 152 C34 146 32 136 32 124 C34 92 33 72 26 56 C20 44 16 28 18 14 Z";
+  "M18 14 Q50 7 82 14 C84 28 80 44 74 56 C67 72 66 92 68 124 C69 137 67 145 62 150 L38 150 C33 145 31 137 32 124 C34 92 33 72 26 56 C20 44 16 28 18 14 Z";
 
 function loadLocalCheckins(): Checkin[] {
   try {
@@ -4798,13 +4798,13 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     <ellipse cx="50" cy="14" rx="31.5" ry="4.1" fill="none" stroke="rgba(255,255,255,0.46)" strokeWidth="1.2" />
                     <ellipse cx="50" cy="14" rx="27" ry="2.4" fill="rgba(255,255,255,0.11)" />
                     <path
-                      d="M22 154 Q50 151 78 154 L75 159 Q50 162 25 159 Z"
+                      d="M22 151 Q50 148 78 151 L75 158 Q50 160 25 158 Z"
                       fill="rgba(255,255,255,0.2)"
                       stroke="rgba(255,255,255,0.24)"
                       strokeWidth="0.7"
                     />
-                    <ellipse cx="50" cy="156.2" rx="20.5" ry="2.8" fill="rgba(20,20,20,0.24)" />
-                    <ellipse cx="50" cy="156.4" rx="16.5" ry="1.7" fill="rgba(255,255,255,0.22)" />
+                    <ellipse cx="50" cy="152.8" rx="20.5" ry="2.8" fill="rgba(20,20,20,0.24)" />
+                    <ellipse cx="50" cy="153.1" rx="16.5" ry="1.7" fill="rgba(255,255,255,0.22)" />
                   </svg>
                 </div>
 
