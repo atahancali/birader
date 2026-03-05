@@ -467,6 +467,23 @@ function visibleName(p: { username: string; display_name?: string | null }) {
   return d || `@${p.username}`;
 }
 
+function compareFeedDesc(a: { created_at: string; id: string }, b: { created_at: string; id: string }) {
+  const aTs = new Date(a.created_at).getTime();
+  const bTs = new Date(b.created_at).getTime();
+  if (Number.isFinite(aTs) && Number.isFinite(bTs) && aTs !== bTs) return bTs - aTs;
+  return String(b.id).localeCompare(String(a.id), "en");
+}
+
+function toPostgrestQuoted(value: string) {
+  return `"${String(value || "").replace(/"/g, '\\"')}"`;
+}
+
+function feedCursorFilter(createdAt: string, id: string) {
+  const created = toPostgrestQuoted(createdAt);
+  const rowId = toPostgrestQuoted(id);
+  return `created_at.lt.${created},and(created_at.eq.${created},id.lt.${rowId})`;
+}
+
 export default function SocialPanel({
   userId,
   sessionEmail,
@@ -509,6 +526,7 @@ export default function SocialPanel({
   const [feedBusy, setFeedBusy] = useState(false);
   const [feedLoadingMore, setFeedLoadingMore] = useState(false);
   const [feedCursorCreatedAt, setFeedCursorCreatedAt] = useState<string | null>(null);
+  const [feedCursorId, setFeedCursorId] = useState<string | null>(null);
   const [feedHasMore, setFeedHasMore] = useState(true);
   const [feedWindow, setFeedWindow] = useState<FeedWindow>("24h");
   const [feedScope, setFeedScope] = useState<FeedScope>("all");
@@ -561,6 +579,7 @@ export default function SocialPanel({
   const [weeklyScope, setWeeklyScope] = useState<"all" | "followed">("all");
   const [weeklyBusy, setWeeklyBusy] = useState(false);
   const [weeklyItems, setWeeklyItems] = useState<WeeklyTickerItem[]>([]);
+  const [panelHydrating, setPanelHydrating] = useState(false);
   const locale = lang === "en" ? "en-US" : "tr-TR";
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -870,7 +889,7 @@ export default function SocialPanel({
   }
 
   async function loadFeed(reset = true) {
-    if (!reset && !feedHasMore) return;
+    if (!reset && (!feedHasMore || !feedCursorCreatedAt || !feedCursorId)) return;
     const started = typeof performance !== "undefined" ? performance.now() : Date.now();
     const finishPerf = (ok: boolean, rowCount = 0, errorText = "") => {
       const ended = typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -925,6 +944,8 @@ export default function SocialPanel({
           setCheckinLikedByMe({});
           setCommentLikeCountById({});
           setCommentLikedByMe({});
+          setFeedCursorCreatedAt(null);
+          setFeedCursorId(null);
         }
         if (reset) setFeedBusy(false);
         else setFeedLoadingMore(false);
@@ -941,6 +962,7 @@ export default function SocialPanel({
       .from("checkins")
       .select("id, user_id, beer_name, rating, created_at, city, district")
       .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
       .limit(FEED_PAGE_SIZE);
 
     if (scopeUserIds) query = query.in("user_id", scopeUserIds);
@@ -950,11 +972,11 @@ export default function SocialPanel({
     if (feedFormat === "draft") {
       query = query.ilike("beer_name", "%— Fici%");
     } else if (feedFormat === "bottle") {
-      query = query.or("beer_name.ilike.%— Şişe/Kutu%,beer_name.ilike.%— Sise/Kutu%");
+      query = query.ilike("beer_name", "%/Kutu%");
     }
 
-    if (!reset && feedCursorCreatedAt) {
-      query = query.lt("created_at", feedCursorCreatedAt);
+    if (!reset && feedCursorCreatedAt && feedCursorId) {
+      query = query.or(feedCursorFilter(feedCursorCreatedAt, feedCursorId));
     }
 
     const { data: checkinRows, error: checkinErr } = await query;
@@ -978,6 +1000,8 @@ export default function SocialPanel({
         setCheckinLikedByMe({});
         setCommentLikeCountById({});
         setCommentLikedByMe({});
+        setFeedCursorCreatedAt(null);
+        setFeedCursorId(null);
       }
       setFeedHasMore(false);
       finishPerf(true, 0);
@@ -1010,7 +1034,7 @@ export default function SocialPanel({
       if (reset) return mapped;
       const existing = new Set(prev.map((x) => String(x.id)));
       const merged = [...prev, ...mapped.filter((x) => !existing.has(String(x.id)))];
-      return merged;
+      return merged.sort(compareFeedDesc);
     });
     if (reset) {
       setFeedCommentsByCheckin({});
@@ -1019,8 +1043,10 @@ export default function SocialPanel({
       setCommentLikeCountById({});
       setCommentLikedByMe({});
     }
-    setFeedCursorCreatedAt(rows[rows.length - 1]?.created_at ?? null);
-    setFeedHasMore(rows.length === FEED_PAGE_SIZE);
+    const lastRow = rows[rows.length - 1];
+    setFeedCursorCreatedAt(lastRow?.created_at ?? null);
+    setFeedCursorId(lastRow?.id ?? null);
+    setFeedHasMore(rows.length === FEED_PAGE_SIZE && Boolean(lastRow?.created_at) && Boolean(lastRow?.id));
     const rowIds = rows.map((r) => String(r.id));
     const eagerIds = reset ? rowIds.slice(0, FEED_ENRICH_EAGER_COUNT) : rowIds;
     if (eagerIds.length) {
@@ -1368,7 +1394,7 @@ export default function SocialPanel({
         { ...checkin, username, display_name: displayName },
         ...prev.filter((x) => String(x.id) !== String(checkin.id)),
       ]
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .sort(compareFeedDesc)
         .slice(0, 200)
     );
     await loadCommentsForCheckins([String(checkin.id)]);
@@ -1740,8 +1766,6 @@ export default function SocialPanel({
 
   async function loadAll() {
     const started = typeof performance !== "undefined" ? performance.now() : Date.now();
-    let hasError = false;
-    let firstError = "";
     const finishPerf = (ok: boolean, errorText = "") => {
       const ended = typeof performance !== "undefined" ? performance.now() : Date.now();
       trackPerfEvent({
@@ -1755,9 +1779,12 @@ export default function SocialPanel({
       });
     };
     setLoading(true);
+    setPanelHydrating(false);
     setDbError(null);
     setNotifLoaded(false);
     setNotifications([]);
+    setFavorites([]);
+    setCheckins([]);
 
     const ensured = await reserveProfile();
     if (!ensured) {
@@ -1772,42 +1799,6 @@ export default function SocialPanel({
     setIsPublic(ensured.is_public);
     setAvatarPath(ensured.avatar_path || "");
 
-    const [favoritesRes, checkinsRes] = await Promise.all([
-      supabase
-        .from("favorite_beers")
-        .select("beer_name, rank")
-        .eq("user_id", userId)
-        .order("rank", { ascending: true }),
-      supabase
-        .from("checkins")
-        .select("beer_name, rating, created_at, day_period, city, district")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(CHECKIN_STATS_LIMIT),
-    ]);
-
-    if (favoritesRes.error) {
-      markDbError(favoritesRes.error.message);
-      hasError = true;
-      if (!firstError) firstError = favoritesRes.error.message;
-    } else {
-      const normalized = ((favoritesRes.data as FavoriteBeerRow[] | null) ?? []).map((f) => ({
-        ...f,
-        beer_name: favoriteBeerName(f.beer_name),
-      }));
-      setFavorites(normalized);
-    }
-
-    if (checkinsRes.error) {
-      markDbError(checkinsRes.error.message);
-      hasError = true;
-      if (!firstError) firstError = checkinsRes.error.message;
-    } else {
-      setCheckins((checkinsRes.data as CheckinRow[] | null) ?? []);
-    }
-
-    setLoading(false);
-
     void loadFollowing();
     feedFilterSigRef.current = [
       feedScope,
@@ -1818,6 +1809,8 @@ export default function SocialPanel({
       feedOnlyMyCity ? primaryCity.toLowerCase() : "",
       feedScope === "following" ? Array.from(followingIdsRef.current).sort().join(",") : "",
     ].join("|");
+    setLoading(false);
+    setPanelHydrating(true);
     void loadFeed(true);
     void loadOwnRecentCheckins();
     void loadPendingInvites();
@@ -1828,7 +1821,72 @@ export default function SocialPanel({
     if (notifPanelOpen) {
       void loadNotifications(notifLimit);
     }
-    finishPerf(!hasError, firstError);
+    finishPerf(true);
+
+    void (async () => {
+      const hydrationStarted = typeof performance !== "undefined" ? performance.now() : Date.now();
+      let hasError = false;
+      let firstError = "";
+      let favoriteCount = 0;
+      let checkinCount = 0;
+      try {
+        const [favoritesRes, checkinsRes] = await Promise.all([
+          supabase
+            .from("favorite_beers")
+            .select("beer_name, rank")
+            .eq("user_id", userId)
+            .order("rank", { ascending: true }),
+          supabase
+            .from("checkins")
+            .select("beer_name, rating, created_at, day_period, city, district")
+            .eq("user_id", userId)
+            .order("created_at", { ascending: false })
+            .limit(CHECKIN_STATS_LIMIT),
+        ]);
+
+        if (favoritesRes.error) {
+          markDbError(favoritesRes.error.message);
+          hasError = true;
+          if (!firstError) firstError = favoritesRes.error.message;
+        } else {
+          const normalized = ((favoritesRes.data as FavoriteBeerRow[] | null) ?? []).map((f) => ({
+            ...f,
+            beer_name: favoriteBeerName(f.beer_name),
+          }));
+          favoriteCount = normalized.length;
+          setFavorites(normalized);
+        }
+
+        if (checkinsRes.error) {
+          markDbError(checkinsRes.error.message);
+          hasError = true;
+          if (!firstError) firstError = checkinsRes.error.message;
+        } else {
+          const rows = (checkinsRes.data as CheckinRow[] | null) ?? [];
+          checkinCount = rows.length;
+          setCheckins(rows);
+        }
+      } catch (error: any) {
+        const message = String(error?.message || "social_panel_hydration_failed");
+        hasError = true;
+        if (!firstError) firstError = message;
+        markDbError(message);
+      }
+      const hydrationEnded = typeof performance !== "undefined" ? performance.now() : Date.now();
+      trackPerfEvent({
+        userId,
+        metricKey: "social.panel.hydration",
+        durationMs: hydrationEnded - hydrationStarted,
+        rowCount: favoriteCount + checkinCount,
+        ok: !hasError,
+        context: {
+          favorites: favoriteCount,
+          checkins: checkinCount,
+          error: firstError || undefined,
+        },
+      });
+      setPanelHydrating(false);
+    })();
   }
 
   async function loadServerPreferences() {
@@ -2141,7 +2199,7 @@ export default function SocialPanel({
               },
               ...prev.filter((x) => x.id !== row.id),
             ]
-              .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+              .sort(compareFeedDesc)
               .slice(0, 200);
             return next;
           });
@@ -2183,7 +2241,7 @@ export default function SocialPanel({
                     }
                   : x
               )
-              .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+              .sort(compareFeedDesc)
           );
           scheduleLeaderboardRefresh();
           scheduleWeeklyHighlightsRefresh();
@@ -3124,6 +3182,19 @@ export default function SocialPanel({
       {dbError ? (
         <div className="mt-3 rounded-2xl border border-red-400/30 bg-red-500/10 p-3 text-xs text-red-100">
           {dbError}
+        </div>
+      ) : null}
+
+      {panelHydrating ? (
+        <div className="mt-3">
+          <LoadingPulse
+            lang={lang}
+            compact
+            inline
+            className="text-xs opacity-80"
+            labelTr="Sosyal moduller hazirlaniyor..."
+            labelEn="Hydrating social modules..."
+          />
         </div>
       ) : null}
 

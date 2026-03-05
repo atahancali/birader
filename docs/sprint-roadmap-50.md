@@ -52,8 +52,8 @@ Hedef: harita deneyimini temiz, hizli ve tutarli yapmak.
 ## Sprint 4 (Sosyal Motor + Leaderboard)
 Hedef: sosyal akis/leaderboard bildirimi daha stabil ve tutarli hale getirmek.
 
-- [ ] `#02` Feed icin tam cursor pagination standardi (`M`, `todo`)
-- [ ] `#03` Ilk ekran progressive hydration (`M`, `todo`)
+- [x] `#02` Feed icin tam cursor pagination standardi (`M`, `done`)
+- [x] `#03` Ilk ekran progressive hydration (`M`, `done`)
 - [ ] `#04` Realtime debounce/throttle stratejisini tek noktada toplama (`M`, `todo`)
 - [x] `#29` Leaderboard'da friends + me pinned tum periyotlar (`M`, `done`)
 - [ ] `#30` Leaderboard haftalik/aylik snapshot tablosu (`M`, `todo`)
@@ -97,6 +97,6 @@ Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 
 ## Yurutme Notu
 - Aktif sprint: `Sprint 3`
-- Aktif paket: `#02 + #03`
+- Aktif paket: `#04 + #30`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.
