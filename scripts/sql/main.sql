@@ -662,13 +662,17 @@ alter table public.profiles add column if not exists notif_pref_comment_like boo
 alter table public.profiles add column if not exists notif_pref_checkin_like boolean not null default true;
 alter table public.profiles add column if not exists feed_pref_scope text not null default 'all';
 alter table public.profiles add column if not exists feed_pref_window text not null default '24h';
+alter table public.profiles add column if not exists feed_pref_window_explicit boolean not null default false;
 alter table public.profiles add column if not exists feed_pref_min_rating numeric(3,1) not null default 0;
 alter table public.profiles add column if not exists feed_pref_format text not null default 'all';
 alter table public.profiles add column if not exists feed_pref_only_my_city boolean not null default false;
+alter table public.profiles add column if not exists ab_feed_window_variant text;
+alter table public.profiles add column if not exists ab_feed_window_assigned_at timestamptz;
 alter table public.profiles add column if not exists onboarding_seen_at timestamptz;
 alter table public.profiles add column if not exists tutorial_done_at timestamptz;
 create index if not exists idx_profiles_display_name on public.profiles (display_name);
 create unique index if not exists idx_profiles_referral_code_unique on public.profiles (referral_code);
+create index if not exists idx_profiles_ab_feed_window_variant on public.profiles (ab_feed_window_variant);
 
 alter table public.profiles drop constraint if exists profiles_feed_pref_scope_check;
 alter table public.profiles
@@ -676,6 +680,9 @@ add constraint profiles_feed_pref_scope_check check (feed_pref_scope in ('all', 
 alter table public.profiles drop constraint if exists profiles_feed_pref_window_check;
 alter table public.profiles
 add constraint profiles_feed_pref_window_check check (feed_pref_window in ('24h', '7d', 'all'));
+alter table public.profiles drop constraint if exists profiles_ab_feed_window_variant_check;
+alter table public.profiles
+add constraint profiles_ab_feed_window_variant_check check (ab_feed_window_variant is null or ab_feed_window_variant in ('A', 'B'));
 alter table public.profiles drop constraint if exists profiles_feed_pref_format_check;
 alter table public.profiles
 add constraint profiles_feed_pref_format_check check (feed_pref_format in ('all', 'draft', 'bottle'));

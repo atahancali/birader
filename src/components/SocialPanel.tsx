@@ -33,9 +33,12 @@ type ServerPreferenceRow = {
   notif_pref_checkin_like?: boolean | null;
   feed_pref_scope?: string | null;
   feed_pref_window?: string | null;
+  feed_pref_window_explicit?: boolean | null;
   feed_pref_min_rating?: number | null;
   feed_pref_format?: string | null;
   feed_pref_only_my_city?: boolean | null;
+  ab_feed_window_variant?: "A" | "B" | null;
+  ab_feed_window_assigned_at?: string | null;
 };
 
 type FavoriteBeerRow = {
@@ -484,6 +487,22 @@ function feedCursorFilter(createdAt: string, id: string) {
   return `created_at.lt.${created},and(created_at.eq.${created},id.lt.${rowId})`;
 }
 
+function hashUserSeed(input: string) {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash * 31 + input.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+function feedWindowVariantFromUser(userId: string): "A" | "B" {
+  return hashUserSeed(String(userId || "")) % 2 === 0 ? "A" : "B";
+}
+
+function feedWindowDefaultByVariant(variant: "A" | "B"): FeedWindow {
+  return variant === "B" ? "7d" : "24h";
+}
+
 export default function SocialPanel({
   userId,
   sessionEmail,
@@ -529,6 +548,8 @@ export default function SocialPanel({
   const [feedCursorId, setFeedCursorId] = useState<string | null>(null);
   const [feedHasMore, setFeedHasMore] = useState(true);
   const [feedWindow, setFeedWindow] = useState<FeedWindow>("24h");
+  const [feedWindowExplicit, setFeedWindowExplicit] = useState(false);
+  const [feedWindowVariant, setFeedWindowVariant] = useState<"A" | "B">("A");
   const [feedScope, setFeedScope] = useState<FeedScope>("all");
   const [feedFormat, setFeedFormat] = useState<FeedFormat>("all");
   const [feedOnlyMyCity, setFeedOnlyMyCity] = useState(false);
@@ -596,6 +617,10 @@ export default function SocialPanel({
   const leaderboardReloadRef = useRef<(() => Promise<void>) | null>(null);
   const feedIdsRef = useRef<string[]>([]);
   const feedFilterSigRef = useRef("");
+  const feedWindowExposureRef = useRef("");
+  const feedCardRefMap = useRef<Map<string, HTMLDivElement>>(new Map());
+  const highlightCheckinTimerRef = useRef<number | null>(null);
+  const highlightCommentTimerRef = useRef<number | null>(null);
   const feedLoadMoreRef = useRef<HTMLDivElement | null>(null);
   const realtimeTimersRef = useRef<Record<string, number>>({});
   const realtimeRunningRef = useRef<Record<string, boolean>>({});
@@ -830,6 +855,37 @@ export default function SocialPanel({
       },
       REALTIME_REFRESH_THROTTLE_MS
     );
+  }
+
+  function setFeedWindowByUser(next: FeedWindow) {
+    setFeedWindowExplicit(true);
+    setFeedWindow(next);
+  }
+
+  function triggerCheckinHighlight(checkinId: string) {
+    if (!checkinId) return;
+    if (highlightCheckinTimerRef.current !== null) {
+      window.clearTimeout(highlightCheckinTimerRef.current);
+      highlightCheckinTimerRef.current = null;
+    }
+    setHighlightCheckinId(checkinId);
+    highlightCheckinTimerRef.current = window.setTimeout(() => {
+      setHighlightCheckinId("");
+      highlightCheckinTimerRef.current = null;
+    }, 3200);
+  }
+
+  function triggerCommentHighlight(commentId: number) {
+    if (!Number.isFinite(commentId) || commentId <= 0) return;
+    if (highlightCommentTimerRef.current !== null) {
+      window.clearTimeout(highlightCommentTimerRef.current);
+      highlightCommentTimerRef.current = null;
+    }
+    setHighlightCommentId(commentId);
+    highlightCommentTimerRef.current = window.setTimeout(() => {
+      setHighlightCommentId(0);
+      highlightCommentTimerRef.current = null;
+    }, 3200);
   }
 
   function hasCommentsLoaded(checkinId: string) {
@@ -1829,6 +1885,9 @@ export default function SocialPanel({
     setNotifications([]);
     setFavorites([]);
     setCheckins([]);
+    setFeedWindowExplicit(false);
+    setFeedWindowVariant(feedWindowVariantFromUser(userId));
+    feedWindowExposureRef.current = "";
 
     const ensured = await reserveProfile();
     if (!ensured) {
@@ -1937,7 +1996,7 @@ export default function SocialPanel({
     const { data, error } = await supabase
       .from("profiles")
       .select(
-        "notif_pref_follow, notif_pref_comment, notif_pref_mention, notif_pref_comment_like, notif_pref_checkin_like, feed_pref_scope, feed_pref_window, feed_pref_min_rating, feed_pref_format, feed_pref_only_my_city"
+        "notif_pref_follow, notif_pref_comment, notif_pref_mention, notif_pref_comment_like, notif_pref_checkin_like, feed_pref_scope, feed_pref_window, feed_pref_window_explicit, feed_pref_min_rating, feed_pref_format, feed_pref_only_my_city, ab_feed_window_variant, ab_feed_window_assigned_at"
       )
       .eq("user_id", userId)
       .maybeSingle();
@@ -1959,8 +2018,62 @@ export default function SocialPanel({
     }));
 
     if (row.feed_pref_scope === "all" || row.feed_pref_scope === "following") setFeedScope(row.feed_pref_scope);
-    if (row.feed_pref_window === "24h" || row.feed_pref_window === "7d" || row.feed_pref_window === "all") {
-      setFeedWindow(row.feed_pref_window);
+    const explicitWindow = Boolean(row.feed_pref_window_explicit);
+    setFeedWindowExplicit(explicitWindow);
+
+    let variant: "A" | "B" =
+      row.ab_feed_window_variant === "A" || row.ab_feed_window_variant === "B"
+        ? row.ab_feed_window_variant
+        : feedWindowVariantFromUser(userId);
+    const assignedWindow = feedWindowDefaultByVariant(variant);
+    setFeedWindowVariant(variant);
+
+    if (!(row.ab_feed_window_variant === "A" || row.ab_feed_window_variant === "B")) {
+      const patch: Record<string, any> = {
+        ab_feed_window_variant: variant,
+        ab_feed_window_assigned_at: new Date().toISOString(),
+      };
+      if (!explicitWindow) {
+        patch.feed_pref_window = assignedWindow;
+      }
+      const { error: assignErr } = await supabase.from("profiles").update(patch).eq("user_id", userId);
+      if (!assignErr) {
+        trackEvent({
+          eventName: "exp_feed_window_assigned",
+          userId,
+          props: { variant, default_window: assignedWindow },
+        });
+      } else {
+        const assignMsg = String(assignErr.message || "").toLowerCase();
+        if (!(assignMsg.includes("does not exist") || assignMsg.includes("column"))) {
+          markDbError(assignErr.message);
+        }
+      }
+    }
+
+    const validServerWindow =
+      row.feed_pref_window === "24h" || row.feed_pref_window === "7d" || row.feed_pref_window === "all"
+        ? row.feed_pref_window
+        : null;
+    const effectiveWindow = explicitWindow ? validServerWindow || assignedWindow : assignedWindow;
+    setFeedWindow(effectiveWindow);
+
+    if (!explicitWindow && validServerWindow !== assignedWindow) {
+      void supabase.from("profiles").update({ feed_pref_window: assignedWindow }).eq("user_id", userId);
+    }
+
+    const exposureKey = `${userId}:${variant}:${explicitWindow ? "explicit" : "default"}:${effectiveWindow}`;
+    if (feedWindowExposureRef.current !== exposureKey) {
+      feedWindowExposureRef.current = exposureKey;
+      trackEvent({
+        eventName: "exp_feed_window_exposure",
+        userId,
+        props: {
+          variant,
+          mode: explicitWindow ? "explicit" : "default",
+          effective_window: effectiveWindow,
+        },
+      });
     }
     if (typeof row.feed_pref_min_rating === "number") setFeedMinRating(Number(row.feed_pref_min_rating));
     if (row.feed_pref_format === "all" || row.feed_pref_format === "draft" || row.feed_pref_format === "bottle") {
@@ -2011,12 +2124,16 @@ export default function SocialPanel({
       const parsed = JSON.parse(raw) as {
         scope?: FeedScope;
         window?: FeedWindow;
+        windowExplicit?: boolean;
+        variant?: "A" | "B";
         minRating?: number;
         format?: FeedFormat;
         onlyMyCity?: boolean;
       };
       if (parsed.scope === "all" || parsed.scope === "following") setFeedScope(parsed.scope);
       if (parsed.window === "24h" || parsed.window === "7d" || parsed.window === "all") setFeedWindow(parsed.window);
+      if (typeof parsed.windowExplicit === "boolean") setFeedWindowExplicit(parsed.windowExplicit);
+      if (parsed.variant === "A" || parsed.variant === "B") setFeedWindowVariant(parsed.variant);
       if (typeof parsed.minRating === "number") setFeedMinRating(parsed.minRating);
       if (parsed.format === "all" || parsed.format === "draft" || parsed.format === "bottle") setFeedFormat(parsed.format);
       if (typeof parsed.onlyMyCity === "boolean") setFeedOnlyMyCity(parsed.onlyMyCity);
@@ -2032,12 +2149,14 @@ export default function SocialPanel({
       JSON.stringify({
         scope: feedScope,
         window: feedWindow,
+        windowExplicit: feedWindowExplicit,
+        variant: feedWindowVariant,
         minRating: feedMinRating,
         format: feedFormat,
         onlyMyCity: feedOnlyMyCity,
       })
     );
-  }, [feedFormat, feedMinRating, feedOnlyMyCity, feedScope, feedWindow, userId]);
+  }, [feedFormat, feedMinRating, feedOnlyMyCity, feedScope, feedWindow, feedWindowExplicit, feedWindowVariant, userId]);
 
   useEffect(() => {
     if (loading) return;
@@ -2070,6 +2189,7 @@ export default function SocialPanel({
           notif_pref_checkin_like: notifPrefs.checkin_like,
           feed_pref_scope: feedScope,
           feed_pref_window: feedWindow,
+          feed_pref_window_explicit: feedWindowExplicit,
           feed_pref_min_rating: feedMinRating,
           feed_pref_format: feedFormat,
           feed_pref_only_my_city: feedOnlyMyCity,
@@ -2077,7 +2197,7 @@ export default function SocialPanel({
         .eq("user_id", userId);
     }, 450);
     return () => clearTimeout(timer);
-  }, [feedFormat, feedMinRating, feedOnlyMyCity, feedScope, feedWindow, notifPrefs, profile?.user_id, userId]);
+  }, [feedFormat, feedMinRating, feedOnlyMyCity, feedScope, feedWindow, feedWindowExplicit, notifPrefs, profile?.user_id, userId]);
 
   useEffect(() => {
     if (loading || !notifPanelOpen) return;
@@ -2137,6 +2257,19 @@ export default function SocialPanel({
   }, [feedItems]);
 
   useEffect(() => {
+    return () => {
+      if (highlightCheckinTimerRef.current !== null) {
+        window.clearTimeout(highlightCheckinTimerRef.current);
+        highlightCheckinTimerRef.current = null;
+      }
+      if (highlightCommentTimerRef.current !== null) {
+        window.clearTimeout(highlightCommentTimerRef.current);
+        highlightCommentTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     const node = feedLoadMoreRef.current;
     if (!node) return;
     if (feedBusy || feedLoadingMore || !feedHasMore) return;
@@ -2187,7 +2320,7 @@ export default function SocialPanel({
   function applyFeedPreset(preset: "discover" | "following" | "quality") {
     if (preset === "discover") {
       setFeedScope("all");
-      setFeedWindow("24h");
+      setFeedWindowByUser("24h");
       setFeedMinRating(0);
       setFeedFormat("all");
       setFeedOnlyMyCity(false);
@@ -2195,14 +2328,14 @@ export default function SocialPanel({
     }
     if (preset === "following") {
       setFeedScope("following");
-      setFeedWindow("7d");
+      setFeedWindowByUser("7d");
       setFeedMinRating(0);
       setFeedFormat("all");
       setFeedOnlyMyCity(false);
       return;
     }
     setFeedScope("all");
-    setFeedWindow("7d");
+    setFeedWindowByUser("7d");
     setFeedMinRating(3.5);
     setFeedFormat("all");
     setFeedOnlyMyCity(false);
@@ -3100,18 +3233,22 @@ export default function SocialPanel({
     const payload = (item.payload || {}) as Record<string, any>;
     const checkinId = String(payload.checkin_id || item.ref_id || "");
     if (checkinId) {
+      setFeedScope("all");
       setFeedWindow("all");
+      setFeedFormat("all");
+      setFeedOnlyMyCity(false);
       setFeedMinRating(0);
       setFeedQuery("");
       await ensureFeedCheckinLoaded(checkinId);
       setCommentPanelOpenByCheckin((prev) => ({ ...prev, [checkinId]: true }));
       await ensureCommentsLoaded(checkinId);
-      setHighlightCheckinId(checkinId);
-      setTimeout(() => setHighlightCheckinId(""), 2600);
+      triggerCheckinHighlight(checkinId);
+      setTimeout(() => {
+        feedCardRefMap.current.get(checkinId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 90);
       const commentId = Number(payload.comment_id || 0);
       if (commentId > 0) {
-        setHighlightCommentId(commentId);
-        setTimeout(() => setHighlightCommentId(0), 2600);
+        triggerCommentHighlight(commentId);
         setTimeout(() => {
           document.getElementById(`comment-${commentId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
         }, 120);
@@ -3923,7 +4060,7 @@ export default function SocialPanel({
             </select>
             <select
               value={feedWindow}
-              onChange={(e) => setFeedWindow(e.target.value as FeedWindow)}
+              onChange={(e) => setFeedWindowByUser(e.target.value as FeedWindow)}
               className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none"
             >
               <option value="24h">{tx(lang, "Son 24s", "Last 24h")}</option>
@@ -3983,9 +4120,13 @@ export default function SocialPanel({
               return (
                 <div
                   key={item.id}
+                  ref={(node) => {
+                    if (node) feedCardRefMap.current.set(checkinId, node);
+                    else feedCardRefMap.current.delete(checkinId);
+                  }}
                   className={`rounded-xl border p-3 ${
                     highlightCheckinId === checkinId
-                      ? "border-amber-300/45 bg-amber-500/10 shadow-[0_0_0_1px_rgba(252,211,77,0.18)]"
+                      ? "border-amber-300/65 bg-amber-500/15 shadow-[0_0_0_1px_rgba(252,211,77,0.24),0_0_22px_rgba(245,158,11,0.25)] animate-[pulse_1.2s_ease-in-out_2]"
                       : "border-white/10 bg-black/25"
                   }`}
                 >
@@ -4066,7 +4207,7 @@ export default function SocialPanel({
                         key={c.id}
                         className={`rounded-md border px-2 py-1 text-[11px] ${
                           highlightCommentId === c.id
-                            ? "border-amber-300/45 bg-amber-500/15 shadow-[0_0_0_1px_rgba(252,211,77,0.2)]"
+                            ? "border-amber-300/70 bg-amber-500/20 shadow-[0_0_0_1px_rgba(252,211,77,0.25),0_0_16px_rgba(245,158,11,0.22)] animate-[pulse_1.1s_ease-in-out_2]"
                             : "border-white/10 bg-black/25"
                         }`}
                       >

@@ -59,12 +59,12 @@ Hedef: sosyal akis/leaderboard bildirimi daha stabil ve tutarli hale getirmek.
 - [x] `#30` Leaderboard haftalik/aylik snapshot tablosu (`M`, `done`)
 - [x] `#31` Haftanin nabzi ticker query optimizasyonu (`S`, `done`)
 - [x] `#32` Sosyal akis all/followed filtrelerini user pref olarak saklama (`S`, `done`)
-- [ ] `#33` 24h/7d default stratejisi icin A/B test setup (`M`, `todo`)
+- [x] `#33` 24h/7d default stratejisi icin A/B test setup (`M`, `done`)
 
 ## Sprint 5 (Bildirim + Kimlik + Hesap)
 Hedef: profile, takip ve bildirim akisini daha net ve guvenli hale getirmek.
 
-- [ ] `#34` Bildirim deep-link highlight animasyon duzeltme (`S`, `todo`)
+- [x] `#34` Bildirim deep-link highlight animasyon duzeltme (`S`, `done`)
 - [ ] `#35` Takipci/takip edilen ekranini ayri sayfaya tasiyip arama ekleme (`M`, `todo`)
 - [ ] `#36` "Seni takip ediyor" etiketini profil + listede ortaklastirma (`S`, `todo`)
 - [ ] `#37` Kimlik modelini netlestirme (`login_username/display_name/handle`) (`L`, `todo`)
@@ -97,6 +97,6 @@ Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 
 ## Yurutme Notu
 - Aktif sprint: `Sprint 3`
-- Aktif paket: `#33 + #34`
+- Aktif paket: `#35 + #36`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.
