@@ -659,52 +659,35 @@ function StarIcon({ fillRatio, id }: { fillRatio: 0 | 0.5 | 1; id: string }) {
 
 function FormatDraftIcon({ active }: { active: boolean }) {
   return (
-    <div className="relative h-16 w-11">
-      <div
-        className={`absolute inset-0 overflow-hidden border bg-gradient-to-b from-white/12 via-white/5 to-white/0 ${
-          active ? "border-amber-200/60 shadow-[0_0_16px_rgba(245,158,11,0.35)]" : "border-white/30"
-        }`}
-        style={{ clipPath: "polygon(22% 2%, 78% 2%, 92% 98%, 8% 98%)" }}
-      >
-        <div
-          className="absolute inset-x-[8%] bottom-[4%] rounded-b-[9px]"
-          style={{
-            height: active ? "70%" : "58%",
-            background:
-              "linear-gradient(180deg, rgba(252,211,77,0.95) 0%, rgba(245,158,11,0.88) 48%, rgba(180,83,9,0.9) 100%)",
-          }}
+    <div className={`h-16 w-11 ${active ? "text-white/55" : "text-white/35"}`}>
+      <svg viewBox="0 0 52 72" className="h-full w-full" aria-hidden="true">
+        <path
+          d="M10 8 Q26 5 42 8 L40 61 H12 Z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinejoin="round"
         />
-        <div className="absolute inset-x-[10%] h-[8%] rounded-b-sm bg-gradient-to-b from-amber-50/95 via-amber-100/85 to-transparent" style={{ bottom: active ? "67%" : "55%" }} />
-      </div>
-      <div className="absolute bottom-[1px] left-1/2 h-[4px] w-[64%] -translate-x-1/2 rounded-full bg-white/18" />
+        <path d="M12 8 Q26 6.8 40 8" fill="none" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M14 61 Q26 63 38 61" fill="none" stroke="currentColor" strokeWidth="1.3" />
+      </svg>
     </div>
   );
 }
 
 function FormatBottleIcon({ active }: { active: boolean }) {
   return (
-    <div className="relative h-16 w-11">
-      <div
-        className={`absolute left-1/2 top-0 h-5 w-[11px] -translate-x-1/2 rounded-t-md border border-b-0 ${
-          active ? "border-amber-200/55 bg-amber-100/15" : "border-white/35 bg-white/5"
-        }`}
-      />
-      <div
-        className={`absolute left-1/2 top-3 h-[50px] w-8 -translate-x-1/2 overflow-hidden rounded-b-[11px] rounded-t-[6px] border ${
-          active ? "border-amber-200/60 shadow-[0_0_16px_rgba(245,158,11,0.35)]" : "border-white/30"
-        } bg-gradient-to-b from-white/12 via-white/5 to-white/0`}
-      >
-        <div
-          className="absolute inset-x-[10%] bottom-[4%] rounded-b-[8px]"
-          style={{
-            height: active ? "68%" : "56%",
-            background:
-              "linear-gradient(180deg, rgba(252,211,77,0.95) 0%, rgba(245,158,11,0.88) 48%, rgba(180,83,9,0.9) 100%)",
-          }}
+    <div className={`h-16 w-11 ${active ? "text-white/55" : "text-white/35"}`}>
+      <svg viewBox="0 0 52 72" className="h-full w-full" aria-hidden="true">
+        <path
+          d="M22 7 H30 V15 H34 V61 Q34 64 31 66 H21 Q18 64 18 61 V15 H22 Z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinejoin="round"
         />
-        <div className="absolute inset-x-[14%] h-[8%] rounded-b-sm bg-gradient-to-b from-amber-50/95 via-amber-100/85 to-transparent" style={{ bottom: active ? "65%" : "53%" }} />
-      </div>
-      <div className="absolute left-1/2 top-[2px] h-[2px] w-[8px] -translate-x-1/2 rounded-full bg-white/45" />
+        <path d="M19 57 Q26 59 33 57" fill="none" stroke="currentColor" strokeWidth="1.3" />
+      </svg>
     </div>
   );
 }
