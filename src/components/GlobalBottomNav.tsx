@@ -146,9 +146,9 @@ export default function GlobalBottomNav() {
     href: string;
     tone: TabTone;
   }> = [
-    { key: "log", label: tx(lang, "Defter", "Logbook"), hint: tx(lang, "kayit", "entries"), href: "/?section=log", tone: "amber" },
+    { key: "log", label: tx(lang, "Günlük", "Journal"), hint: tx(lang, "kayit", "entries"), href: "/?section=log", tone: "amber" },
     { key: "social", label: tx(lang, "Akis", "Feed"), hint: tx(lang, "takip", "network"), href: "/?section=social", tone: "cyan" },
-    { key: "heatmap", label: tx(lang, "Atlas", "Atlas"), hint: tx(lang, "isi", "heat"), href: "/?section=heatmap", tone: "amber" },
+    { key: "heatmap", label: tx(lang, "Takvim", "Calendar"), hint: tx(lang, "isi", "heat"), href: "/?section=heatmap", tone: "amber" },
     { key: "stats", label: tx(lang, "Analiz", "Insights"), hint: tx(lang, "trend", "trend"), href: "/?section=stats", tone: "violet" },
     { key: "help", label: tx(lang, "Destek", "Support"), hint: tx(lang, "yardim", "help"), href: "/yardim", tone: "amber" },
   ];
