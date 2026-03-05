@@ -188,6 +188,7 @@ export default function PublicProfileView({ username }: { username: string }) {
   const [gridColorTo, setGridColorTo] = useState<string>("#ef4444");
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
   const [pendingUndoCheckin, setPendingUndoCheckin] = useState<DeletedCheckinUndo | null>(null);
 
   const currentYear = useMemo(() => new Date().getFullYear(), []);
@@ -1062,11 +1063,32 @@ export default function PublicProfileView({ username }: { username: string }) {
     const { data, error } = await supabase.rpc("delete_my_account");
     if (error || data !== true) {
       setDeletingAccount(false);
-      alert(error?.message || "Hesap silme islemi basarisiz.");
+      alert(error?.message || tx(lang, "Hesap silme islemi basarisiz.", "Account deletion failed."));
       return;
     }
     await supabase.auth.signOut();
     router.replace("/?account_deleted=1");
+  }
+
+  async function exportOwnData() {
+    if (!sessionUserId || !isOwnProfile || exportingData) return;
+    setExportingData(true);
+    const { data, error } = await supabase.rpc("export_my_data");
+    setExportingData(false);
+    if (error) {
+      alert(error.message || tx(lang, "Veri disa aktarma basarisiz.", "Data export failed."));
+      return;
+    }
+    const payload = JSON.stringify(data ?? {}, null, 2);
+    const blob = new Blob([payload], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `birader-data-export-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   if (loading) {
@@ -1399,8 +1421,18 @@ export default function PublicProfileView({ username }: { username: string }) {
             </div>
             <button
               type="button"
+              onClick={() => void exportOwnData()}
+              disabled={exportingData}
+              className="mt-3 w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm disabled:opacity-60"
+            >
+              {exportingData
+                ? tx(lang, "Veri hazirlaniyor...", "Preparing export...")
+                : tx(lang, "Verilerimi disa aktar (JSON)", "Export my data (JSON)")}
+            </button>
+            <button
+              type="button"
               onClick={() => setDeleteModalOpen(true)}
-              className="mt-3 rounded-xl border border-red-300/45 bg-red-500/20 px-3 py-2 text-sm text-red-100"
+              className="mt-2 w-full rounded-xl border border-red-300/45 bg-red-500/20 px-3 py-2 text-sm text-red-100"
             >
               {tx(lang, "Hesabimi Sil", "Delete My Account")}
             </button>

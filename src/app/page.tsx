@@ -158,6 +158,18 @@ type AtRiskUserRow = {
   current_streak_days: number;
 };
 
+type AdminPerfOverviewRow = {
+  metric_key: string;
+  total_calls: number;
+  failed_calls: number;
+  fail_rate_pct: number | null;
+  avg_ms: number | null;
+  p95_ms: number | null;
+  max_ms: number | null;
+  unique_users: number;
+  last_seen_at: string | null;
+};
+
 type HomeSection = "log" | "social" | "heatmap" | "stats";
 type LocationSuggestion = { city: string; district: string; score: number };
 type HeatmapMode = "football" | "grid";
@@ -1119,6 +1131,7 @@ export default function Home() {
   const [adminGrowthWeekly, setAdminGrowthWeekly] = useState<GrowthWeeklyRow[]>([]);
   const [adminRetentionCohorts, setAdminRetentionCohorts] = useState<RetentionCohortRow[]>([]);
   const [adminAtRiskUsers, setAdminAtRiskUsers] = useState<AtRiskUserRow[]>([]);
+  const [adminPerfRows, setAdminPerfRows] = useState<AdminPerfOverviewRow[]>([]);
   const [adminAnalyticsBusy, setAdminAnalyticsBusy] = useState(false);
   const [adminSuggestionStatusFilter, setAdminSuggestionStatusFilter] = useState<"all" | "new" | "in_progress" | "done">("all");
   const [adminSuggestionCategoryFilter, setAdminSuggestionCategoryFilter] = useState<string>("all");
@@ -1988,6 +2001,28 @@ export default function Home() {
       riskUsers: adminAtRiskUsers.length,
     };
   }, [adminAtRiskUsers.length, adminGrowthWeekly, adminRetentionCohorts]);
+  const adminPerfSummary = useMemo(() => {
+    let totalCalls = 0;
+    let weightedFailNumerator = 0;
+    let maxP95 = 0;
+    let riskMetrics = 0;
+    for (const row of adminPerfRows) {
+      const calls = Number(row.total_calls || 0);
+      const failRate = Number(row.fail_rate_pct || 0);
+      const p95 = Number(row.p95_ms || 0);
+      totalCalls += calls;
+      weightedFailNumerator += calls > 0 ? failRate * calls : 0;
+      if (p95 > maxP95) maxP95 = p95;
+      if (failRate >= 5 || p95 >= 900) riskMetrics += 1;
+    }
+    return {
+      metricCount: adminPerfRows.length,
+      totalCalls,
+      failRatePct: totalCalls > 0 ? weightedFailNumerator / totalCalls : 0,
+      maxP95,
+      riskMetrics,
+    };
+  }, [adminPerfRows]);
   useEffect(() => {
     setMissionNoticeDismissed(false);
   }, [weeklyMission.completed, weeklyMission.progressPct]);
@@ -2431,7 +2466,7 @@ export default function Home() {
   async function loadAdminAnalyticsPanel() {
     if (!canManageSuggestions) return;
     setAdminAnalyticsBusy(true);
-    const [growthRes, cohortRes, riskRes] = await Promise.all([
+    const [growthRes, cohortRes, riskRes, perfRes] = await Promise.all([
       supabase
         .from("growth_weekly_overview")
         .select("week_start, new_users, active_users, total_checkins, avg_checkins_per_active_user")
@@ -2443,6 +2478,11 @@ export default function Home() {
         .order("cohort_week", { ascending: false })
         .limit(8),
       supabase.rpc("crm_at_risk_users", { p_inactive_days: 7, p_limit: 12 }),
+      supabase
+        .from("social_perf_overview_24h")
+        .select("metric_key, total_calls, failed_calls, fail_rate_pct, avg_ms, p95_ms, max_ms, unique_users, last_seen_at")
+        .order("p95_ms", { ascending: false, nullsFirst: false })
+        .limit(12),
     ]);
     setAdminAnalyticsBusy(false);
 
@@ -2454,6 +2494,9 @@ export default function Home() {
     }
     if (!riskRes.error) {
       setAdminAtRiskUsers((riskRes.data as AtRiskUserRow[] | null) ?? []);
+    }
+    if (!perfRes.error) {
+      setAdminPerfRows((perfRes.data as AdminPerfOverviewRow[] | null) ?? []);
     }
   }
 
@@ -4551,6 +4594,38 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             </div>
 
             <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="col-span-2 rounded-xl border border-cyan-300/25 bg-cyan-500/10 p-2 text-xs">
+                <div className="mb-1 text-[11px] text-cyan-100/85">
+                  {tx(lang, "Kontrol merkezi (Growth + Perf + Moderasyon)", "Control center (Growth + Perf + Moderation)")}
+                </div>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                  <div className="rounded-lg border border-white/10 bg-black/25 p-2">
+                    <div className="opacity-70">{tx(lang, "Perf cagri", "Perf calls")}</div>
+                    <div className="mt-1 font-semibold">{adminPerfSummary.totalCalls}</div>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-black/25 p-2">
+                    <div className="opacity-70">{tx(lang, "Perf risk metrik", "Perf risk metrics")}</div>
+                    <div className={`mt-1 font-semibold ${adminPerfSummary.riskMetrics > 0 ? "text-red-200" : "text-emerald-200"}`}>
+                      {adminPerfSummary.riskMetrics}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-black/25 p-2">
+                    <div className="opacity-70">{tx(lang, "Acilik raporu", "Open reports")}</div>
+                    <div className="mt-1 font-semibold">
+                      {adminReports.filter((r) => r.status === "open").length}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-black/25 p-2">
+                    <div className="opacity-70">{tx(lang, "Yeni oneriler", "New suggestions")}</div>
+                    <div className="mt-1 font-semibold">
+                      {adminSuggestions.filter((s) => s.status === "new").length}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-1 text-[10px] opacity-70">
+                  p95 max: {Math.round(adminPerfSummary.maxP95)}ms • fail: %{adminPerfSummary.failRatePct.toFixed(1)} • W1: %{adminKpis.w1.toFixed(1)}
+                </div>
+              </div>
               <div className="rounded-xl border border-white/10 bg-black/25 p-2 text-xs">
                 <div className="opacity-70">DAU</div>
                 <div className="mt-1 text-base font-semibold">{adminKpis.activeUsers}</div>

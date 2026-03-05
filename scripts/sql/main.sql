@@ -3695,6 +3695,110 @@ $$;
 revoke all on function public.get_discover_profiles(int) from public;
 grant execute on function public.get_discover_profiles(int) to authenticated;
 
+create or replace function public.export_my_data()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+begin
+  if v_uid is null then
+    return jsonb_build_object('ok', false, 'error', 'not_authenticated');
+  end if;
+
+  return jsonb_build_object(
+    'ok', true,
+    'exported_at', now(),
+    'user_id', v_uid,
+    'profile', (
+      select to_jsonb(p)
+      from public.profiles p
+      where p.user_id = v_uid
+    ),
+    'favorite_beers', coalesce((
+      select jsonb_agg(to_jsonb(f) order by f.rank asc)
+      from public.favorite_beers f
+      where f.user_id = v_uid
+    ), '[]'::jsonb),
+    'checkins', coalesce((
+      select jsonb_agg(to_jsonb(c) order by c.created_at desc)
+      from public.checkins c
+      where c.user_id = v_uid
+    ), '[]'::jsonb),
+    'follows_following', coalesce((
+      select jsonb_agg(to_jsonb(fw) order by fw.created_at desc)
+      from public.follows fw
+      where fw.follower_id = v_uid
+    ), '[]'::jsonb),
+    'follows_followers', coalesce((
+      select jsonb_agg(to_jsonb(fr) order by fr.created_at desc)
+      from public.follows fr
+      where fr.following_id = v_uid
+    ), '[]'::jsonb),
+    'notifications_received', coalesce((
+      select jsonb_agg(to_jsonb(n) order by n.created_at desc)
+      from public.notifications n
+      where n.user_id = v_uid
+    ), '[]'::jsonb),
+    'notifications_sent', coalesce((
+      select jsonb_agg(to_jsonb(n) order by n.created_at desc)
+      from public.notifications n
+      where n.actor_id = v_uid
+    ), '[]'::jsonb),
+    'checkin_comments', coalesce((
+      select jsonb_agg(to_jsonb(cc) order by cc.created_at desc)
+      from public.checkin_comments cc
+      where cc.user_id = v_uid
+    ), '[]'::jsonb),
+    'checkin_likes', coalesce((
+      select jsonb_agg(to_jsonb(cl) order by cl.created_at desc)
+      from public.checkin_likes cl
+      where cl.user_id = v_uid
+    ), '[]'::jsonb),
+    'checkin_comment_likes', coalesce((
+      select jsonb_agg(to_jsonb(ccl) order by ccl.created_at desc)
+      from public.checkin_comment_likes ccl
+      where ccl.user_id = v_uid
+    ), '[]'::jsonb),
+    'product_suggestions', coalesce((
+      select jsonb_agg(to_jsonb(ps) order by ps.created_at desc)
+      from public.product_suggestions ps
+      where ps.user_id = v_uid
+    ), '[]'::jsonb),
+    'content_reports', coalesce((
+      select jsonb_agg(to_jsonb(cr) order by cr.created_at desc)
+      from public.content_reports cr
+      where cr.reporter_id = v_uid or cr.target_user_id = v_uid
+    ), '[]'::jsonb),
+    'analytics_events', coalesce((
+      select jsonb_agg(to_jsonb(ae) order by ae.created_at desc)
+      from public.analytics_events ae
+      where ae.user_id = v_uid
+    ), '[]'::jsonb),
+    'app_action_logs', coalesce((
+      select jsonb_agg(to_jsonb(al) order by al.created_at desc)
+      from public.app_action_logs al
+      where al.user_id = v_uid
+    ), '[]'::jsonb),
+    'profile_identity_history', coalesce((
+      select jsonb_agg(to_jsonb(h) order by h.created_at desc)
+      from public.profile_identity_history h
+      where h.user_id = v_uid
+    ), '[]'::jsonb),
+    'user_badges', coalesce((
+      select jsonb_agg(to_jsonb(ub) order by ub.computed_at desc)
+      from public.user_badges ub
+      where ub.user_id = v_uid
+    ), '[]'::jsonb)
+  );
+end;
+$$;
+
+revoke all on function public.export_my_data() from public;
+grant execute on function public.export_my_data() to authenticated;
+
 create or replace function public.delete_my_account()
 returns boolean
 language plpgsql

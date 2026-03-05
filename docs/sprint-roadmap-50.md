@@ -92,11 +92,11 @@ Hedef: cihaz gecislerinde deneyimi ve ulasim kabiliyetini arttirmak.
 ## Sprint 8 (Uyumluluk + Admin Operasyon)
 Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 
-- [ ] `#49` KVKK/GDPR veri disa aktarma endpoint'i (`L`, `todo`)
-- [ ] `#50` Admin panelde growth + perf + moderation KPI tek ekran (`L`, `todo`)
+- [x] `#49` KVKK/GDPR veri disa aktarma endpoint'i (`L`, `done`)
+- [x] `#50` Admin panelde growth + perf + moderation KPI tek ekran (`L`, `done`)
 
 ## Yurutme Notu
-- Aktif sprint: `Sprint 8`
-- Aktif paket: `#49 + #50`
+- Aktif sprint: `Tamamlandi`
+- Aktif paket: `Backlog kapandi (50/50)`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.
