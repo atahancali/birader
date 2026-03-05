@@ -3582,38 +3582,40 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               EN
             </button>
           </div>
-          <Link
-            href={headerProfileHref}
-            className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-2 py-1.5"
-          >
-            <div className="h-8 w-8 overflow-hidden rounded-full border border-white/20 bg-black/40">
-              {headerAvatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={headerAvatarUrl} alt={tx(lang, "profil avatar", "profile avatar")} className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-[10px] opacity-70">
-                  :)
-                </div>
-              )}
-            </div>
-            <div className="max-w-[120px] truncate text-xs text-amber-100">
-              {(headerProfile?.display_name || "").trim() ||
-                `@${headerProfile?.username || usernameFromEmail(session?.user?.email) || tx(lang, "kullanici", "user")}`}
-            </div>
-          </Link>
+          <div className="flex items-center justify-end gap-2 flex-wrap">
+            <Link
+              href={headerProfileHref}
+              className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-2 py-1.5"
+            >
+              <div className="h-8 w-8 overflow-hidden rounded-full border border-white/20 bg-black/40">
+                {headerAvatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={headerAvatarUrl} alt={tx(lang, "profil avatar", "profile avatar")} className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-[10px] opacity-70">
+                    :)
+                  </div>
+                )}
+              </div>
+              <div className="max-w-[120px] truncate text-xs text-amber-100">
+                {(headerProfile?.display_name || "").trim() ||
+                  `@${headerProfile?.username || usernameFromEmail(session?.user?.email) || tx(lang, "kullanici", "user")}`}
+              </div>
+            </Link>
+            <Link
+              href="/yardim"
+              className="rounded-md border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/80"
+            >
+              {t(lang, "nav_help")}
+            </Link>
 
-          <button
-            onClick={logout}
-            className="rounded-md border border-red-300/70 bg-red-500/15 px-3 py-1 text-xs font-bold tracking-[0.12em] text-red-200 shadow-[0_0_12px_rgba(248,113,113,0.35)]"
-          >
-            EXIT ⟶
-          </button>
-          <Link
-            href="/yardim"
-            className="rounded-md border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/80"
-          >
-            {t(lang, "nav_help")}
-          </Link>
+            <button
+              onClick={logout}
+              className="rounded-md border border-red-300/70 bg-red-500/15 px-3 py-1 text-xs font-bold tracking-[0.12em] text-red-200 shadow-[0_0_12px_rgba(248,113,113,0.35)]"
+            >
+              EXIT ⟶
+            </button>
+          </div>
         </div>
       </div>
 
