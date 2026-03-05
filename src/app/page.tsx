@@ -3221,7 +3221,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
         {accountDeletedNotice ? (
           <div className="mt-3 rounded-2xl border border-emerald-300/30 bg-emerald-500/10 p-3 text-sm">
-            Hesabınız başarıyla silindi.
+            {tx(lang, "Hesabiniz basariyla silindi.", "Your account has been deleted successfully.")}
           </div>
         ) : null}
 

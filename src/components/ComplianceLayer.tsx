@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { useAppLang } from "@/lib/appLang";
+import { tx } from "@/lib/i18n";
 import { supabase } from "@/lib/supabase";
 import { deleteCookie, readCookie, writeCookie } from "@/lib/cookies";
 
@@ -14,6 +16,7 @@ type ConsentValue = "" | "accepted" | "rejected" | "custom";
 export default function ComplianceLayer() {
   const router = useRouter();
   const pathname = usePathname();
+  const { lang } = useAppLang("tr");
   const [sessionChecked, setSessionChecked] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [ageVerified, setAgeVerified] = useState(false);
@@ -87,22 +90,26 @@ export default function ComplianceLayer() {
       {showAgeGate ? (
         <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/95 p-4">
           <div className="w-full max-w-md rounded-2xl border border-white/15 bg-black/85 p-5">
-            <div className="text-lg font-semibold text-amber-200">18+ Yas Onayi</div>
-            <p className="mt-2 text-sm opacity-85">18 yasinda veya daha buyuk musunuz?</p>
+            <div className="text-lg font-semibold text-amber-200">
+              {tx(lang, "18+ Yas Onayi", "18+ Age Check")}
+            </div>
+            <p className="mt-2 text-sm opacity-85">
+              {tx(lang, "18 yasinda veya daha buyuk musunuz?", "Are you 18 or older?")}
+            </p>
             <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
                 type="button"
                 onClick={acceptAge}
                 className="rounded-xl border border-amber-300/35 bg-amber-500/15 px-3 py-2 text-sm"
               >
-                Evet, 18+ yasindayim
+                {tx(lang, "Evet, 18+ yasindayim", "Yes, I am 18+")}
               </button>
               <button
                 type="button"
                 onClick={rejectAge}
                 className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm"
               >
-                Hayir
+                {tx(lang, "Hayir", "No")}
               </button>
             </div>
           </div>
@@ -113,7 +120,11 @@ export default function ComplianceLayer() {
         <div className="fixed inset-x-0 bottom-0 z-[125] border-t border-white/10 bg-black/90 p-3 backdrop-blur">
           <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs opacity-80">
-              Cerez tercihlerinizi yonetin. Zorunlu olmayan cerezler yalnizca izin verdiginizde kullanilir.
+              {tx(
+                lang,
+                "Cerez tercihlerinizi yonetin. Zorunlu olmayan cerezler yalnizca izin verdiginizde kullanilir.",
+                "Manage your cookie preferences. Non-essential cookies are used only when you allow them."
+              )}
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -121,21 +132,21 @@ export default function ComplianceLayer() {
                 onClick={acceptCookies}
                 className="rounded-lg border border-amber-300/35 bg-amber-500/15 px-3 py-1.5 text-xs"
               >
-                Kabul Et
+                {tx(lang, "Kabul Et", "Accept")}
               </button>
               <button
                 type="button"
                 onClick={rejectCookies}
                 className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs"
               >
-                Reddet
+                {tx(lang, "Reddet", "Reject")}
               </button>
               <button
                 type="button"
                 onClick={() => setManageOpen((v) => !v)}
                 className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs"
               >
-                Tercihleri Yonet
+                {tx(lang, "Tercihleri Yonet", "Manage Preferences")}
               </button>
             </div>
           </div>
@@ -147,7 +158,7 @@ export default function ComplianceLayer() {
                   checked={analyticsPref}
                   onChange={(e) => setAnalyticsPref(e.target.checked)}
                 />
-                Analitik cerezlerine izin ver
+                {tx(lang, "Analitik cerezlerine izin ver", "Allow analytics cookies")}
               </label>
               <div className="mt-3 flex gap-2">
                 <button
@@ -155,14 +166,14 @@ export default function ComplianceLayer() {
                   onClick={savePreferences}
                   className="rounded-lg border border-amber-300/35 bg-amber-500/15 px-3 py-1.5 text-xs"
                 >
-                  Tercihleri Kaydet
+                  {tx(lang, "Tercihleri Kaydet", "Save Preferences")}
                 </button>
                 <button
                   type="button"
                   onClick={() => setManageOpen(false)}
                   className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs"
                 >
-                  Vazgec
+                  {tx(lang, "Vazgec", "Cancel")}
                 </button>
               </div>
             </div>

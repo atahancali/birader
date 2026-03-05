@@ -156,6 +156,8 @@ function parseGridCellMetric(value: unknown): GridCellMetric | null {
 export default function PublicProfileView({ username }: { username: string }) {
   const router = useRouter();
   const { lang, setLang } = useAppLang("tr");
+  const dateLocale = lang === "en" ? "en-US" : "tr-TR";
+  const textLocale = lang === "en" ? "en" : "tr";
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [sessionEmail, setSessionEmail] = useState("");
   const [profile, setProfile] = useState<ProfileRow | null>(null);
@@ -245,8 +247,8 @@ export default function PublicProfileView({ username }: { username: string }) {
     });
   }, [checkins, selectedDay]);
   const beerOptions = useMemo(
-    () => Array.from(new Set(checkins.map((c) => c.beer_name).filter(Boolean))).sort((a, b) => a.localeCompare(b, "tr")),
-    [checkins]
+    () => Array.from(new Set(checkins.map((c) => c.beer_name).filter(Boolean))).sort((a, b) => a.localeCompare(b, textLocale)),
+    [checkins, textLocale]
   );
   const knownBeerNamesLower = useMemo(
     () => new Set(beerOptions.map((name) => name.trim().toLowerCase())),
@@ -1317,7 +1319,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                   const loginChanged = oldLogin && newLogin && oldLogin !== newLogin;
                   return (
                     <div key={h.id} className="rounded-xl border border-white/10 bg-black/30 p-2 text-xs">
-                      <div className="opacity-65">{new Date(h.created_at).toLocaleString("tr-TR")}</div>
+                      <div className="opacity-65">{new Date(h.created_at).toLocaleString(dateLocale)}</div>
                       {handleChanged ? <div>@{oldHandle} → <span className="font-semibold">@{newHandle}</span></div> : null}
                       {displayChanged ? <div>{tx(lang, "Gorunen ad", "Display name")}: {oldDisplay} → <span className="font-semibold">{newDisplay}</span></div> : null}
                       {loginChanged ? <div>{tx(lang, "Giris kullanici adi", "Login username")}: @{oldLogin} → <span className="font-semibold">@{newLogin}</span></div> : null}
@@ -1355,7 +1357,7 @@ export default function PublicProfileView({ username }: { username: string }) {
               <input
                 value={favoriteQuery}
                 onChange={(e) => setFavoriteQuery(e.target.value)}
-                placeholder="Favori bira ara / yaz..."
+                placeholder={tx(lang, "Favori bira ara / yaz...", "Search / type favorite beer...")}
                 className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
               />
               <div className="mt-2 flex flex-wrap gap-2">
@@ -1385,13 +1387,15 @@ export default function PublicProfileView({ username }: { username: string }) {
 
           <div className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/10 p-3">
             <div className="text-xs opacity-80">KVKK / GDPR</div>
-            <div className="mt-1 text-sm">Hesabını ve tüm verilerini kalıcı olarak silebilirsin.</div>
+            <div className="mt-1 text-sm">
+              {tx(lang, "Hesabini ve tum verilerini kalici olarak silebilirsin.", "You can permanently delete your account and all data.")}
+            </div>
             <button
               type="button"
               onClick={() => setDeleteModalOpen(true)}
               className="mt-3 rounded-xl border border-red-300/45 bg-red-500/20 px-3 py-2 text-sm text-red-100"
             >
-              Hesabımı Sil
+              {tx(lang, "Hesabimi Sil", "Delete My Account")}
             </button>
           </div>
         </section>
@@ -1535,7 +1539,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                 <div className="truncate text-sm font-semibold">{c.beer_name}</div>
                 <RatingStars value={c.rating} size="xs" />
               </div>
-              <div className="mt-1 text-xs opacity-70">{new Date(c.created_at).toLocaleString("tr-TR")}</div>
+              <div className="mt-1 text-xs opacity-70">{new Date(c.created_at).toLocaleString(dateLocale)}</div>
               <div className="mt-1 text-xs opacity-70">
                 {dayPeriodLabelTr(c.day_period, c.created_at)} / {dayPeriodLabelEn(c.day_period, c.created_at)}
               </div>
@@ -1554,7 +1558,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                     <video src={c.media_url || ""} controls className="h-40 w-full object-cover" />
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={c.media_url || ""} alt="checkin medya" className="h-40 w-full object-cover" />
+                    <img src={c.media_url || ""} alt={tx(lang, "checkin medya", "check-in media")} className="h-40 w-full object-cover" />
                   )}
                 </div>
               ) : null}
@@ -1606,9 +1610,9 @@ export default function PublicProfileView({ username }: { username: string }) {
       {deleteModalOpen ? (
         <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/80 p-4">
           <div className="w-full max-w-md rounded-2xl border border-white/15 bg-black/90 p-4">
-            <div className="text-base font-semibold text-amber-200">Hesabımı Sil</div>
+            <div className="text-base font-semibold text-amber-200">{tx(lang, "Hesabimi Sil", "Delete My Account")}</div>
             <p className="mt-2 text-sm">
-              Tüm verileriniz kalıcı olarak silinecektir. Emin misiniz?
+              {tx(lang, "Tum verileriniz kalici olarak silinecektir. Emin misiniz?", "All your data will be permanently deleted. Are you sure?")}
             </p>
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
@@ -1616,7 +1620,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                 onClick={() => setDeleteModalOpen(false)}
                 className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-sm"
               >
-                Vazgeç
+                {tx(lang, "Vazgec", "Cancel")}
               </button>
               <button
                 type="button"
@@ -1624,7 +1628,7 @@ export default function PublicProfileView({ username }: { username: string }) {
                 disabled={deletingAccount}
                 className="rounded-lg border border-red-300/45 bg-red-500/20 px-3 py-1.5 text-sm text-red-100 disabled:opacity-60"
               >
-                {deletingAccount ? "Siliniyor..." : "Evet, sil"}
+                {deletingAccount ? tx(lang, "Siliniyor...", "Deleting...") : tx(lang, "Evet, sil", "Yes, delete")}
               </button>
             </div>
           </div>

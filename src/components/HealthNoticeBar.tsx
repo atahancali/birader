@@ -6,8 +6,8 @@ import { tx } from "@/lib/i18n";
 export default function HealthNoticeBar() {
   const { lang } = useAppLang("tr");
   return (
-    <div className="sticky top-0 z-20 border-b border-amber-300/20 bg-gradient-to-r from-amber-500/10 via-black/80 to-amber-500/10 backdrop-blur">
-      <div className="mx-auto w-full max-w-5xl px-4 py-2 text-center text-[11px] leading-relaxed text-amber-100/80 sm:text-xs">
+    <div className="sticky top-0 z-20 border-b border-amber-300/15 bg-black/70 backdrop-blur-md">
+      <div className="mx-auto w-full max-w-5xl px-4 py-1.5 text-center text-[10px] leading-relaxed text-amber-100/70 sm:text-[11px]">
         {tx(
           lang,
           "Alkol sağlığa zararlıdır. Sorumlu tüketin. 18 yaş altındakilere alkol satışı ve sunumu yasaktır.",
