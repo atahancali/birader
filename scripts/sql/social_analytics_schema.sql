@@ -15,7 +15,15 @@ alter table public.profiles add column if not exists avatar_path text not null d
 alter table public.profiles add column if not exists display_name text not null default '';
 alter table public.profiles add column if not exists heatmap_color_from text not null default '#f59e0b';
 alter table public.profiles add column if not exists heatmap_color_to text not null default '#ef4444';
+alter table public.profiles add column if not exists heatmap_mode text not null default 'football';
+alter table public.profiles add column if not exists heatmap_cell_metric text not null default 'color';
 alter table public.profiles add column if not exists referral_code text;
+alter table public.profiles drop constraint if exists profiles_heatmap_mode_check;
+alter table public.profiles
+add constraint profiles_heatmap_mode_check check (heatmap_mode in ('football', 'grid'));
+alter table public.profiles drop constraint if exists profiles_heatmap_cell_metric_check;
+alter table public.profiles
+add constraint profiles_heatmap_cell_metric_check check (heatmap_cell_metric in ('color', 'count', 'avgRating'));
 alter table public.checkins add column if not exists country_code text not null default 'TR';
 alter table public.checkins add column if not exists city text not null default '';
 alter table public.checkins add column if not exists district text not null default '';

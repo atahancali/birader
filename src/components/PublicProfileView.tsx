@@ -27,6 +27,8 @@ type ProfileRow = {
   avatar_path?: string | null;
   heatmap_color_from?: string | null;
   heatmap_color_to?: string | null;
+  heatmap_mode?: HeatmapMode | null;
+  heatmap_cell_metric?: GridCellMetric | null;
 };
 
 type CheckinRow = {
@@ -48,6 +50,8 @@ type FavoriteBeerRow = {
   beer_name: string;
   rank: number;
 };
+type HeatmapMode = "football" | "grid";
+type GridCellMetric = "color" | "count" | "avgRating";
 type UserBadgeRow = {
   badge_key: string;
   title_tr: string;
@@ -115,6 +119,16 @@ function isMissingRpcFunctionError(error: any, fnName: string) {
   return msg.includes("function") && msg.includes(fnName.toLowerCase()) && msg.includes("does not exist");
 }
 
+function parseHeatmapMode(value: unknown): HeatmapMode | null {
+  if (value === "football" || value === "grid") return value;
+  return null;
+}
+
+function parseGridCellMetric(value: unknown): GridCellMetric | null {
+  if (value === "color" || value === "count" || value === "avgRating") return value;
+  return null;
+}
+
 export default function PublicProfileView({ username }: { username: string }) {
   const router = useRouter();
   const { lang, setLang } = useAppLang("tr");
@@ -140,8 +154,8 @@ export default function PublicProfileView({ username }: { username: string }) {
   const [favoriteQuery, setFavoriteQuery] = useState("");
   const [dbBadges, setDbBadges] = useState<UserBadgeRow[]>([]);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
-  const [heatmapMode, setHeatmapMode] = useState<"football" | "grid">("football");
-  const [gridCellMetric, setGridCellMetric] = useState<"color" | "count" | "avgRating">("color");
+  const [heatmapMode, setHeatmapMode] = useState<HeatmapMode>("football");
+  const [gridCellMetric, setGridCellMetric] = useState<GridCellMetric>("color");
   const [gridColorFrom, setGridColorFrom] = useState<string>("#f59e0b");
   const [gridColorTo, setGridColorTo] = useState<string>("#ef4444");
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -288,7 +302,9 @@ export default function PublicProfileView({ username }: { username: string }) {
       let error: any = null;
       const withTheme = await supabase
         .from("profiles")
-        .select("user_id, username, display_name, bio, is_public, avatar_path, heatmap_color_from, heatmap_color_to")
+        .select(
+          "user_id, username, display_name, bio, is_public, avatar_path, heatmap_color_from, heatmap_color_to, heatmap_mode, heatmap_cell_metric"
+        )
         .eq("username", normalized)
         .maybeSingle();
       if (!withTheme.error) {
@@ -307,7 +323,9 @@ export default function PublicProfileView({ username }: { username: string }) {
       if (!row && !error && sessionUserId) {
         const own = await supabase
           .from("profiles")
-          .select("user_id, username, display_name, bio, is_public, avatar_path, heatmap_color_from, heatmap_color_to")
+          .select(
+            "user_id, username, display_name, bio, is_public, avatar_path, heatmap_color_from, heatmap_color_to, heatmap_mode, heatmap_cell_metric"
+          )
           .eq("user_id", sessionUserId)
           .maybeSingle();
         if (!own.error && own.data) row = own.data;
@@ -331,7 +349,9 @@ export default function PublicProfileView({ username }: { username: string }) {
         if (!boot.error) {
           const ownCreated = await supabase
             .from("profiles")
-            .select("user_id, username, display_name, bio, is_public, avatar_path, heatmap_color_from, heatmap_color_to")
+            .select(
+              "user_id, username, display_name, bio, is_public, avatar_path, heatmap_color_from, heatmap_color_to, heatmap_mode, heatmap_cell_metric"
+            )
             .eq("user_id", sessionUserId)
             .maybeSingle();
           if (!ownCreated.error && ownCreated.data) row = ownCreated.data;
@@ -364,6 +384,14 @@ export default function PublicProfileView({ username }: { username: string }) {
       setEditUsername(p.username);
       if (p.heatmap_color_from) setGridColorFrom(p.heatmap_color_from);
       if (p.heatmap_color_to) setGridColorTo(p.heatmap_color_to);
+      {
+        const mode = parseHeatmapMode(p.heatmap_mode);
+        if (mode) setHeatmapMode(mode);
+      }
+      {
+        const metric = parseGridCellMetric(p.heatmap_cell_metric);
+        if (metric) setGridCellMetric(metric);
+      }
       setEditDisplayName((p.display_name || "").trim() || p.username);
       setEditBio(p.bio || "");
       setEditIsPublic(p.is_public);
@@ -483,6 +511,30 @@ export default function PublicProfileView({ username }: { username: string }) {
     });
   }
 
+  async function saveHeatmapPrefs(nextMode: HeatmapMode, nextMetric: GridCellMetric) {
+    if (!profile || !isOwnProfile || !sessionUserId) return;
+    const withPrefs = await supabase
+      .from("profiles")
+      .update({ heatmap_mode: nextMode, heatmap_cell_metric: nextMetric })
+      .eq("user_id", sessionUserId);
+    if (withPrefs.error) {
+      const msg = String(withPrefs.error.message || "").toLowerCase();
+      if (!(msg.includes("does not exist") && (msg.includes("heatmap_mode") || msg.includes("heatmap_cell_metric")))) {
+        console.error(withPrefs.error);
+      }
+      return;
+    }
+    setProfile((prev) =>
+      prev
+        ? {
+            ...prev,
+            heatmap_mode: nextMode,
+            heatmap_cell_metric: nextMetric,
+          }
+        : prev
+    );
+  }
+
   async function saveOwnProfile() {
     if (!profile || !isOwnProfile || !sessionUserId) return;
     const nextUsername = normalizeUsername(editUsername || "");
@@ -540,6 +592,8 @@ export default function PublicProfileView({ username }: { username: string }) {
         is_public: editIsPublic,
         heatmap_color_from: gridColorFrom,
         heatmap_color_to: gridColorTo,
+        heatmap_mode: heatmapMode,
+        heatmap_cell_metric: gridCellMetric,
       })
       .eq("user_id", sessionUserId);
     if (!withTheme.error) {
@@ -583,6 +637,8 @@ export default function PublicProfileView({ username }: { username: string }) {
             is_public: editIsPublic,
             heatmap_color_from: gridColorFrom,
             heatmap_color_to: gridColorTo,
+            heatmap_mode: heatmapMode,
+            heatmap_cell_metric: gridCellMetric,
           }
         : prev
     );
@@ -1224,7 +1280,12 @@ export default function PublicProfileView({ username }: { username: string }) {
           <div className="grid w-full grid-cols-2 gap-2 md:w-auto md:grid-cols-[repeat(4,minmax(0,auto))] md:items-center">
             <select
               value={heatmapMode}
-              onChange={(e) => setHeatmapMode(e.target.value as "football" | "grid")}
+              onChange={(e) => {
+                const nextMode = parseHeatmapMode(e.target.value);
+                if (!nextMode) return;
+                setHeatmapMode(nextMode);
+                void saveHeatmapPrefs(nextMode, gridCellMetric);
+              }}
               className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none md:min-w-[88px]"
             >
               <option value="football">{tx(lang, "Saha", "Field")}</option>
@@ -1234,7 +1295,12 @@ export default function PublicProfileView({ username }: { username: string }) {
               <>
                 <select
                   value={gridCellMetric}
-                  onChange={(e) => setGridCellMetric(e.target.value as "color" | "count" | "avgRating")}
+                  onChange={(e) => {
+                    const nextMetric = parseGridCellMetric(e.target.value);
+                    if (!nextMetric) return;
+                    setGridCellMetric(nextMetric);
+                    void saveHeatmapPrefs(heatmapMode, nextMetric);
+                  }}
                   className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none md:min-w-[88px]"
                 >
                 <option value="color">{tx(lang, "Renk", "Color")}</option>

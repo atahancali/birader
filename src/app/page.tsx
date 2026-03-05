@@ -102,6 +102,8 @@ type HeaderProfile = {
   is_admin?: boolean | null;
   heatmap_color_from?: string | null;
   heatmap_color_to?: string | null;
+  heatmap_mode?: HeatmapMode | null;
+  heatmap_cell_metric?: GridCellMetric | null;
   referral_code?: string | null;
   onboarding_seen_at?: string | null;
   tutorial_done_at?: string | null;
@@ -158,9 +160,21 @@ type AtRiskUserRow = {
 
 type HomeSection = "log" | "social" | "heatmap" | "stats";
 type LocationSuggestion = { city: string; district: string; score: number };
+type HeatmapMode = "football" | "grid";
+type GridCellMetric = "color" | "count" | "avgRating";
 
 function parseSection(value: string | null): HomeSection | null {
   if (value === "log" || value === "social" || value === "heatmap" || value === "stats") return value;
+  return null;
+}
+
+function parseHeatmapMode(value: unknown): HeatmapMode | null {
+  if (value === "football" || value === "grid") return value;
+  return null;
+}
+
+function parseGridCellMetric(value: unknown): GridCellMetric | null {
+  if (value === "color" || value === "count" || value === "avgRating") return value;
   return null;
 }
 
@@ -169,6 +183,7 @@ const ONBOARDING_SEEN_KEY = "birader:onboarding:v1";
 const PENDING_COMPLIANCE_KEY = "birader:pending-compliance:v1";
 const LOG_SUBMIT_COOLDOWN_MS = 10_000;
 const HEATMAP_THEME_KEY = "birader:heatmap-theme:v1";
+const HEATMAP_PREFS_KEY = "birader:heatmap-prefs:v1";
 const CUSTOM_GRID_THEME_VALUE = "__birader-custom-theme__";
 const REFERRAL_KEY = "birader:pending-referral:v1";
 const OFFLINE_LOG_QUEUE_KEY = "birader:offline-log-queue:v1";
@@ -1004,8 +1019,8 @@ export default function Home() {
   const [favoriteReplaceOptions, setFavoriteReplaceOptions] = useState<FavoriteBeer[]>([]);
   const [activeSection, setActiveSection] = useState<HomeSection>("log");
   const [logStep, setLogStep] = useState<1 | 2 | 3 | 4>(1);
-  const [heatmapMode, setHeatmapMode] = useState<"football" | "grid">("football");
-  const [gridCellMetric, setGridCellMetric] = useState<"color" | "count" | "avgRating">("color");
+  const [heatmapMode, setHeatmapMode] = useState<HeatmapMode>("football");
+  const [gridCellMetric, setGridCellMetric] = useState<GridCellMetric>("color");
   const [gridColorFrom, setGridColorFrom] = useState<string>("#f59e0b");
   const [gridColorTo, setGridColorTo] = useState<string>("#ef4444");
   const selectedGridPaletteValue = useMemo(() => {
@@ -1272,6 +1287,27 @@ export default function Home() {
     } catch {}
   }, [gridColorFrom, gridColorTo]);
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(HEATMAP_PREFS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { mode?: unknown; metric?: unknown };
+      const mode = parseHeatmapMode(parsed.mode);
+      const metric = parseGridCellMetric(parsed.metric);
+      if (mode) setHeatmapMode(mode);
+      if (metric) setGridCellMetric(metric);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        HEATMAP_PREFS_KEY,
+        JSON.stringify({ mode: heatmapMode, metric: gridCellMetric })
+      );
+    } catch {}
+  }, [gridCellMetric, heatmapMode]);
+
   async function loadCheckins() {
     if (!session?.user?.id) return;
 
@@ -1443,7 +1479,9 @@ export default function Home() {
         let row: any = null;
         const withTheme = await supabase
           .from("profiles")
-          .select("username, display_name, avatar_path, is_admin, heatmap_color_from, heatmap_color_to, referral_code, onboarding_seen_at, tutorial_done_at")
+          .select(
+            "username, display_name, avatar_path, is_admin, heatmap_color_from, heatmap_color_to, heatmap_mode, heatmap_cell_metric, referral_code, onboarding_seen_at, tutorial_done_at"
+          )
           .eq("user_id", session.user.id)
           .maybeSingle();
         if (!withTheme.error) {
@@ -1500,7 +1538,9 @@ export default function Home() {
           if (!bootstrap.error) {
             const created = await supabase
               .from("profiles")
-              .select("username, display_name, avatar_path, is_admin, heatmap_color_from, heatmap_color_to, referral_code")
+              .select(
+                "username, display_name, avatar_path, is_admin, heatmap_color_from, heatmap_color_to, heatmap_mode, heatmap_cell_metric, referral_code"
+              )
               .eq("user_id", session.user.id)
               .maybeSingle();
             if (!created.error && created.data) {
@@ -1518,12 +1558,22 @@ export default function Home() {
             is_admin: Boolean(row.is_admin),
             heatmap_color_from: row.heatmap_color_from ?? null,
             heatmap_color_to: row.heatmap_color_to ?? null,
+            heatmap_mode: parseHeatmapMode(row.heatmap_mode),
+            heatmap_cell_metric: parseGridCellMetric(row.heatmap_cell_metric),
             referral_code: row.referral_code ?? null,
             onboarding_seen_at: row.onboarding_seen_at ?? null,
             tutorial_done_at: row.tutorial_done_at ?? null,
           });
           if (row.heatmap_color_from) setGridColorFrom(String(row.heatmap_color_from));
           if (row.heatmap_color_to) setGridColorTo(String(row.heatmap_color_to));
+          {
+            const mode = parseHeatmapMode(row.heatmap_mode);
+            if (mode) setHeatmapMode(mode);
+          }
+          {
+            const metric = parseGridCellMetric(row.heatmap_cell_metric);
+            if (metric) setGridCellMetric(metric);
+          }
           void ensureReferralCode();
         } else {
           setIsAdminUser(false);
@@ -1534,6 +1584,8 @@ export default function Home() {
             is_admin: false,
             heatmap_color_from: null,
             heatmap_color_to: null,
+            heatmap_mode: null,
+            heatmap_cell_metric: null,
             referral_code: null,
             onboarding_seen_at: null,
             tutorial_done_at: null,
@@ -2496,6 +2548,27 @@ export default function Home() {
           : prev
       );
     }
+  }
+
+  async function saveHeatmapPrefsToProfile(nextMode: HeatmapMode, nextMetric: GridCellMetric) {
+    if (!session?.user?.id) return;
+    const withPrefs = await supabase
+      .from("profiles")
+      .update({ heatmap_mode: nextMode, heatmap_cell_metric: nextMetric })
+      .eq("user_id", session.user.id);
+    if (!withPrefs.error) {
+      setHeaderProfile((prev) =>
+        prev
+          ? { ...prev, heatmap_mode: nextMode, heatmap_cell_metric: nextMetric }
+          : prev
+      );
+      return;
+    }
+    const msg = String(withPrefs.error.message || "").toLowerCase();
+    if (msg.includes("does not exist") && (msg.includes("heatmap_mode") || msg.includes("heatmap_cell_metric"))) {
+      return;
+    }
+    console.error(withPrefs.error);
   }
 
   async function ensureReferralCode() {
@@ -3950,7 +4023,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3">
                 <select
                   value={heatmapMode}
-                  onChange={(e) => setHeatmapMode(e.target.value as "football" | "grid")}
+                  onChange={(e) => {
+                    const nextMode = parseHeatmapMode(e.target.value);
+                    if (!nextMode) return;
+                    setHeatmapMode(nextMode);
+                    void saveHeatmapPrefsToProfile(nextMode, gridCellMetric);
+                  }}
                   className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
                 >
                   <option value="football">{tx(lang, "Saha", "Field")}</option>
@@ -3960,7 +4038,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   <>
                     <select
                       value={gridCellMetric}
-                      onChange={(e) => setGridCellMetric(e.target.value as "color" | "count" | "avgRating")}
+                      onChange={(e) => {
+                        const nextMetric = parseGridCellMetric(e.target.value);
+                        if (!nextMetric) return;
+                        setGridCellMetric(nextMetric);
+                        void saveHeatmapPrefsToProfile(heatmapMode, nextMetric);
+                      }}
                       className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
                     >
                       <option value="color">{tx(lang, "Renk", "Color")}</option>
