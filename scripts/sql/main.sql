@@ -2426,6 +2426,104 @@ group by p.user_id, p.username, p.display_name;
 -- Run after main.sql. Idempotent.
 
 -- =========================================================
+-- 0) Identity model normalization (login_username / handle / display_name)
+-- =========================================================
+alter table public.profiles add column if not exists handle text;
+alter table public.profiles add column if not exists login_username text;
+
+update public.profiles
+set handle = coalesce(
+  nullif(trim(handle), ''),
+  nullif(trim(username), ''),
+  'user-' || substr(user_id::text, 1, 6)
+)
+where coalesce(trim(handle), '') = '';
+
+update public.profiles p
+set login_username = coalesce(
+  nullif(trim(p.login_username), ''),
+  nullif(trim(split_part(lower(u.email), '@', 1)), ''),
+  nullif(trim(p.handle), ''),
+  nullif(trim(p.username), ''),
+  'user-' || substr(p.user_id::text, 1, 6)
+)
+from auth.users u
+where u.id = p.user_id
+  and coalesce(trim(p.login_username), '') = '';
+
+update public.profiles
+set login_username = coalesce(
+  nullif(trim(login_username), ''),
+  nullif(trim(handle), ''),
+  nullif(trim(username), ''),
+  'user-' || substr(user_id::text, 1, 6)
+)
+where coalesce(trim(login_username), '') = '';
+
+alter table public.profiles alter column handle set default '';
+alter table public.profiles alter column login_username set default '';
+alter table public.profiles alter column handle set not null;
+alter table public.profiles alter column login_username set not null;
+
+create index if not exists idx_profiles_handle on public.profiles (handle);
+create index if not exists idx_profiles_login_username on public.profiles (login_username);
+
+create or replace function public.sync_profile_identity_model()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_email_user text := null;
+  v_candidate text;
+begin
+  select nullif(trim(split_part(lower(u.email), '@', 1)), '')
+  into v_email_user
+  from auth.users u
+  where u.id = new.user_id;
+
+  if tg_op = 'UPDATE' then
+    if coalesce(trim(new.handle), '') is distinct from coalesce(trim(old.handle), '') then
+      v_candidate := nullif(trim(new.handle), '');
+    elsif coalesce(trim(new.username), '') is distinct from coalesce(trim(old.username), '') then
+      v_candidate := nullif(trim(new.username), '');
+    else
+      v_candidate := coalesce(
+        nullif(trim(new.handle), ''),
+        nullif(trim(new.username), ''),
+        nullif(trim(old.handle), ''),
+        nullif(trim(old.username), '')
+      );
+    end if;
+  else
+    v_candidate := coalesce(
+      nullif(trim(new.handle), ''),
+      nullif(trim(new.username), '')
+    );
+  end if;
+
+  v_candidate := coalesce(
+    v_candidate,
+    v_email_user,
+    'user-' || substr(new.user_id::text, 1, 6)
+  );
+
+  new.handle := v_candidate;
+  new.username := v_candidate;
+  new.login_username := coalesce(nullif(trim(new.login_username), ''), v_email_user, v_candidate);
+  new.display_name := coalesce(nullif(trim(new.display_name), ''), new.handle);
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_sync_profile_identity_model on public.profiles;
+create trigger trg_sync_profile_identity_model
+before insert or update on public.profiles
+for each row execute function public.sync_profile_identity_model();
+
+-- =========================================================
 -- 1) Identity history (username/display name changes)
 -- =========================================================
 create table if not exists public.profile_identity_history (
@@ -2439,6 +2537,11 @@ create table if not exists public.profile_identity_history (
   source text not null default 'app',
   created_at timestamptz not null default now()
 );
+
+alter table public.profile_identity_history add column if not exists old_handle text;
+alter table public.profile_identity_history add column if not exists new_handle text;
+alter table public.profile_identity_history add column if not exists old_login_username text;
+alter table public.profile_identity_history add column if not exists new_login_username text;
 
 create index if not exists idx_profile_identity_history_user_time
   on public.profile_identity_history (user_id, created_at desc);
@@ -2474,6 +2577,48 @@ for all using (
       and p.is_admin = true
   )
 );
+
+create or replace function public.get_my_identity_history(p_limit int default 20)
+returns table(
+  id bigint,
+  user_id uuid,
+  old_username text,
+  new_username text,
+  old_handle text,
+  new_handle text,
+  old_login_username text,
+  new_login_username text,
+  old_display_name text,
+  new_display_name text,
+  source text,
+  created_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    h.id,
+    h.user_id,
+    h.old_username,
+    h.new_username,
+    h.old_handle,
+    h.new_handle,
+    h.old_login_username,
+    h.new_login_username,
+    h.old_display_name,
+    h.new_display_name,
+    h.source,
+    h.created_at
+  from public.profile_identity_history h
+  where h.user_id = auth.uid()
+  order by h.created_at desc
+  limit greatest(coalesce(p_limit, 20), 1);
+$$;
+
+revoke all on function public.get_my_identity_history(int) from public;
+grant execute on function public.get_my_identity_history(int) to authenticated;
 
 -- =========================================================
 -- 2) Generic SQL action log (all important actions)
@@ -2604,15 +2749,31 @@ declare
   actor uuid := auth.uid();
 begin
   if (coalesce(old.username, '') is distinct from coalesce(new.username, ''))
+     or (coalesce(old.handle, '') is distinct from coalesce(new.handle, ''))
+     or (coalesce(old.login_username, '') is distinct from coalesce(new.login_username, ''))
      or (coalesce(old.display_name, '') is distinct from coalesce(new.display_name, '')) then
     insert into public.profile_identity_history (
-      user_id, old_username, new_username, old_display_name, new_display_name, changed_by, source
+      user_id,
+      old_username,
+      new_username,
+      old_display_name,
+      new_display_name,
+      old_handle,
+      new_handle,
+      old_login_username,
+      new_login_username,
+      changed_by,
+      source
     ) values (
       new.user_id,
       old.username,
       new.username,
       old.display_name,
       new.display_name,
+      old.handle,
+      new.handle,
+      old.login_username,
+      new.login_username,
       actor,
       case when actor is null then 'system' else 'app' end
     );
@@ -2624,8 +2785,18 @@ begin
       'profile_identity_changed',
       'profile',
       new.user_id::text,
-      jsonb_build_object('username', old.username, 'display_name', old.display_name),
-      jsonb_build_object('username', new.username, 'display_name', new.display_name),
+      jsonb_build_object(
+        'username', old.username,
+        'handle', old.handle,
+        'login_username', old.login_username,
+        'display_name', old.display_name
+      ),
+      jsonb_build_object(
+        'username', new.username,
+        'handle', new.handle,
+        'login_username', new.login_username,
+        'display_name', new.display_name
+      ),
       jsonb_build_object('changed_by', actor)
     );
   end if;

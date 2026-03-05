@@ -22,6 +22,8 @@ import { tx } from "@/lib/i18n";
 type ProfileRow = {
   user_id: string;
   username: string;
+  handle?: string | null;
+  login_username?: string | null;
   display_name?: string | null;
   bio: string;
   is_public: boolean;
@@ -74,6 +76,21 @@ type BeerResolveOutcome = {
   queued: boolean;
 };
 
+type IdentityHistoryRow = {
+  id: number;
+  user_id: string;
+  old_username?: string | null;
+  new_username?: string | null;
+  old_handle?: string | null;
+  new_handle?: string | null;
+  old_login_username?: string | null;
+  new_login_username?: string | null;
+  old_display_name?: string | null;
+  new_display_name?: string | null;
+  source?: string | null;
+  created_at: string;
+};
+
 const CHECKINS_SELECT_WITH_MEDIA =
   "id, beer_name, rating, created_at, day_period, city, district, location_text, price_try, note, media_url, media_type";
 const CHECKINS_SELECT_BASE =
@@ -120,6 +137,11 @@ function isMissingRpcFunctionError(error: any, fnName: string) {
   return msg.includes("function") && msg.includes(fnName.toLowerCase()) && msg.includes("does not exist");
 }
 
+function isMissingColumnError(error: any, columnName: string) {
+  const msg = String(error?.message || "").toLowerCase();
+  return msg.includes("does not exist") && msg.includes(String(columnName || "").toLowerCase());
+}
+
 function parseHeatmapMode(value: unknown): HeatmapMode | null {
   if (value === "football" || value === "grid") return value;
   return null;
@@ -153,6 +175,8 @@ export default function PublicProfileView({ username }: { username: string }) {
   const [editIsPublic, setEditIsPublic] = useState(true);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [favoriteQuery, setFavoriteQuery] = useState("");
+  const [identityHistory, setIdentityHistory] = useState<IdentityHistoryRow[]>([]);
+  const [identityHistoryLoading, setIdentityHistoryLoading] = useState(false);
   const [dbBadges, setDbBadges] = useState<UserBadgeRow[]>([]);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [heatmapMode, setHeatmapMode] = useState<HeatmapMode>("football");
@@ -201,6 +225,17 @@ export default function PublicProfileView({ username }: { username: string }) {
     const d = (profile?.display_name || "").trim();
     return d || `@${profile?.username || ""}`;
   }, [profile?.display_name, profile?.username]);
+  const shownHandle = useMemo(
+    () => (profile?.handle || profile?.username || "").trim(),
+    [profile?.handle, profile?.username]
+  );
+  const shownLoginUsername = useMemo(
+    () =>
+      (profile?.login_username || "").trim() ||
+      usernameFromEmail(sessionEmail || "") ||
+      shownHandle,
+    [profile?.login_username, sessionEmail, shownHandle]
+  );
   const dayCheckins = useMemo(() => {
     if (!selectedDay) return [];
     return checkins.filter((c) => {
@@ -253,6 +288,82 @@ export default function PublicProfileView({ username }: { username: string }) {
     setDbBadges((data as UserBadgeRow[] | null) ?? []);
   }
 
+  async function loadProfileRowByUserId(userId: string) {
+    const withIdentity = await supabase
+      .from("profiles")
+      .select(
+        "user_id, username, handle, login_username, display_name, bio, is_public, avatar_path, heatmap_color_from, heatmap_color_to, heatmap_mode, heatmap_cell_metric"
+      )
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!withIdentity.error) return { data: withIdentity.data as ProfileRow | null, error: null as any };
+
+    const withTheme = await supabase
+      .from("profiles")
+      .select(
+        "user_id, username, display_name, bio, is_public, avatar_path, heatmap_color_from, heatmap_color_to, heatmap_mode, heatmap_cell_metric"
+      )
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!withTheme.error) {
+      const row = withTheme.data
+        ? ({
+            ...(withTheme.data as any),
+            handle: (withTheme.data as any)?.username ?? null,
+            login_username: usernameFromEmail(sessionEmail || "") || (withTheme.data as any)?.username || null,
+          } as ProfileRow)
+        : null;
+      return { data: row, error: null as any };
+    }
+    return { data: null as ProfileRow | null, error: withTheme.error };
+  }
+
+  async function loadIdentityHistoryForUser(userId: string) {
+    setIdentityHistoryLoading(true);
+    try {
+      const viaRpc = await supabase.rpc("get_my_identity_history", { p_limit: 20 });
+      if (!viaRpc.error) {
+        setIdentityHistory((viaRpc.data as IdentityHistoryRow[] | null) ?? []);
+        return;
+      }
+      if (!isMissingRpcFunctionError(viaRpc.error, "get_my_identity_history")) {
+        console.error(viaRpc.error);
+      }
+
+      const withIdentityCols = await supabase
+        .from("profile_identity_history")
+        .select(
+          "id, user_id, old_username, new_username, old_handle, new_handle, old_login_username, new_login_username, old_display_name, new_display_name, source, created_at"
+        )
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (!withIdentityCols.error) {
+        setIdentityHistory((withIdentityCols.data as IdentityHistoryRow[] | null) ?? []);
+        return;
+      }
+
+      if (
+        !isMissingColumnError(withIdentityCols.error, "old_handle") &&
+        !isMissingColumnError(withIdentityCols.error, "old_login_username")
+      ) {
+        console.error(withIdentityCols.error);
+      }
+
+      const fallback = await supabase
+        .from("profile_identity_history")
+        .select("id, user_id, old_username, new_username, old_display_name, new_display_name, source, created_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (!fallback.error) {
+        setIdentityHistory((fallback.data as IdentityHistoryRow[] | null) ?? []);
+      }
+    } finally {
+      setIdentityHistoryLoading(false);
+    }
+  }
+
   function avatarPublicUrl(path?: string | null) {
     const clean = (path || "").trim();
     if (!clean) return "";
@@ -299,36 +410,53 @@ export default function PublicProfileView({ username }: { username: string }) {
       setErrorText(null);
 
       const normalized = normalizeUsername(username);
-      let row: any = null;
+      let row: ProfileRow | null = null;
       let error: any = null;
-      const withTheme = await supabase
+      const withIdentity = await supabase
         .from("profiles")
         .select(
-          "user_id, username, display_name, bio, is_public, avatar_path, heatmap_color_from, heatmap_color_to, heatmap_mode, heatmap_cell_metric"
+          "user_id, username, handle, login_username, display_name, bio, is_public, avatar_path, heatmap_color_from, heatmap_color_to, heatmap_mode, heatmap_cell_metric"
         )
         .eq("username", normalized)
         .maybeSingle();
-      if (!withTheme.error) {
-        row = withTheme.data;
+      if (!withIdentity.error) {
+        row = withIdentity.data as ProfileRow | null;
       } else {
         const fallback = await supabase
-          .from("profiles")
-          .select("user_id, username, display_name, bio, is_public, avatar_path")
-          .eq("username", normalized)
-          .maybeSingle();
-        row = fallback.data;
-        error = fallback.error;
-      }
-
-      // If URL username is stale (e.g. user renamed handle), allow own profile fallback by user_id.
-      if (!row && !error && sessionUserId) {
-        const own = await supabase
           .from("profiles")
           .select(
             "user_id, username, display_name, bio, is_public, avatar_path, heatmap_color_from, heatmap_color_to, heatmap_mode, heatmap_cell_metric"
           )
-          .eq("user_id", sessionUserId)
+          .eq("username", normalized)
           .maybeSingle();
+        row = fallback.data
+          ? ({
+              ...(fallback.data as any),
+              handle: (fallback.data as any)?.username ?? null,
+              login_username: usernameFromEmail(sessionEmail || "") || (fallback.data as any)?.username || null,
+            } as ProfileRow)
+          : null;
+        error = fallback.error;
+      }
+
+      // Resolve stale handle via identity history (public redirects keep working after rename).
+      if (!row && !error) {
+        const histRes = await supabase
+          .from("profile_identity_history")
+          .select("user_id, new_username")
+          .eq("old_username", normalized)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (!histRes.error && histRes.data?.user_id) {
+          const byUser = await loadProfileRowByUserId(String(histRes.data.user_id));
+          if (!byUser.error && byUser.data) row = byUser.data;
+        }
+      }
+
+      // If URL username is stale or missing, allow own profile fallback by user_id.
+      if (!row && !error && sessionUserId) {
+        const own = await loadProfileRowByUserId(sessionUserId);
         if (!own.error && own.data) row = own.data;
       }
 
@@ -348,13 +476,7 @@ export default function PublicProfileView({ username }: { username: string }) {
             { onConflict: "user_id" }
           );
         if (!boot.error) {
-          const ownCreated = await supabase
-            .from("profiles")
-            .select(
-              "user_id, username, display_name, bio, is_public, avatar_path, heatmap_color_from, heatmap_color_to, heatmap_mode, heatmap_cell_metric"
-            )
-            .eq("user_id", sessionUserId)
-            .maybeSingle();
+          const ownCreated = await loadProfileRowByUserId(sessionUserId);
           if (!ownCreated.error && ownCreated.data) row = ownCreated.data;
         }
       }
@@ -372,8 +494,9 @@ export default function PublicProfileView({ username }: { username: string }) {
       }
 
       const p = row as ProfileRow;
-      if (normalizeUsername(p.username) !== normalized) {
-        router.replace(`/u/${encodeURIComponent(p.username)}`);
+      const resolvedHandle = (p.handle || p.username || "").trim();
+      if (resolvedHandle && normalizeUsername(resolvedHandle) !== normalized) {
+        router.replace(`/u/${encodeURIComponent(resolvedHandle)}`);
       }
       if (!p.is_public && sessionUserId !== p.user_id) {
         setErrorText("Bu profil gizli.");
@@ -381,8 +504,12 @@ export default function PublicProfileView({ username }: { username: string }) {
         return;
       }
 
-      setProfile(p);
-      setEditUsername(p.username);
+      setProfile({
+        ...p,
+        handle: resolvedHandle || p.username,
+        login_username: (p.login_username || "").trim() || usernameFromEmail(sessionEmail || "") || resolvedHandle || p.username,
+      });
+      setEditUsername(resolvedHandle || p.username);
       if (p.heatmap_color_from) setGridColorFrom(p.heatmap_color_from);
       if (p.heatmap_color_to) setGridColorTo(p.heatmap_color_to);
       {
@@ -393,10 +520,12 @@ export default function PublicProfileView({ username }: { username: string }) {
         const metric = parseGridCellMetric(p.heatmap_cell_metric);
         if (metric) setGridCellMetric(metric);
       }
-      setEditDisplayName((p.display_name || "").trim() || p.username);
+      setEditDisplayName((p.display_name || "").trim() || resolvedHandle || p.username);
       setEditBio(p.bio || "");
       setEditIsPublic(p.is_public);
       setEditLoginEmail(sessionEmail || "");
+      if (sessionUserId === p.user_id) void loadIdentityHistoryForUser(p.user_id);
+      else setIdentityHistory([]);
 
       const [favoritesRes, checkinsRes, followersRes, followingRes, badgesRes] = await Promise.all([
         supabase
@@ -538,17 +667,20 @@ export default function PublicProfileView({ username }: { username: string }) {
 
   async function saveOwnProfile() {
     if (!profile || !isOwnProfile || !sessionUserId) return;
-    const nextUsername = normalizeUsername(editUsername || "");
+    const currentHandle = (profile.handle || profile.username || "").trim();
+    const nextHandle = normalizeUsername(editUsername || "");
     const rawDisplayName = (editDisplayName || "").trim().slice(0, 32);
     const normalizedRawDisplay = normalizeUsername(rawDisplayName.replace(/^@+/, ""));
-    const shouldSyncDisplayWithUsername = !rawDisplayName || normalizedRawDisplay === profile.username;
-    const nextDisplayName = shouldSyncDisplayWithUsername ? nextUsername : rawDisplayName;
+    const shouldSyncDisplayWithHandle = !rawDisplayName || normalizedRawDisplay === normalizeUsername(currentHandle);
+    const nextDisplayName = shouldSyncDisplayWithHandle ? nextHandle : rawDisplayName;
     const nextBio = (editBio || "").trim();
     const currentEmail = (sessionEmail || "").trim().toLowerCase();
     const typedEmail = (editLoginEmail || "").trim().toLowerCase();
+    const targetEmail = typedEmail || currentEmail;
+    let finalEmail = currentEmail;
 
-    if (nextUsername.length < 3) {
-      alert(tx(lang, "Login nick en az 3 karakter olmali.", "Login nick must be at least 3 characters."));
+    if (nextHandle.length < 3) {
+      alert(tx(lang, "Profil handle en az 3 karakter olmali.", "Profile handle must be at least 3 characters."));
       return;
     }
     if (typedEmail && !looksLikeEmail(typedEmail)) {
@@ -556,39 +688,47 @@ export default function PublicProfileView({ username }: { username: string }) {
       return;
     }
 
-    if (nextUsername !== profile.username) {
+    if (nextHandle !== normalizeUsername(currentHandle)) {
       const { data: takenRow, error: takenErr } = await supabase
         .from("profiles")
         .select("user_id")
-        .eq("username", nextUsername)
+        .eq("username", nextHandle)
         .maybeSingle();
       if (takenErr) {
         alert(takenErr.message);
         return;
       }
       if (takenRow && String((takenRow as any).user_id || "") !== sessionUserId) {
-        alert(tx(lang, "Bu login nick zaten kullaniliyor.", "This login nick is already in use."));
+        alert(tx(lang, "Bu handle zaten kullaniliyor.", "This handle is already in use."));
         return;
       }
     }
 
-    let targetEmail = typedEmail || currentEmail;
-    if (
-      nextUsername !== profile.username &&
-      currentEmail &&
-      /@birader\.(app|local)$/.test(currentEmail) &&
-      (!typedEmail || typedEmail === currentEmail)
-    ) {
-      targetEmail = `${nextUsername}@birader.app`;
+    setSavingProfile(true);
+    if (targetEmail && targetEmail !== currentEmail) {
+      const { data: authData, error: authErr } = await supabase.auth.updateUser({ email: targetEmail });
+      if (authErr) {
+        setSavingProfile(false);
+        alert(authErr.message);
+        return;
+      }
+      finalEmail = (authData.user?.email || targetEmail).trim().toLowerCase();
+      setSessionEmail(finalEmail);
     }
 
-    setSavingProfile(true);
+    const nextLoginUsername =
+      usernameFromEmail(finalEmail) ||
+      (profile.login_username || "").trim() ||
+      nextHandle;
+
     let error: any = null;
     const withTheme = await supabase
       .from("profiles")
       .update({
-        username: nextUsername,
-        display_name: nextDisplayName || nextUsername,
+        username: nextHandle,
+        handle: nextHandle,
+        login_username: nextLoginUsername,
+        display_name: nextDisplayName || nextHandle,
         bio: nextBio,
         is_public: editIsPublic,
         heatmap_color_from: gridColorFrom,
@@ -603,8 +743,8 @@ export default function PublicProfileView({ username }: { username: string }) {
       const fallback = await supabase
         .from("profiles")
         .update({
-          username: nextUsername,
-          display_name: nextDisplayName || nextUsername,
+          username: nextHandle,
+          display_name: nextDisplayName || nextHandle,
           bio: nextBio,
           is_public: editIsPublic,
         })
@@ -617,23 +757,15 @@ export default function PublicProfileView({ username }: { username: string }) {
       return;
     }
 
-    if (targetEmail && targetEmail !== currentEmail) {
-      const { data: authData, error: authErr } = await supabase.auth.updateUser({ email: targetEmail });
-      if (authErr) {
-        setSavingProfile(false);
-        alert(authErr.message);
-        return;
-      }
-      setSessionEmail((authData.user?.email || targetEmail).trim().toLowerCase());
-    }
-
     setSavingProfile(false);
     setProfile((prev) =>
       prev
         ? {
             ...prev,
-            username: nextUsername,
-            display_name: nextDisplayName || nextUsername,
+            username: nextHandle,
+            handle: nextHandle,
+            login_username: nextLoginUsername,
+            display_name: nextDisplayName || nextHandle,
             bio: nextBio,
             is_public: editIsPublic,
             heatmap_color_from: gridColorFrom,
@@ -643,13 +775,14 @@ export default function PublicProfileView({ username }: { username: string }) {
           }
         : prev
     );
-    setEditUsername(nextUsername);
-    setEditDisplayName(nextDisplayName || nextUsername);
+    setEditUsername(nextHandle);
+    setEditDisplayName(nextDisplayName || nextHandle);
     setEditBio(nextBio);
-    setEditLoginEmail(targetEmail || "");
+    setEditLoginEmail(finalEmail || "");
+    await loadIdentityHistoryForUser(sessionUserId);
     setEditOpen(false);
-    if (nextUsername !== profile.username) {
-      router.replace(`/u/${encodeURIComponent(nextUsername)}`);
+    if (nextHandle !== normalizeUsername(currentHandle)) {
+      router.replace(`/u/${encodeURIComponent(nextHandle)}`);
     }
   }
 
@@ -980,7 +1113,7 @@ export default function PublicProfileView({ username }: { username: string }) {
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={avatarPublicUrl(profile.avatar_path)}
-                alt={`${profile.username} avatar`}
+                alt={`${shownHandle} avatar`}
                 className="h-full w-full object-cover"
               />
             ) : null}
@@ -988,7 +1121,7 @@ export default function PublicProfileView({ username }: { username: string }) {
           <div>
           <div className="text-xs opacity-70">{tx(lang, "Birader Profil", "Birader Profile")}</div>
           <h1 className="text-2xl font-bold">{shownName}</h1>
-          <div className="text-xs opacity-70">@{profile.username}</div>
+          <div className="text-xs opacity-70">@{shownHandle}</div>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -1092,7 +1225,7 @@ export default function PublicProfileView({ username }: { username: string }) {
               value={editUsername}
               onChange={(e) => setEditUsername(e.target.value)}
               maxLength={24}
-              placeholder={tx(lang, "login nick (benzersiz)", "login nick (unique)")}
+              placeholder={tx(lang, "profil handle (benzersiz)", "profile handle (unique)")}
               className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
             />
             <input
@@ -1107,6 +1240,9 @@ export default function PublicProfileView({ username }: { username: string }) {
                 "E-posta degisimi Supabase tarafinda dogrulama isteyebilir.",
                 "E-mail change may require confirmation on Supabase side."
               )}
+            </div>
+            <div className="text-[11px] opacity-70">
+              {tx(lang, "Giris kullanici adi", "Login username")}: <span className="font-semibold">@{shownLoginUsername}</span>
             </div>
             <input
               value={editDisplayName}
@@ -1177,6 +1313,42 @@ export default function PublicProfileView({ username }: { username: string }) {
             >
               {savingProfile ? tx(lang, "Kaydediliyor...", "Saving...") : tx(lang, "Profili kaydet", "Save profile")}
             </button>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
+            <div className="text-xs opacity-70">{tx(lang, "Nick degisim gecmisi", "Handle change history")}</div>
+            {identityHistoryLoading ? (
+              <div className="mt-2 text-xs opacity-60">{tx(lang, "Yukleniyor...", "Loading...")}</div>
+            ) : identityHistory.length ? (
+              <div className="mt-2 space-y-2">
+                {identityHistory.slice(0, 8).map((h) => {
+                  const oldHandle = (h.old_handle || h.old_username || "").trim();
+                  const newHandle = (h.new_handle || h.new_username || "").trim();
+                  const oldDisplay = (h.old_display_name || "").trim();
+                  const newDisplay = (h.new_display_name || "").trim();
+                  const oldLogin = (h.old_login_username || "").trim();
+                  const newLogin = (h.new_login_username || "").trim();
+                  const handleChanged = oldHandle && newHandle && oldHandle !== newHandle;
+                  const displayChanged = oldDisplay && newDisplay && oldDisplay !== newDisplay;
+                  const loginChanged = oldLogin && newLogin && oldLogin !== newLogin;
+                  return (
+                    <div key={h.id} className="rounded-xl border border-white/10 bg-black/30 p-2 text-xs">
+                      <div className="opacity-65">{new Date(h.created_at).toLocaleString("tr-TR")}</div>
+                      {handleChanged ? <div>@{oldHandle} → <span className="font-semibold">@{newHandle}</span></div> : null}
+                      {displayChanged ? <div>{tx(lang, "Gorunen ad", "Display name")}: {oldDisplay} → <span className="font-semibold">{newDisplay}</span></div> : null}
+                      {loginChanged ? <div>{tx(lang, "Giris kullanici adi", "Login username")}: @{oldLogin} → <span className="font-semibold">@{newLogin}</span></div> : null}
+                      {!handleChanged && !displayChanged && !loginChanged ? (
+                        <div className="opacity-70">{tx(lang, "Profil kimlik bilgileri guncellendi.", "Profile identity fields updated.")}</div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="mt-2 text-xs opacity-60">
+                {tx(lang, "Henuz bir degisim kaydi yok.", "No identity changes yet.")}
+              </div>
+            )}
           </div>
 
           <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
