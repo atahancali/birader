@@ -236,7 +236,6 @@ type TutorialStepKey = {
   section: HomeSection;
 };
 type AppTheme = "dark" | "light";
-type RatingGlassStyle = "mix" | "pint" | "tulip" | "weizen" | "goblet";
 type BugBashItem = { id: string; tr: string; en: string };
 
 type BeerItem = {
@@ -353,18 +352,8 @@ const BEER_CATALOG: BeerItem[] = [
 ];
 
 const LS_KEY = "birader:checkins:v1";
-const RATING_GLASS_SEQUENCE: Array<Exclude<RatingGlassStyle, "mix">> = ["pint", "tulip", "weizen", "goblet"];
-const RATING_GLASS_PATHS: Record<Exclude<RatingGlassStyle, "mix">, string> = {
-  pint: "M20 10 Q50 5 80 10 L84 146 Q50 154 16 146 Z",
-  tulip: "M30 10 Q50 4 70 10 Q84 26 86 46 Q84 94 78 128 Q72 148 60 154 L40 154 Q28 148 22 128 Q16 94 14 46 Q16 26 30 10 Z",
-  weizen: "M34 10 Q50 2 66 10 Q80 20 84 42 Q82 96 74 132 Q68 154 52 156 L48 156 Q32 154 26 132 Q18 96 16 42 Q20 20 34 10 Z",
-  goblet: "M24 12 Q50 4 76 12 Q88 24 84 44 Q80 88 64 116 L56 126 L56 146 Q56 154 66 158 L34 158 Q44 154 44 146 L44 126 L36 116 Q20 88 16 44 Q12 24 24 12 Z",
-};
-
-function resolvedRatingGlassStyle(style: RatingGlassStyle, bucketIndex: number): Exclude<RatingGlassStyle, "mix"> {
-  if (style !== "mix") return style;
-  return RATING_GLASS_SEQUENCE[Math.abs(bucketIndex) % RATING_GLASS_SEQUENCE.length];
-}
+const RATING_GLASS_PATH =
+  "M22 10 Q50 5 78 10 C82 18 80 34 74 44 C70 52 70 74 72 122 C73 142 66 154 50 156 C34 154 27 142 28 122 C30 74 30 52 26 44 C20 34 18 18 22 10 Z";
 
 function loadLocalCheckins(): Checkin[] {
   try {
@@ -1269,7 +1258,6 @@ export default function Home() {
   const [adminSuggestionCategoryFilter, setAdminSuggestionCategoryFilter] = useState<string>("all");
   const [bugBashChecks, setBugBashChecks] = useState<Record<string, boolean>>({});
   const [missionNoticeDismissed, setMissionNoticeDismissed] = useState(false);
-  const [ratingGlassStyle, setRatingGlassStyle] = useState<RatingGlassStyle>("mix");
   const [theme, setTheme] = useState<AppTheme>("dark");
   const [pendingUndoCheckin, setPendingUndoCheckin] = useState<DeletedCheckinUndo | null>(null);
   const lastLogAttemptAtRef = useRef(0);
@@ -4714,22 +4702,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
         <div className="mb-4 flex items-center justify-between gap-3">
           <div className="text-sm text-amber-200">{tx(lang, "Puan dagilimi (0.5 adim)", "Rating distribution (0.5 step)")}</div>
-          <div className="flex items-center gap-2">
-            <select
-              value={ratingGlassStyle}
-              onChange={(e) => setRatingGlassStyle(e.target.value as RatingGlassStyle)}
-              className="rounded-full border border-white/15 bg-black/35 px-2 py-1 text-[11px] outline-none"
-              aria-label={tx(lang, "Bardak stili", "Glass style")}
-            >
-              <option value="mix">{tx(lang, "Karisik stil", "Mixed style")}</option>
-              <option value="pint">{tx(lang, "Pint", "Pint")}</option>
-              <option value="tulip">{tx(lang, "Lale", "Tulip")}</option>
-              <option value="weizen">{tx(lang, "Bugday", "Weizen")}</option>
-              <option value="goblet">{tx(lang, "Kadeh", "Goblet")}</option>
-            </select>
-            <div className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs">
-              {tx(lang, "Toplam log", "Total logs")}: {ratingDistribution.total}
-            </div>
+          <div className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs">
+            {tx(lang, "Toplam log", "Total logs")}: {ratingDistribution.total}
           </div>
         </div>
 
@@ -4741,14 +4715,13 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             const intensity = ratingDistribution.max > 0 ? b.count / ratingDistribution.max : 0;
             const fillPct = b.count === 0 ? 6 : Math.max(14, Math.round(intensity * 94));
             const isActive = activeBucketInfo?.bucket.rating === b.rating;
-            const resolvedShape = resolvedRatingGlassStyle(ratingGlassStyle, idx);
-            const bodyPath = RATING_GLASS_PATHS[resolvedShape];
+            const bodyPath = RATING_GLASS_PATH;
             const fillHeight = Math.max(8, Math.round((fillPct / 100) * 132));
             const beerTopY = 154 - fillHeight;
-            const gradId = `rg-grad-${idx}-${resolvedShape}`;
-            const beerId = `rg-beer-${idx}-${resolvedShape}`;
-            const shineId = `rg-shine-${idx}-${resolvedShape}`;
-            const clipId = `rg-clip-${idx}-${resolvedShape}`;
+            const gradId = `rg-grad-${idx}`;
+            const beerId = `rg-beer-${idx}`;
+            const shineId = `rg-shine-${idx}`;
+            const clipId = `rg-clip-${idx}`;
 
             return (
               <button
