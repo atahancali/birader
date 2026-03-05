@@ -3868,86 +3868,112 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         ) : null}
 
         {logStep === 3 ? (
-          <div>
-            <div className="mb-3">
-              <label className="block text-xs opacity-70 mb-2">{tx(lang, "Tarih", "Date")}</label>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setDateOpen((v) => !v)}
-                  className="w-full rounded-2xl bg-black/20 border border-white/10 px-3 py-3 outline-none text-left"
-                >
-                  <div className="flex items-center justify-between">
-                    <span>{dateISO}</span>
-                    <span className="text-white/55">{tx(lang, "Takvim", "Calendar")}</span>
-                  </div>
-                </button>
-                {dateOpen ? (
-                  <div className="absolute z-20 mt-2 w-full rounded-2xl border border-white/10 bg-black/80 p-3 shadow-xl backdrop-blur-md">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="date"
-                        value={dateISO}
-                        onChange={(e) => {
-                          const next = e.target.value;
-                          setDateISO(isFutureIsoDay(next, today) ? today : next);
-                        }}
-                        max={today}
-                        className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none"
-                      />
-                      <button
-                        type="button"
-                        className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm hover:border-white/20"
-                        onClick={() => {
-                          setDateISO(today);
-                          setDateOpen(false);
-                        }}
-                      >
-                        {tx(lang, "Bugun", "Today")}
-                      </button>
+          <div className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-2xl border border-amber-300/20 bg-gradient-to-br from-amber-500/10 via-black/20 to-black/30 p-3">
+                <label className="mb-2 block text-[11px] uppercase tracking-[0.14em] text-amber-200/85">
+                  {tx(lang, "Tarih", "Date")}
+                </label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setDateOpen((v) => !v)}
+                    className="w-full rounded-2xl border border-white/15 bg-black/30 px-3 py-3 text-left outline-none transition hover:border-white/25"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-medium">{dateISO}</span>
+                      <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white/70">
+                        {tx(lang, "Takvim", "Calendar")}
+                      </span>
                     </div>
-                  </div>
-                ) : null}
+                  </button>
+                  {dateOpen ? (
+                    <div className="absolute z-20 mt-2 w-full rounded-2xl border border-amber-300/20 bg-black/85 p-3 shadow-xl backdrop-blur-md">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="date"
+                          value={dateISO}
+                          onChange={(e) => {
+                            const next = e.target.value;
+                            setDateISO(isFutureIsoDay(next, today) ? today : next);
+                          }}
+                          max={today}
+                          className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none"
+                        />
+                        <button
+                          type="button"
+                          className="rounded-xl border border-white/15 bg-white/8 px-3 py-2 text-sm hover:border-white/25"
+                          onClick={() => {
+                            setDateISO(today);
+                            setDateOpen(false);
+                          }}
+                        >
+                          {tx(lang, "Bugun", "Today")}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="mt-2 text-[11px] text-white/55">
+                  {tx(lang, "Gelecek gunler kilitli.", "Future days are locked.")}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/12 bg-black/25 p-3">
+                <label className="mb-2 block text-[11px] uppercase tracking-[0.14em] text-white/75">
+                  {tx(lang, "Gunun vakti", "Time of day")}
+                </label>
+                <select
+                  value={dayPeriod}
+                  onChange={(e) => setDayPeriod(e.target.value as DayPeriod)}
+                  className="w-full rounded-2xl border border-white/15 bg-black/30 px-3 py-3 text-sm outline-none transition hover:border-white/25"
+                >
+                  {DAY_PERIOD_OPTIONS.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {lang === "en" ? p.en : p.tr}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
-            <div className="mb-3">
-              <label className="mb-2 block text-xs opacity-70">{tx(lang, "Gunun vakti", "Time of day")}</label>
-              <select
-                value={dayPeriod}
-                onChange={(e) => setDayPeriod(e.target.value as DayPeriod)}
-                className="w-full rounded-2xl border border-white/10 bg-black/20 px-3 py-3 text-sm outline-none"
-              >
-                {DAY_PERIOD_OPTIONS.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {lang === "en" ? p.en : p.tr}
-                  </option>
-                ))}
-              </select>
+            <div className="rounded-2xl border border-white/12 bg-black/25 p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <label className="text-[11px] uppercase tracking-[0.14em] text-white/75">
+                  {tx(lang, "Puan", "Rating")}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setRating((r) => (r === null ? 3.5 : null))}
+                  className={`rounded-full border px-3 py-1.5 text-xs transition ${
+                    rating === null
+                      ? "border-amber-200/55 bg-amber-500/20 text-amber-50"
+                      : "border-white/15 bg-white/8 text-white/80 hover:border-white/25"
+                  }`}
+                >
+                  {rating === null ? tx(lang, "Puansiz log (acik)", "Unrated log (on)") : tx(lang, "Puansiz log", "Unrated log")}
+                </button>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+                <StarRatingHalf value={rating} onChange={setRating} />
+              </div>
             </div>
 
-            <div className="mb-3">
-              <label className="block text-xs opacity-70 mb-2">{tx(lang, "Puan", "Rating")}</label>
-              <button
-                type="button"
-                onClick={() => setRating((r) => (r === null ? 3.5 : null))}
-                className={`mb-2 rounded-xl border px-3 py-1.5 text-xs ${
-                  rating === null ? "border-white/30 bg-white/15" : "border-white/10 bg-black/20"
-                }`}
-              >
-                {rating === null ? tx(lang, "Puansiz log (acik)", "Unrated log (on)") : tx(lang, "Puansiz log", "Unrated log")}
-              </button>
-              <StarRatingHalf value={rating} onChange={setRating} />
-            </div>
-
-            <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
-              <div className="text-xs opacity-80">{tx(lang, "Opsiyonel detaylar", "Optional details")}</div>
-              <div className="mt-2 grid gap-2">
-                <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-2xl border border-amber-300/18 bg-gradient-to-br from-amber-500/8 via-black/25 to-black/30 p-3">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="text-[11px] uppercase tracking-[0.14em] text-amber-200/90">
+                  {tx(lang, "Opsiyonel detaylar", "Optional details")}
+                </div>
+                <div className="rounded-full border border-white/15 bg-black/30 px-2 py-0.5 text-[10px] text-white/65">
+                  Geo + media
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <select
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+                    className="w-full rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none transition hover:border-white/25"
                   >
                     {TURKEY_CITIES.map((c) => (
                       <option key={c} value={c}>
@@ -3958,7 +3984,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   <select
                     value={district}
                     onChange={(e) => setDistrict(e.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+                    className="w-full rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none transition hover:border-white/25"
                   >
                     {districtOptions.map((d) => (
                       <option key={d} value={d}>
@@ -3967,7 +3993,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     ))}
                   </select>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+                <div className="rounded-xl border border-white/12 bg-black/25 p-2">
                   <input
                     value={locationSuggestQuery}
                     onChange={(e) => setLocationSuggestQuery(e.target.value)}
@@ -3976,73 +4002,77 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       "Il/ilce onerisi ara (typo toleransli, orn: kadikpy, besiktaz)",
                       "Search city/district suggestion (typo-tolerant, e.g. kadikpy, besiktaz)"
                     )}
-                    className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+                    className="w-full rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none transition hover:border-white/25"
                   />
                   <div className="mt-2 flex flex-wrap gap-2">
                     {locationSuggestions.map((s) => (
                       <button
                         key={`${s.city}-${s.district}`}
                         type="button"
-                    onClick={() => {
-                      setCity(s.city);
-                      const opts = districtsForCity(s.city);
-                      if (opts.includes(s.district)) {
-                        setDistrict(s.district);
-                        setCustomDistrict("");
-                      } else {
-                        setDistrict("Diger");
-                        setCustomDistrict(s.district);
-                      }
-                      setLocationSuggestQuery(`${s.city} / ${s.district}`);
-                    }}
-                      className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs"
-                    >
-                      {s.city} / {s.district}
-                    </button>
-                  ))}
+                        onClick={() => {
+                          setCity(s.city);
+                          const opts = districtsForCity(s.city);
+                          if (opts.includes(s.district)) {
+                            setDistrict(s.district);
+                            setCustomDistrict("");
+                          } else {
+                            setDistrict("Diger");
+                            setCustomDistrict(s.district);
+                          }
+                          setLocationSuggestQuery(`${s.city} / ${s.district}`);
+                        }}
+                        className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs text-white/85 transition hover:border-amber-300/35 hover:bg-amber-500/15"
+                      >
+                        {s.city} / {s.district}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
                 {district === "Diger" ? (
                   <input
                     value={customDistrict}
                     onChange={(e) => setCustomDistrict(e.target.value)}
                     placeholder={tx(lang, "Ilce adini yaz", "Type district name")}
-                    className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+                    className="w-full rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none transition hover:border-white/25"
                   />
                 ) : null}
                 <input
                   value={locationText}
                   onChange={(e) => setLocationText(e.target.value)}
                   placeholder={tx(lang, "Mekan/konum notu (opsiyonel)", "Venue/location note (optional)")}
-                  className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+                  className="w-full rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none transition hover:border-white/25"
                 />
                 <input
                   value={mediaUrl}
                   onChange={(e) => setMediaUrl(e.target.value)}
                   placeholder="Gorsel/video URL (opsiyonel)"
-                  className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+                  className="w-full rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none transition hover:border-white/25"
                 />
-                <input
-                  value={priceText}
-                  onChange={(e) => setPriceText(e.target.value)}
-                  placeholder={tx(lang, "Fiyat (TL)", "Price (TRY)")}
-                  inputMode="decimal"
-                  className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
-                />
-                <textarea
-                  value={logNote}
-                  onChange={(e) => setLogNote(e.target.value.slice(0, 220))}
-                  placeholder={tx(lang, "Yorum (konum/fiyat/atmosfer notu)", "Comment (location/price/atmosphere note)")}
-                  rows={3}
-                  className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
-                />
+                <div className="grid gap-2 sm:grid-cols-[180px_minmax(0,1fr)]">
+                  <input
+                    value={priceText}
+                    onChange={(e) => setPriceText(e.target.value)}
+                    placeholder={tx(lang, "Fiyat (TL)", "Price (TRY)")}
+                    inputMode="decimal"
+                    className="w-full rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none transition hover:border-white/25"
+                  />
+                  <textarea
+                    value={logNote}
+                    onChange={(e) => setLogNote(e.target.value.slice(0, 220))}
+                    placeholder={tx(lang, "Yorum (konum/fiyat/atmosfer notu)", "Comment (location/price/atmosphere note)")}
+                    rows={3}
+                    className="min-h-[84px] w-full rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none transition hover:border-white/25"
+                  />
+                </div>
               </div>
             </div>
 
             {isBackDate ? (
-              <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="mb-3 rounded-2xl border border-amber-300/18 bg-gradient-to-br from-amber-500/8 via-black/25 to-black/30 p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs opacity-80">{tx(lang, "Eski tarih icin coklu log", "Bulk log for past dates")}</div>
+                  <div className="text-[11px] uppercase tracking-[0.14em] text-amber-200/90">
+                    {tx(lang, "Eski tarih icin coklu log", "Bulk log for past dates")}
+                  </div>
                 </div>
                 <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
                   <input
@@ -4050,7 +4080,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     onChange={(e) => setBatchCountInput(e.target.value.replace(/[^0-9]/g, ""))}
                     inputMode="numeric"
                     placeholder={tx(lang, "Adet", "Count")}
-                    className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+                    className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none transition hover:border-white/25"
                   />
                   <button
                     type="button"
@@ -4061,7 +4091,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       setBatchBeerNames((prev) => [...prev, ...Array.from({ length: qty }, () => n)]);
                       setBatchConfirmed(false);
                     }}
-                    className="rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs"
+                    className="rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs transition hover:border-amber-300/35 hover:bg-amber-500/15"
                   >
                     {`Listeye ekle (${Math.max(1, Math.min(MAX_BULK_BACKDATE_COUNT, Number(batchCountInput || "1")))})`}
                   </button>
@@ -4076,7 +4106,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                         setBatchBeerNames((prev) => prev.filter((_, idx) => idx !== i));
                         setBatchConfirmed(false);
                       }}
-                      className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs"
+                      className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs transition hover:border-amber-300/35 hover:bg-amber-500/15"
                     >
                       {b} ×
                     </button>
