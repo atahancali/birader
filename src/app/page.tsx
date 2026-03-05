@@ -805,10 +805,15 @@ function ComboboxBeer({
     [...options, ...pinned].some((x) => x.toLowerCase() === customCandidate.toLowerCase());
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+    <div className="rounded-2xl border border-amber-300/18 bg-gradient-to-br from-amber-500/8 via-black/25 to-black/30 p-3">
       {pinned.length > 0 && (
-        <div className="mb-2">
-          <div className="mb-2 text-[11px] opacity-60">{tx(lang, "★ En cok ictiklerin", "★ Most consumed")}</div>
+        <div className="mb-3 rounded-xl border border-white/10 bg-black/25 p-2.5">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="text-[11px] uppercase tracking-[0.12em] text-amber-200/85">{tx(lang, "★ En cok ictiklerin", "★ Most consumed")}</div>
+            <div className="rounded-full border border-white/15 bg-black/25 px-2 py-0.5 text-[10px] text-white/65">
+              {pinned.length} {tx(lang, "oneri", "suggestions")}
+            </div>
+          </div>
           <div className="flex flex-wrap gap-2">
             {pinned.slice(0, 6).map((b) => {
               const active = b === value;
@@ -817,8 +822,10 @@ function ComboboxBeer({
                   key={b}
                   type="button"
                   onClick={() => onChange(b)}
-                  className={`rounded-full border px-3 py-1 text-xs ${
-                    active ? "border-white/25 bg-white/10" : "border-white/10 bg-white/5"
+                  className={`rounded-full border px-3 py-1 text-xs transition ${
+                    active
+                      ? "border-amber-300/40 bg-amber-500/20 text-amber-50"
+                      : "border-white/12 bg-white/8 text-white/90 hover:border-white/25"
                   }`}
                   title={b}
                 >
@@ -830,32 +837,34 @@ function ComboboxBeer({
         </div>
       )}
 
-      <div className="relative">
-        <input
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          placeholder={tx(lang, `${formatLabel} icin ara... (orn. efes, 330)`, `Search in ${formatLabel}... (e.g. efes, 330)`)}
-          className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm outline-none focus:border-white/25"
-        />
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs"
-        >
-          {open ? tx(lang, "Kapat", "Close") : tx(lang, "Ac", "Open")}
-        </button>
+      <div className="relative rounded-xl border border-white/12 bg-black/30 p-2">
+        <div className="relative">
+          <input
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            placeholder={tx(lang, `${formatLabel} icin ara... (orn. efes, 330)`, `Search in ${formatLabel}... (e.g. efes, 330)`)}
+            className="w-full rounded-xl border border-white/12 bg-black/35 px-3 py-3 pr-20 text-sm outline-none transition focus:border-amber-300/40"
+          />
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-white/15 bg-white/8 px-2 py-1 text-xs transition hover:border-amber-300/35 hover:bg-amber-500/15"
+          >
+            {open ? tx(lang, "Kapat", "Close") : tx(lang, "Ac", "Open")}
+          </button>
+        </div>
       </div>
 
-      <div className="mt-2 text-xs opacity-70">
-        {tx(lang, "Secili", "Selected")}: <span className="opacity-90">{value || "—"}</span>
+      <div className="mt-2 rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-xs opacity-85">
+        {tx(lang, "Secili", "Selected")}: <span className="font-medium text-white/95">{value || "—"}</span>
       </div>
 
       {open && (
-        <div className="mt-3 max-h-64 overflow-auto rounded-xl border border-white/10 bg-black/60 p-2">
+        <div className="mt-3 max-h-64 overflow-auto rounded-xl border border-amber-300/20 bg-black/75 p-2 backdrop-blur-sm">
           {customCandidate && !hasExact ? (
             <button
               type="button"
@@ -864,7 +873,7 @@ function ComboboxBeer({
                 setQuery(customCandidate);
                 setOpen(false);
               }}
-              className="mb-2 w-full rounded-lg border border-amber-300/30 bg-amber-500/10 px-2 py-2 text-left text-sm"
+              className="mb-2 w-full rounded-lg border border-amber-300/30 bg-amber-500/14 px-2 py-2 text-left text-sm"
             >
               {tx(lang, "Listede yok, bunu kullan", "Not in list, use this")}: {customCandidate}
             </button>
@@ -880,8 +889,8 @@ function ComboboxBeer({
                   onChange(b);
                   setOpen(false);
                 }}
-                className={`w-full rounded-lg px-2 py-2 text-left text-sm hover:bg-white/10 ${
-                  b === value ? "bg-white/10" : ""
+                className={`w-full rounded-lg px-2 py-2 text-left text-sm transition ${
+                  b === value ? "bg-amber-500/20 text-amber-50" : "hover:bg-white/10"
                 }`}
               >
                 {b}
@@ -3824,8 +3833,13 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         ) : null}
 
         {logStep === 2 ? (
-          <div>
-            <div className="mb-2 text-xs opacity-70">{tx(lang, "Birani sec", "Choose your beer")}</div>
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div className="text-xs uppercase tracking-[0.12em] text-amber-200/90">{tx(lang, "Birani sec", "Choose your beer")}</div>
+              <div className="rounded-full border border-white/15 bg-black/30 px-2 py-0.5 text-[10px] text-white/65">
+                {tx(lang, "Format", "Format")}: {format}
+              </div>
+            </div>
             <ComboboxBeer
               formatLabel={format === "Fici" ? "Fıçı" : "Şişe/Kutu"}
               query={beerQuery}

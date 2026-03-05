@@ -72,14 +72,14 @@ export default function BeerWheel({ lang, options, topOptions = [], onPick }: Be
   }, []);
 
   return (
-    <div className="mt-3 rounded-2xl border border-amber-300/25 bg-gradient-to-br from-amber-500/10 via-black/20 to-black/30 p-3">
+    <div className="mt-3 rounded-2xl border border-amber-300/25 bg-gradient-to-br from-amber-500/12 via-black/20 to-black/35 p-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-xs text-amber-200/90">{tx(lang, "Bugun ne icsem? Bira carki", "What should I drink today? Beer wheel")}</div>
+        <div className="text-[11px] uppercase tracking-[0.12em] text-amber-200/90">{tx(lang, "Bugun ne icsem? Bira carki", "What should I drink today? Beer wheel")}</div>
         <button
           type="button"
           onClick={spin}
           disabled={spinning || !pool.length}
-          className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px] disabled:opacity-50"
+          className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px] transition hover:border-amber-300/35 hover:bg-amber-500/15 disabled:opacity-50"
         >
           {spinning ? tx(lang, "Donuyor...", "Spinning...") : tx(lang, "Carki cevir", "Spin wheel")}
         </button>
@@ -98,7 +98,7 @@ export default function BeerWheel({ lang, options, topOptions = [], onPick }: Be
           <div className="absolute -top-1 left-1/2 h-0 w-0 -translate-x-1/2 border-x-[7px] border-b-[10px] border-x-transparent border-b-amber-300/90" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm">
+          <div className="rounded-xl border border-white/12 bg-black/30 px-3 py-2 text-sm">
             <div className="text-[10px] uppercase tracking-wide opacity-65">{tx(lang, "Secim", "Selection")}</div>
             <div className="truncate font-semibold">{currentLabel || tx(lang, "Hazir", "Ready")}</div>
           </div>
