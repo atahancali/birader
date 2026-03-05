@@ -4713,10 +4713,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         >
           {ratingDistribution.buckets.map((b, idx) => {
             const intensity = ratingDistribution.max > 0 ? b.count / ratingDistribution.max : 0;
-            const fillPct = b.count === 0 ? 6 : Math.max(14, Math.round(intensity * 94));
+            const hasBeer = b.count > 0;
+            const fillPct = hasBeer ? Math.max(14, Math.round(intensity * 94)) : 0;
             const isActive = activeBucketInfo?.bucket.rating === b.rating;
             const bodyPath = RATING_GLASS_PATH;
-            const fillHeight = Math.max(8, Math.round((fillPct / 100) * 132));
+            const fillHeight = hasBeer ? Math.max(8, Math.round((fillPct / 100) * 132)) : 0;
             const beerTopY = 154 - fillHeight;
             const gradId = `rg-grad-${idx}`;
             const beerId = `rg-beer-${idx}`;
@@ -4763,23 +4764,27 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     <path d={bodyPath} fill={`url(#${gradId})`} stroke="rgba(255,255,255,0.28)" strokeWidth="1.4" />
 
                     <g clipPath={`url(#${clipId})`}>
-                      <rect x="8" y={beerTopY} width="84" height={fillHeight + 8} fill={`url(#${beerId})`} />
-                      <ellipse cx="50" cy={Math.max(10, beerTopY + 2)} rx="31" ry="6.5" fill="rgba(255,248,220,0.94)" />
-                      <ellipse cx="50" cy={Math.max(12, beerTopY + 4)} rx="27" ry="4.6" fill="rgba(255,239,198,0.62)" />
-                      <circle
-                        cx="34"
-                        cy={Math.min(145, beerTopY + 52)}
-                        r="3.2"
-                        fill="rgba(255,239,198,0.45)"
-                        style={{ animation: "bubble-rise 1.75s ease-out infinite" }}
-                      />
-                      <circle
-                        cx="58"
-                        cy={Math.min(145, beerTopY + 44)}
-                        r="2.8"
-                        fill="rgba(255,239,198,0.35)"
-                        style={{ animation: "bubble-rise 1.95s ease-out infinite 150ms" }}
-                      />
+                      {hasBeer ? (
+                        <>
+                          <rect x="8" y={beerTopY} width="84" height={fillHeight + 8} fill={`url(#${beerId})`} />
+                          <ellipse cx="50" cy={Math.max(10, beerTopY + 2)} rx="31" ry="6.5" fill="rgba(255,248,220,0.94)" />
+                          <ellipse cx="50" cy={Math.max(12, beerTopY + 4)} rx="27" ry="4.6" fill="rgba(255,239,198,0.62)" />
+                          <circle
+                            cx="34"
+                            cy={Math.min(145, beerTopY + 52)}
+                            r="3.2"
+                            fill="rgba(255,239,198,0.45)"
+                            style={{ animation: "bubble-rise 1.75s ease-out infinite" }}
+                          />
+                          <circle
+                            cx="58"
+                            cy={Math.min(145, beerTopY + 44)}
+                            r="2.8"
+                            fill="rgba(255,239,198,0.35)"
+                            style={{ animation: "bubble-rise 1.95s ease-out infinite 150ms" }}
+                          />
+                        </>
+                      ) : null}
                       <path d={bodyPath} fill={`url(#${shineId})`} />
                     </g>
 
