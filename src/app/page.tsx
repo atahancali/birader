@@ -1208,14 +1208,26 @@ export default function Home() {
   const [gridCellMetric, setGridCellMetric] = useState<GridCellMetric>("color");
   const [gridColorFrom, setGridColorFrom] = useState<string>("#f59e0b");
   const [gridColorTo, setGridColorTo] = useState<string>("#ef4444");
+  const [gridPaletteMode, setGridPaletteMode] = useState<"preset" | "custom">("preset");
   const selectedGridPaletteValue = useMemo(() => {
+    if (gridPaletteMode === "custom") return CUSTOM_GRID_THEME_VALUE;
     const from = gridColorFrom.trim().toLowerCase();
     const to = gridColorTo.trim().toLowerCase();
     const preset = HEATMAP_PALETTES.find(
       (p) => p.from.toLowerCase() === from && p.to.toLowerCase() === to
     );
     return preset ? `${preset.from}|${preset.to}` : CUSTOM_GRID_THEME_VALUE;
-  }, [gridColorFrom, gridColorTo]);
+  }, [gridColorFrom, gridColorTo, gridPaletteMode]);
+  useEffect(() => {
+    const from = gridColorFrom.trim().toLowerCase();
+    const to = gridColorTo.trim().toLowerCase();
+    const isPreset = HEATMAP_PALETTES.some(
+      (p) => p.from.toLowerCase() === from && p.to.toLowerCase() === to
+    );
+    if (!isPreset && gridPaletteMode !== "custom") {
+      setGridPaletteMode("custom");
+    }
+  }, [gridColorFrom, gridColorTo, gridPaletteMode]);
   const [suggestionOpen, setSuggestionOpen] = useState(false);
   const [suggestionCategory, setSuggestionCategory] = useState("general");
   const [suggestionMessage, setSuggestionMessage] = useState("");
@@ -4393,9 +4405,13 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       value={selectedGridPaletteValue}
                       onChange={(e) => {
                         const raw = String(e.target.value || "");
-                        if (raw === CUSTOM_GRID_THEME_VALUE) return;
+                        if (raw === CUSTOM_GRID_THEME_VALUE) {
+                          setGridPaletteMode("custom");
+                          return;
+                        }
                         const [from, to] = raw.split("|");
                         if (!from || !to) return;
+                        setGridPaletteMode("preset");
                         setGridColorFrom(from);
                         setGridColorTo(to);
                         void saveHeatmapThemeToProfile(from, to);
@@ -4409,7 +4425,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       ))}
                       <option value={CUSTOM_GRID_THEME_VALUE}>{tx(lang, "Birader Atolye (Ozel)", "Birader Atelier (Custom)")}</option>
                     </select>
-                    {selectedGridPaletteValue === CUSTOM_GRID_THEME_VALUE ? (
+                    {gridPaletteMode === "custom" ? (
                       <>
                         <input
                           type="color"
