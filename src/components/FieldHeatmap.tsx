@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import RatingStars from "@/components/RatingStars";
 import { gradientColor } from "@/lib/heatmapTheme";
 import type { AppLang } from "@/lib/i18n";
 
 type CheckinLite = { created_at: string; rating?: number | null };
+type DayStat = { count: number; ratingSum: number; ratingCount: number };
 
 const DOW_TR = ["Pzt","Sal","Çar","Per","Cum","Cmt","Paz"];
 const DOW_EN = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 const MONTHS_TR = ["Oca", "Sub", "Mar", "Nis", "May", "Haz", "Tem", "Agu", "Eyl", "Eki", "Kas", "Ara"];
 const MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const LEGEND_STOPS = [0, 0.25, 0.5, 0.75, 1] as const;
 
 function isoLocal(d: Date) {
   const y = d.getFullYear();
@@ -34,7 +36,7 @@ function weekIndexFromYearStart(d: Date, year: number) {
   return Math.floor((diffDays + dowMonFirst(ss)) / 7); 
 }
 
-export default function FieldHeatmap({
+function FieldHeatmap({
   year,
   checkins,
   onSelectDay,
@@ -53,40 +55,60 @@ export default function FieldHeatmap({
   colorTo?: string;
   lang?: AppLang;
 }) {
-  // per-day stats
-  const dayStats: Record<string, { count: number; ratingSum: number; ratingCount: number }> = {};
-  for (const c of checkins) {
-    const day = c.created_at?.slice(0, 10) || isoLocal(new Date(c.created_at));
-    const stat = dayStats[day] || { count: 0, ratingSum: 0, ratingCount: 0 };
-    stat.count += 1;
-    const rating = Number(c.rating);
-    if (Number.isFinite(rating) && rating > 0) {
-      stat.ratingSum += rating;
-      stat.ratingCount += 1;
+  const { dayStats, grid, maxWeek, colMonthMap, statRows, totalDaysInYear, weekCountsByCol } = useMemo(() => {
+    const nextDayStats: Record<string, DayStat> = {};
+    for (const c of checkins) {
+      const day = c.created_at?.slice(0, 10) || isoLocal(new Date(c.created_at));
+      const stat = nextDayStats[day] || { count: 0, ratingSum: 0, ratingCount: 0 };
+      stat.count += 1;
+      const rating = Number(c.rating);
+      if (Number.isFinite(rating) && rating > 0) {
+        stat.ratingSum += rating;
+        stat.ratingCount += 1;
+      }
+      nextDayStats[day] = stat;
     }
-    dayStats[day] = stat;
-  }
 
-  // Build all days of year
-  const start = new Date(year, 0, 1);
-  const end = new Date(year, 11, 31);
+    const start = new Date(year, 0, 1);
+    const end = new Date(year, 11, 31);
+    const maxWeek = weekIndexFromYearStart(end, year);
+    const grid: (string | null)[][] = Array.from({ length: 7 }, () => Array.from({ length: maxWeek + 1 }, () => null));
 
-  // compute max week index
-  const maxWeek = weekIndexFromYearStart(end, year);
+    for (let d = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 12); d <= end; d.setDate(d.getDate() + 1)) {
+      const iso = isoLocal(d);
+      const row = dowMonFirst(d);
+      const col = weekIndexFromYearStart(d, year);
+      grid[row][col] = iso;
+    }
 
-  // grid: 7 rows (dow), (maxWeek+1) cols
-  const grid: (string | null)[][] = Array.from({ length: 7 }, () =>
-    Array.from({ length: maxWeek + 1 }, () => null)
-  );
+    const colMonthMap = Array.from({ length: maxWeek + 1 }).map((_, col) => {
+      for (let row = 0; row < 7; row += 1) {
+        const iso = grid[row][col];
+        if (iso) return Number(iso.slice(5, 7)) - 1;
+      }
+      return -1;
+    });
 
-  for (let d = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 12);
-       d <= end;
-       d.setDate(d.getDate() + 1)) {
-    const iso = isoLocal(d);
-    const row = dowMonFirst(d);          // 0..6
-    const col = weekIndexFromYearStart(d, year); // 0..maxWeek
-    grid[row][col] = iso;
-  }
+    const weekCountsByCol = Array.from({ length: maxWeek + 1 }).map((_, col) =>
+      Array.from({ length: 7 }).map((__, row) => {
+        const iso = grid[row][col];
+        if (!iso) return 0;
+        return nextDayStats[iso]?.count || 0;
+      })
+    );
+    const statRows = Object.values(nextDayStats);
+    const totalDaysInYear = Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
+
+    return {
+      dayStats: nextDayStats,
+      grid,
+      maxWeek,
+      colMonthMap,
+      statRows,
+      totalDaysInYear,
+      weekCountsByCol,
+    };
+  }, [checkins, year]);
 
   const [accessiblePalette, setAccessiblePalette] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
@@ -112,15 +134,7 @@ export default function FieldHeatmap({
   const paletteFrom = accessiblePalette ? "#2563eb" : colorFrom;
   const paletteTo = accessiblePalette ? "#f97316" : colorTo;
   const monthLabels = lang === "en" ? MONTHS_EN : MONTHS_TR;
-  const colMonthMap = Array.from({ length: maxWeek + 1 }).map((_, col) => {
-    for (let row = 0; row < 7; row += 1) {
-      const iso = grid[row][col];
-      if (iso) return Number(iso.slice(5, 7)) - 1;
-    }
-    return -1;
-  });
   const visibleWeekCount = colMonthMap.filter((m) => !focusMode || m === focusMonth).length;
-  const statRows = Object.values(dayStats);
   const activeDays = statRows.filter((s) => s.count > 0).length;
   const maxDailyCount = statRows.reduce((m, s) => Math.max(m, s.count), 0);
   const ratedAgg = statRows.reduce(
@@ -128,9 +142,7 @@ export default function FieldHeatmap({
     { ratingSum: 0, ratingCount: 0 }
   );
   const avgRated = ratedAgg.ratingCount > 0 ? Math.round((ratedAgg.ratingSum / ratedAgg.ratingCount) * 100) / 100 : 0;
-  const totalDaysInYear = Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
   const fillRate = totalDaysInYear > 0 ? Math.round((activeDays / totalDaysInYear) * 100) : 0;
-  const legendStops = [0, 0.25, 0.5, 0.75, 1];
 
   const dow = lang === "en" ? DOW_EN : DOW_TR;
   return (
@@ -252,11 +264,7 @@ export default function FieldHeatmap({
                             : "";
                         const isOutOfFocus = focusMode && iso && colMonthMap[col] !== focusMonth;
                         const radiusPx = !iso ? 6 : count <= 0 ? 6 : Math.round(5 + colorRatio * 9);
-                        const weekCounts = Array.from({ length: 7 }).map((__, wRow) => {
-                          const wIso = grid[wRow][col];
-                          if (!wIso) return 0;
-                          return dayStats[wIso]?.count || 0;
-                        });
+                        const weekCounts = weekCountsByCol[col] || [0, 0, 0, 0, 0, 0, 0];
 
                         return (
                           <button
@@ -416,7 +424,7 @@ export default function FieldHeatmap({
 
             <div className="rounded-xl border border-white/10 bg-black/20 p-2 sm:col-span-2 lg:col-span-1">
               <div className="flex items-center gap-1">
-                {legendStops.map((t) => (
+                {LEGEND_STOPS.map((t) => (
                   <div
                     key={`legend-${t}`}
                     className="h-3 flex-1 rounded border border-white/10"
@@ -479,3 +487,8 @@ export default function FieldHeatmap({
     </div>
   );
 }
+
+const MemoizedFieldHeatmap = memo(FieldHeatmap);
+MemoizedFieldHeatmap.displayName = "FieldHeatmap";
+
+export default MemoizedFieldHeatmap;

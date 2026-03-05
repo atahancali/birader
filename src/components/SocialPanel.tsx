@@ -229,15 +229,23 @@ type DiscoverRpcRow = {
   recent_logs_30d: number;
 };
 
+type MiniProfile = {
+  username: string;
+  display_name?: string | null;
+};
+
 const KEYBOARD_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
 const FEED_PAGE_SIZE = 25;
 const NOTIF_PAGE_SIZE = 30;
 const CHECKIN_STATS_LIMIT = 320;
+const CHECKIN_STATS_HYDRATE_LIMIT = 160;
 const SEARCH_SCAN_LIMIT = 120;
 const DISCOVER_SCAN_LIMIT = 40;
 const FEED_ENRICH_EAGER_COUNT = 8;
 const REALTIME_REFRESH_THROTTLE_MS = 2000;
 const WEEKLY_HIGHLIGHTS_CACHE_TTL_MS = 30_000;
+const BOOTSTRAP_DEFER_STEP_MS = 90;
+const PROFILE_MINI_CACHE_CAP = 900;
 const PERF_FAIL_RATE_WARN = 1;
 const PERF_FAIL_RATE_CRITICAL = 5;
 const PERF_P95_WARN_MS = 500;
@@ -638,6 +646,7 @@ export default function SocialPanel({
   const [weeklyBusy, setWeeklyBusy] = useState(false);
   const [weeklyItems, setWeeklyItems] = useState<WeeklyTickerItem[]>([]);
   const [panelHydrating, setPanelHydrating] = useState(false);
+  const [deferredReady, setDeferredReady] = useState(false);
   const locale = lang === "en" ? "en-US" : "tr-TR";
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -662,6 +671,8 @@ export default function SocialPanel({
   const realtimeTimersRef = useRef<Record<string, number>>({});
   const realtimeRunningRef = useRef<Record<string, boolean>>({});
   const realtimeQueuedRef = useRef<Record<string, boolean>>({});
+  const deferredBootstrapTimersRef = useRef<number[]>([]);
+  const profileMiniCacheRef = useRef<Map<string, MiniProfile>>(new Map());
   const weeklyHighlightsCacheRef = useRef<
     Partial<Record<"all" | "followed", { at: number; rows: WeeklyHighlightRow[] }>>
   >({});
@@ -672,6 +683,49 @@ export default function SocialPanel({
     if (fromEmail) return fromEmail;
     return `user-${userId.slice(0, 6)}`;
   }, [sessionEmail, userId]);
+
+  function clearDeferredBootstrapTimers() {
+    if (typeof window === "undefined") return;
+    for (const timerId of deferredBootstrapTimersRef.current) {
+      window.clearTimeout(timerId);
+    }
+    deferredBootstrapTimersRef.current = [];
+  }
+
+  function queueDeferredBootstrapTask(task: () => void, delayMs = 0) {
+    if (typeof window === "undefined") {
+      task();
+      return;
+    }
+    const timerId = window.setTimeout(() => {
+      deferredBootstrapTimersRef.current = deferredBootstrapTimersRef.current.filter((id) => id !== timerId);
+      task();
+    }, Math.max(0, delayMs));
+    deferredBootstrapTimersRef.current.push(timerId);
+  }
+
+  function upsertMiniProfiles(rows: Array<{ user_id: string; username: string; display_name?: string | null }>) {
+    if (!rows.length) return;
+    const cache = profileMiniCacheRef.current;
+    for (const row of rows) {
+      const key = String(row.user_id || "");
+      const username = String(row.username || "").trim();
+      if (!key || !username) continue;
+      if (cache.has(key)) cache.delete(key);
+      cache.set(key, { username, display_name: row.display_name || "" });
+    }
+    while (cache.size > PROFILE_MINI_CACHE_CAP) {
+      const oldest = cache.keys().next().value as string | undefined;
+      if (!oldest) break;
+      cache.delete(oldest);
+    }
+  }
+
+  function miniProfileForUser(userIdValue: string): MiniProfile | null {
+    const key = String(userIdValue || "");
+    if (!key) return null;
+    return profileMiniCacheRef.current.get(key) || null;
+  }
 
   const avg = useMemo(() => averageRating(checkins), [checkins]);
   const topBeerOptions = useMemo(() => topBeers(checkins, 16), [checkins]);
@@ -1079,7 +1133,17 @@ export default function SocialPanel({
       markDbError(error);
       return null;
     }
-    if (data) return data as ProfileRow;
+    if (data) {
+      const row = data as ProfileRow;
+      upsertMiniProfiles([
+        {
+          user_id: row.user_id,
+          username: row.username,
+          display_name: row.display_name || "",
+        },
+      ]);
+      return row;
+    }
 
     const base = normalizeUsername(fallbackBase) || `user-${userId.slice(0, 6)}`;
     for (let i = 0; i < 24; i += 1) {
@@ -1095,7 +1159,7 @@ export default function SocialPanel({
 
       if (!insertError) {
         trackEvent({ eventName: "profile_created", userId, props: { username: candidate } });
-        return {
+        const created = {
           user_id: userId,
           username: candidate,
           display_name: candidate,
@@ -1104,6 +1168,14 @@ export default function SocialPanel({
           is_admin: false,
           avatar_path: "",
         } as ProfileRow;
+        upsertMiniProfiles([
+          {
+            user_id: created.user_id,
+            username: created.username,
+            display_name: created.display_name || "",
+          },
+        ]);
+        return created;
       }
 
       if (!insertError.message.toLowerCase().includes("duplicate")) {
@@ -1236,28 +1308,36 @@ export default function SocialPanel({
       return;
     }
 
-    const ownerIds = Array.from(new Set(rows.map((r) => r.user_id)));
-    const { data: profileRows, error: profileErr } = await supabase
-      .from("profiles")
-      .select("user_id, username, display_name")
-      .in("user_id", ownerIds);
+    const ownerIds = Array.from(new Set(rows.map((r) => String(r.user_id || "")).filter(Boolean)));
+    const missingOwnerIds = ownerIds.filter((ownerId) => !miniProfileForUser(ownerId));
+    if (missingOwnerIds.length) {
+      const { data: profileRows, error: profileErr } = await supabase
+        .from("profiles")
+        .select("user_id, username, display_name")
+        .in("user_id", missingOwnerIds);
 
-    if (profileErr) {
-      markDbError(profileErr);
-      finishPerf(false, rows.length, profileErr.message);
-      return;
+      if (profileErr) {
+        markDbError(profileErr);
+        finishPerf(false, rows.length, profileErr.message);
+        return;
+      }
+      upsertMiniProfiles(
+        ((profileRows as Array<{ user_id: string; username: string; display_name?: string | null }> | null) ?? []).map((p) => ({
+          user_id: p.user_id,
+          username: p.username,
+          display_name: p.display_name || "",
+        }))
+      );
     }
 
-    const profileById = new Map<string, { username: string; display_name?: string | null }>();
-    for (const p of (profileRows as Array<{ user_id: string; username: string; display_name?: string | null }> | null) ?? []) {
-      profileById.set(p.user_id, { username: p.username, display_name: p.display_name });
-    }
-
-    const mapped = rows.map((r) => ({
-      ...r,
-      username: profileById.get(r.user_id)?.username ?? "kullanici",
-      display_name: profileById.get(r.user_id)?.display_name ?? "",
-    }));
+    const mapped = rows.map((r) => {
+      const ref = miniProfileForUser(r.user_id);
+      return {
+        ...r,
+        username: ref?.username ?? "kullanici",
+        display_name: ref?.display_name ?? "",
+      };
+    });
     setFeedItems((prev) => {
       if (reset) return mapped;
       const existing = new Set(prev.map((x) => String(x.id)));
@@ -1306,31 +1386,32 @@ export default function SocialPanel({
     }
 
     const commentRows = (data as Array<Omit<FeedComment, "username" | "display_name">> | null) ?? [];
-    const userIds = Array.from(new Set(commentRows.map((x) => x.user_id)));
-    let profileByUserId = new Map<string, { username: string; display_name?: string | null }>();
-
-    if (userIds.length) {
+    const userIds = Array.from(new Set(commentRows.map((x) => String(x.user_id || "")).filter(Boolean)));
+    const missingUserIds = userIds.filter((id) => !miniProfileForUser(id));
+    if (missingUserIds.length) {
       const { data: profileRows, error: profileErr } = await supabase
         .from("profiles")
         .select("user_id, username, display_name")
-        .in("user_id", userIds);
+        .in("user_id", missingUserIds);
 
       if (profileErr) {
         markDbError(profileErr);
         return;
       }
 
-      profileByUserId = new Map(
-        ((profileRows as Array<{ user_id: string; username: string; display_name?: string | null }> | null) ?? []).map(
-          (p) => [p.user_id, { username: p.username, display_name: p.display_name }]
-        )
+      upsertMiniProfiles(
+        ((profileRows as Array<{ user_id: string; username: string; display_name?: string | null }> | null) ?? []).map((p) => ({
+          user_id: p.user_id,
+          username: p.username,
+          display_name: p.display_name || "",
+        }))
       );
     }
 
     const grouped: Record<string, FeedComment[]> = {};
     for (const id of ids) grouped[id] = [];
     for (const c of commentRows) {
-      const ref = profileByUserId.get(c.user_id);
+      const ref = miniProfileForUser(c.user_id);
       const enriched: FeedComment = {
         ...c,
         username: ref?.username ?? "kullanici",
@@ -1457,17 +1538,21 @@ export default function SocialPanel({
       sourceById.set(String(row.id), { beer_name: row.beer_name, created_at: row.created_at });
     }
 
-    const inviterById = new Map<string, { username: string; display_name?: string | null }>();
-    for (const row of
-      (inviterRows as Array<{ user_id: string; username: string; display_name?: string | null }> | null) ?? []) {
-      inviterById.set(row.user_id, { username: row.username, display_name: row.display_name });
-    }
+    const inviterRowsSafe =
+      (inviterRows as Array<{ user_id: string; username: string; display_name?: string | null }> | null) ?? [];
+    upsertMiniProfiles(
+      inviterRowsSafe.map((row) => ({
+        user_id: row.user_id,
+        username: row.username,
+        display_name: row.display_name || "",
+      }))
+    );
 
     const viewRows: PendingInviteView[] = [];
     for (const inv of invites) {
       const src = sourceById.get(inv.source_checkin_id);
       if (!src) continue;
-      const inviter = inviterById.get(inv.inviter_id);
+      const inviter = miniProfileForUser(inv.inviter_id);
       viewRows.push({
         ...inv,
         source_beer_name: src.beer_name,
@@ -1496,6 +1581,42 @@ export default function SocialPanel({
     const rows = (data as OwnCheckinLite[] | null) ?? [];
     setOwnRecentCheckins(rows);
     if (!inviteSourceCheckinId && rows.length > 0) setInviteSourceCheckinId(String(rows[0].id));
+  }
+
+  async function loadCheckinStatsBackfill() {
+    const started = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const { data, error } = await supabase
+      .from("checkins")
+      .select("beer_name, rating, created_at, day_period, city, district")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(CHECKIN_STATS_LIMIT);
+    const ended = typeof performance !== "undefined" ? performance.now() : Date.now();
+
+    if (error) {
+      trackPerfEvent({
+        userId,
+        metricKey: "social.checkins.backfill",
+        durationMs: ended - started,
+        ok: false,
+        context: { error: error.message },
+      });
+      markDbError(error);
+      return;
+    }
+
+    const rows = (data as CheckinRow[] | null) ?? [];
+    setCheckins((prev) => (rows.length > prev.length ? rows : prev));
+    trackPerfEvent({
+      userId,
+      metricKey: "social.checkins.backfill",
+      durationMs: ended - started,
+      rowCount: rows.length,
+      ok: true,
+      context: {
+        upgraded: true,
+      },
+    });
   }
 
   async function loadNotificationUnreadCount() {
@@ -1545,27 +1666,29 @@ export default function SocialPanel({
     }
 
     const rows = (data as NotificationRow[] | null) ?? [];
-    const actorIds = Array.from(new Set(rows.map((x) => x.actor_id).filter((x): x is string => Boolean(x))));
-    let actorById = new Map<string, { username: string; display_name?: string | null }>();
-    if (actorIds.length) {
+    const actorIds = Array.from(new Set(rows.map((x) => String(x.actor_id || "")).filter(Boolean)));
+    const missingActorIds = actorIds.filter((id) => !miniProfileForUser(id));
+    if (missingActorIds.length) {
       const { data: actorRows, error: actorErr } = await supabase
         .from("profiles")
         .select("user_id, username, display_name")
-        .in("user_id", actorIds);
+        .in("user_id", missingActorIds);
       if (actorErr) {
         markDbError(actorErr);
         finishPerf(false, rows.length, actorErr.message);
         return;
       }
-      actorById = new Map(
-        ((actorRows as Array<{ user_id: string; username: string; display_name?: string | null }> | null) ?? []).map(
-          (x) => [x.user_id, { username: x.username, display_name: x.display_name }]
-        )
+      upsertMiniProfiles(
+        ((actorRows as Array<{ user_id: string; username: string; display_name?: string | null }> | null) ?? []).map((x) => ({
+          user_id: x.user_id,
+          username: x.username,
+          display_name: x.display_name || "",
+        }))
       );
     }
 
     const viewRows: NotificationView[] = rows.map((n) => {
-      const actor = (n.actor_id && actorById.get(n.actor_id)) || null;
+      const actor = n.actor_id ? miniProfileForUser(n.actor_id) : null;
       return {
         ...n,
         actor_username: actor?.username || "system",
@@ -1608,15 +1731,28 @@ export default function SocialPanel({
     if (error || !row) return false;
 
     const checkin = row as FeedCheckinRow;
-    const { data: p, error: pErr } = await supabase
-      .from("profiles")
-      .select("user_id, username, display_name")
-      .eq("user_id", checkin.user_id)
-      .maybeSingle();
-    if (pErr) return false;
+    let profileRef = miniProfileForUser(checkin.user_id);
+    if (!profileRef) {
+      const { data: p, error: pErr } = await supabase
+        .from("profiles")
+        .select("user_id, username, display_name")
+        .eq("user_id", checkin.user_id)
+        .maybeSingle();
+      if (pErr) return false;
+      if (p) {
+        upsertMiniProfiles([
+          {
+            user_id: String((p as any).user_id || checkin.user_id),
+            username: String((p as any).username || "kullanici"),
+            display_name: String((p as any).display_name || ""),
+          },
+        ]);
+      }
+      profileRef = miniProfileForUser(checkin.user_id);
+    }
 
-    const username = (p as any)?.username || "kullanici";
-    const displayName = (p as any)?.display_name || "";
+    const username = profileRef?.username || "kullanici";
+    const displayName = profileRef?.display_name || "";
     setFeedItems((prev) =>
       [
         { ...checkin, username, display_name: displayName },
@@ -2055,7 +2191,15 @@ export default function SocialPanel({
         return;
       }
 
-      setFollowingProfiles((people as SearchProfile[] | null) ?? []);
+      const peopleRows = (people as SearchProfile[] | null) ?? [];
+      upsertMiniProfiles(
+        peopleRows.map((row) => ({
+          user_id: row.user_id,
+          username: row.username,
+          display_name: row.display_name || "",
+        }))
+      );
+      setFollowingProfiles(peopleRows);
     }
 
     const { data: followerRows, error: followerErr } = await supabase
@@ -2085,7 +2229,15 @@ export default function SocialPanel({
       return;
     }
 
-    setFollowerProfiles((followerPeople as SearchProfile[] | null) ?? []);
+    const followerProfileRows = (followerPeople as SearchProfile[] | null) ?? [];
+    upsertMiniProfiles(
+      followerProfileRows.map((row) => ({
+        user_id: row.user_id,
+        username: row.username,
+        display_name: row.display_name || "",
+      }))
+    );
+    setFollowerProfiles(followerProfileRows);
   }
 
   async function loadAll() {
@@ -2104,6 +2256,7 @@ export default function SocialPanel({
     };
     setLoading(true);
     setPanelHydrating(false);
+    setDeferredReady(false);
     setDbError(null);
     setNotifLoaded(false);
     setNotifications([]);
@@ -2112,6 +2265,7 @@ export default function SocialPanel({
     setFeedWindowExplicit(false);
     setFeedWindowVariant(feedWindowVariantFromUser(userId));
     feedWindowExposureRef.current = "";
+    clearDeferredBootstrapTimers();
 
     const ensured = await reserveProfile();
     if (!ensured) {
@@ -2139,13 +2293,23 @@ export default function SocialPanel({
     setLoading(false);
     setPanelHydrating(true);
     void loadFeed(true);
-    void loadOwnRecentCheckins();
-    void loadPendingInvites();
-    void loadNotificationUnreadCount();
-    void loadDiscoverProfiles();
+    queueDeferredBootstrapTask(() => {
+      setDeferredReady(true);
+    }, BOOTSTRAP_DEFER_STEP_MS);
+    queueDeferredBootstrapTask(() => {
+      void loadOwnRecentCheckins();
+    }, BOOTSTRAP_DEFER_STEP_MS);
+    queueDeferredBootstrapTask(() => {
+      void loadPendingInvites();
+    }, BOOTSTRAP_DEFER_STEP_MS * 2);
+    queueDeferredBootstrapTask(() => {
+      void loadNotificationUnreadCount();
+    }, BOOTSTRAP_DEFER_STEP_MS * 2);
+    queueDeferredBootstrapTask(() => {
+      void loadDiscoverProfiles();
+    }, BOOTSTRAP_DEFER_STEP_MS * 3);
     if (ensured.is_admin) {
-      void loadPerfOverview(true);
-      void loadAvatarModerationQueue(true);
+      // admin perf/moderation loads are triggered by deferredReady effect
     } else {
       setPerfRows([]);
       setAvatarModerationRows([]);
@@ -2173,7 +2337,7 @@ export default function SocialPanel({
             .select("beer_name, rating, created_at, day_period, city, district")
             .eq("user_id", userId)
             .order("created_at", { ascending: false })
-            .limit(CHECKIN_STATS_LIMIT),
+            .limit(CHECKIN_STATS_HYDRATE_LIMIT),
         ]);
 
         if (favoritesRes.error) {
@@ -2218,6 +2382,11 @@ export default function SocialPanel({
         },
       });
       setPanelHydrating(false);
+      if (checkinCount >= CHECKIN_STATS_HYDRATE_LIMIT) {
+        queueDeferredBootstrapTask(() => {
+          void loadCheckinStatsBackfill();
+        }, BOOTSTRAP_DEFER_STEP_MS * 5);
+      }
     })();
   }
 
@@ -2487,6 +2656,7 @@ export default function SocialPanel({
 
   useEffect(() => {
     return () => {
+      clearDeferredBootstrapTimers();
       if (highlightCheckinTimerRef.current !== null) {
         window.clearTimeout(highlightCheckinTimerRef.current);
         highlightCheckinTimerRef.current = null;
@@ -2495,6 +2665,12 @@ export default function SocialPanel({
         window.clearTimeout(highlightCommentTimerRef.current);
         highlightCommentTimerRef.current = null;
       }
+      for (const key of Object.keys(realtimeTimersRef.current)) {
+        window.clearTimeout(realtimeTimersRef.current[key]);
+      }
+      realtimeTimersRef.current = {};
+      realtimeQueuedRef.current = {};
+      realtimeRunningRef.current = {};
     };
   }, []);
 
@@ -2516,9 +2692,10 @@ export default function SocialPanel({
   }, [feedBusy, feedHasMore, feedLoadingMore, filteredFeedItems.length]);
 
   useEffect(() => {
+    if (loading || !deferredReady) return;
     void loadLeaderboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leaderScope, leaderWindow, followingIds]);
+  }, [deferredReady, leaderScope, leaderWindow, followingIds, loading]);
 
   useEffect(() => {
     if (!profile?.is_admin) {
@@ -2526,10 +2703,11 @@ export default function SocialPanel({
       setAvatarModerationRows([]);
       return;
     }
+    if (loading || !deferredReady) return;
     void loadPerfOverview();
     void loadAvatarModerationQueue();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.is_admin]);
+  }, [deferredReady, loading, profile?.is_admin]);
 
   useEffect(() => {
     // followed scope depends on follow graph; force re-query when graph changes.
@@ -2537,16 +2715,16 @@ export default function SocialPanel({
   }, [followingIdsSig]);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || !deferredReady) return;
     void loadWeeklyHighlights();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, weeklyScope, lang]);
+  }, [deferredReady, loading, weeklyScope, lang]);
 
   useEffect(() => {
-    if (loading || weeklyScope !== "followed") return;
+    if (loading || !deferredReady || weeklyScope !== "followed") return;
     void loadWeeklyHighlights({ force: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, weeklyScope, followingIdsSig]);
+  }, [deferredReady, loading, weeklyScope, followingIdsSig]);
 
   function applyFeedPreset(preset: "discover" | "following" | "quality") {
     if (preset === "discover") {
@@ -3111,6 +3289,13 @@ export default function SocialPanel({
         follower_count: Number(row.follower_count || 0),
         recent_logs_30d: Number(row.recent_logs_30d || 0),
       }));
+      upsertMiniProfiles(
+        mapped.map((row) => ({
+          user_id: row.user_id,
+          username: row.username,
+          display_name: row.display_name || "",
+        }))
+      );
       setDiscoverProfiles(mapped);
       setDiscoverBusy(false);
       finishPerf(true, mapped.length);
@@ -3192,6 +3377,13 @@ export default function SocialPanel({
       })
       .slice(0, 12);
 
+    upsertMiniProfiles(
+      enriched.map((row) => ({
+        user_id: row.user_id,
+        username: row.username,
+        display_name: row.display_name || "",
+      }))
+    );
     setDiscoverProfiles(enriched);
     finishPerf(true, enriched.length, "", "legacy");
   }

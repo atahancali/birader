@@ -27,18 +27,24 @@ N1 notlari:
 - 2026-03-05: `N1-03` icin merkezi error modeli `src/lib/apiError.ts` ile Home/Social/Profile tarafina uygulandi.
 - 2026-03-05: `N1-04` icin Social admin kartina kritik/uyari threshold ozetleri eklendi.
 
-## Sprint N2 - Performans (todo)
+## Sprint N2 - Performans (done)
 Hedef: Sosyal panel ve heatmap ilk acilisini hizlandirmak.
 
-- [ ] `N2-01` Sosyal feed sorgulari icin cursor + lightweight projection (todo)
-- [ ] `N2-02` Progressive hydration sınırlarını optimize etme (todo)
-- [ ] `N2-03` Heatmap/stat component memoization turu (todo)
-- [ ] `N2-04` DB index ve RPC plan revizyonu (`EXPLAIN ANALYZE`) (todo)
+- [x] `N2-01` Sosyal feed sorgulari icin cursor + lightweight projection (done)
+- [x] `N2-02` Progressive hydration sınırlarını optimize etme (done)
+- [x] `N2-03` Heatmap/stat component memoization turu (done)
+- [x] `N2-04` DB index ve RPC plan revizyonu (`EXPLAIN ANALYZE`) (done)
 
 Push parcasi onerisi:
 1. Query/RPC iyilestirmeleri
 2. Frontend render optimizasyonlari
 3. Perf raporu ve before/after olcumu
+
+N2 notlari:
+- 2026-03-05: Feed owner/actor/comment profile lookup'lari icin mini cache eklendi; tekrarli profile sorgulari azaltildi.
+- 2026-03-05: Social `loadAll` bootstrap'i deferred adimlara bolundu; non-critical sorgular ilk frame sonrasina alindi.
+- 2026-03-05: `FieldHeatmap` yil-grid/day-stats hesaplari `useMemo` ile stabilize edildi, hover render maliyeti dustu.
+- 2026-03-05: `scripts/sql/n2_feed_perf.sql` eklendi (index + analyze + explain paket).
 
 ## Sprint N3 - Growth ve Retention (todo)
 Hedef: Kullanici geri donus ve haftalik aktifligi artirmak.
