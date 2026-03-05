@@ -13,6 +13,7 @@ import { trackEvent } from "@/lib/analytics";
 import { measurePerf, trackPerfEvent } from "@/lib/perf";
 import { favoriteBeerName } from "@/lib/beer";
 import { prepareAvatarUpload } from "@/lib/avatar";
+import { formatApiErrorText, normalizeApiError } from "@/lib/apiError";
 import type { AppLang } from "@/lib/i18n";
 import { tx } from "@/lib/i18n";
 import { BADGE_THRESHOLDS, badgeMetaForKey } from "@/lib/badgeMeta";
@@ -237,6 +238,10 @@ const DISCOVER_SCAN_LIMIT = 40;
 const FEED_ENRICH_EAGER_COUNT = 8;
 const REALTIME_REFRESH_THROTTLE_MS = 2000;
 const WEEKLY_HIGHLIGHTS_CACHE_TTL_MS = 30_000;
+const PERF_FAIL_RATE_WARN = 1;
+const PERF_FAIL_RATE_CRITICAL = 5;
+const PERF_P95_WARN_MS = 500;
+const PERF_P95_CRITICAL_MS = 900;
 
 const NOTIF_PREFS_KEY = "birader:notif-prefs:v1";
 const FEED_PREFS_KEY = "birader:feed-prefs:v1";
@@ -261,6 +266,12 @@ function inferBeerFormatFromName(name: string): "draft" | "bottle" | "unknown" {
   if (normalized.includes("— fici")) return "draft";
   if (normalized.includes("— şişe/kutu") || normalized.includes("— sise/kutu")) return "bottle";
   return "unknown";
+}
+
+function perfSeverity(failRatePct: number, p95Ms: number): "ok" | "warn" | "critical" {
+  if (failRatePct >= PERF_FAIL_RATE_CRITICAL || p95Ms >= PERF_P95_CRITICAL_MS) return "critical";
+  if (failRatePct >= PERF_FAIL_RATE_WARN || p95Ms >= PERF_P95_WARN_MS) return "warn";
+  return "ok";
 }
 
 function badgeProgress(checkins: CheckinRow[]) {
@@ -768,10 +779,50 @@ export default function SocialPanel({
       perfRows.filter((row) => {
         const failRate = Number(row.fail_rate_pct || 0);
         const p95 = Number(row.p95_ms || 0);
-        return failRate >= 5 || p95 >= 900;
+        return perfSeverity(failRate, p95) === "critical";
       }),
     [perfRows]
   );
+  const perfWarnRows = useMemo(
+    () =>
+      perfRows.filter((row) => {
+        const failRate = Number(row.fail_rate_pct || 0);
+        const p95 = Number(row.p95_ms || 0);
+        return perfSeverity(failRate, p95) === "warn";
+      }),
+    [perfRows]
+  );
+  const perfAlarmSummary = useMemo(() => {
+    const criticalCount = perfRiskRows.length;
+    const warnCount = perfWarnRows.length;
+    const worst = perfRows
+      .slice()
+      .sort((a, b) => {
+        const aFail = Number(a.fail_rate_pct || 0);
+        const bFail = Number(b.fail_rate_pct || 0);
+        const aP95 = Number(a.p95_ms || 0);
+        const bP95 = Number(b.p95_ms || 0);
+        const aScore = aFail * 20 + aP95 / 10;
+        const bScore = bFail * 20 + bP95 / 10;
+        return bScore - aScore;
+      })[0];
+    if (!worst) {
+      return {
+        criticalCount,
+        warnCount,
+        worstLabel: tx(lang, "Yok", "None"),
+        worstFailPct: 0,
+        worstP95: 0,
+      };
+    }
+    return {
+      criticalCount,
+      warnCount,
+      worstLabel: worst.metric_key,
+      worstFailPct: Number(worst.fail_rate_pct || 0),
+      worstP95: Number(worst.p95_ms || 0),
+    };
+  }, [lang, perfRows, perfRiskRows.length, perfWarnRows.length]);
   const perfWeeklyTrend = useMemo(() => {
     const byDate = new Map<
       string,
@@ -860,20 +911,32 @@ export default function SocialPanel({
     );
   }, [filteredNotifications, lang]);
 
-  function markDbError(message: string) {
-    const lower = message.toLowerCase();
-    if (
-      lower.includes("does not exist") ||
-      lower.includes("relation") ||
-      lower.includes("column") ||
-      lower.includes("policy")
-    ) {
-      setDbError(
-        "Supabase sosyal semasi guncel degil. SQL Editor'de scripts/sql/main.sql dosyasini calistirip sayfayi yenile."
-      );
-      return;
-    }
-    setDbError(message);
+  function markDbError(error: unknown, fallbackTr = "Sosyal panel istegi basarisiz.", fallbackEn = "Social panel request failed.") {
+    const prepared = normalizeApiError(error, {
+      lang,
+      fallbackTr,
+      fallbackEn,
+    });
+    setDbError(formatApiErrorText(prepared));
+    trackEvent({
+      eventName: "social_api_error",
+      userId,
+      props: {
+        code: prepared.code,
+        raw_code: prepared.rawCode || null,
+        raw_message: prepared.rawMessage.slice(0, 220),
+      },
+    });
+  }
+
+  function errorText(error: unknown, fallbackTr = "Islem basarisiz.", fallbackEn = "Action failed.") {
+    return formatApiErrorText(
+      normalizeApiError(error, {
+        lang,
+        fallbackTr,
+        fallbackEn,
+      })
+    );
   }
 
   function isMissingFunctionError(message: string, fnName: string) {
@@ -1013,7 +1076,7 @@ export default function SocialPanel({
       .maybeSingle();
 
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return null;
     }
     if (data) return data as ProfileRow;
@@ -1044,7 +1107,7 @@ export default function SocialPanel({
       }
 
       if (!insertError.message.toLowerCase().includes("duplicate")) {
-        markDbError(insertError.message);
+        markDbError(insertError);
         return null;
       }
     }
@@ -1089,7 +1152,7 @@ export default function SocialPanel({
         if (followErr) {
           if (reset) setFeedBusy(false);
           else setFeedLoadingMore(false);
-          markDbError(followErr.message);
+          markDbError(followErr);
           finishPerf(false, 0, followErr.message);
           return;
         }
@@ -1149,7 +1212,7 @@ export default function SocialPanel({
     else setFeedLoadingMore(false);
 
     if (checkinErr) {
-      markDbError(checkinErr.message);
+      markDbError(checkinErr);
       finishPerf(false, 0, checkinErr.message);
       return;
     }
@@ -1180,7 +1243,7 @@ export default function SocialPanel({
       .in("user_id", ownerIds);
 
     if (profileErr) {
-      markDbError(profileErr.message);
+      markDbError(profileErr);
       finishPerf(false, rows.length, profileErr.message);
       return;
     }
@@ -1238,7 +1301,7 @@ export default function SocialPanel({
       .limit(500);
 
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
 
@@ -1253,7 +1316,7 @@ export default function SocialPanel({
         .in("user_id", userIds);
 
       if (profileErr) {
-        markDbError(profileErr.message);
+        markDbError(profileErr);
         return;
       }
 
@@ -1295,7 +1358,7 @@ export default function SocialPanel({
       .limit(5000);
 
     if (likeErr) {
-      markDbError(likeErr.message);
+      markDbError(likeErr);
       return;
     }
 
@@ -1327,7 +1390,7 @@ export default function SocialPanel({
       .in("checkin_id", ids)
       .limit(5000);
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
     const counts: Record<string, number> = {};
@@ -1355,7 +1418,7 @@ export default function SocialPanel({
       .limit(20);
 
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
 
@@ -1381,11 +1444,11 @@ export default function SocialPanel({
     ]);
 
     if (sourceErr) {
-      markDbError(sourceErr.message);
+      markDbError(sourceErr);
       return;
     }
     if (inviterErr) {
-      markDbError(inviterErr.message);
+      markDbError(inviterErr);
       return;
     }
 
@@ -1426,7 +1489,7 @@ export default function SocialPanel({
       .limit(15);
 
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
 
@@ -1443,7 +1506,7 @@ export default function SocialPanel({
       .eq("is_read", false);
 
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
     setNotifUnreadCountServer(Number(count || 0));
@@ -1476,7 +1539,7 @@ export default function SocialPanel({
     setNotifBusy(false);
 
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       finishPerf(false, 0, error.message);
       return;
     }
@@ -1490,7 +1553,7 @@ export default function SocialPanel({
         .select("user_id, username, display_name")
         .in("user_id", actorIds);
       if (actorErr) {
-        markDbError(actorErr.message);
+        markDbError(actorErr);
         finishPerf(false, rows.length, actorErr.message);
         return;
       }
@@ -1526,7 +1589,7 @@ export default function SocialPanel({
       .eq("user_id", userId)
       .in("id", unreadIds);
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
@@ -1612,7 +1675,7 @@ export default function SocialPanel({
     if (scope === weeklyScope && reqSeq === currentSeq) setWeeklyBusy(false);
 
     if (error) {
-      if (scope === weeklyScope) markDbError(error.message);
+      if (scope === weeklyScope) markDbError(error);
       return;
     }
 
@@ -1674,7 +1737,7 @@ export default function SocialPanel({
     setLeaderBusy(false);
 
     if (checkinErr) {
-      markDbError(checkinErr.message);
+      markDbError(checkinErr);
       finishPerf(false, 0, checkinErr.message);
       return;
     }
@@ -1717,7 +1780,7 @@ export default function SocialPanel({
       .in("user_id", ids);
 
     if (profileErr) {
-      markDbError(profileErr.message);
+      markDbError(profileErr);
       finishPerf(false, rows.length, profileErr.message);
       return;
     }
@@ -1873,11 +1936,11 @@ export default function SocialPanel({
     setPerfDailyBusy(false);
 
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
     if (dailyError) {
-      markDbError(dailyError.message);
+      markDbError(dailyError);
       setPerfDailyRows([]);
     } else {
       setPerfDailyRows((dailyData as PerfDailyRow[] | null) ?? []);
@@ -1901,7 +1964,7 @@ export default function SocialPanel({
       .limit(20);
     setAvatarModerationBusy(false);
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
 
@@ -1914,7 +1977,7 @@ export default function SocialPanel({
         .select("user_id, username, display_name")
         .in("user_id", userIds);
       if (pErr) {
-        markDbError(pErr.message);
+        markDbError(pErr);
       } else {
         byUser = new Map(
           ((profiles as Array<{ user_id: string; username: string; display_name?: string | null }> | null) ?? []).map((p) => [
@@ -1945,7 +2008,7 @@ export default function SocialPanel({
     });
     setAvatarReviewBusyId(0);
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
     if (data !== true) {
@@ -1971,7 +2034,7 @@ export default function SocialPanel({
       .eq("follower_id", userId);
 
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
 
@@ -1988,7 +2051,7 @@ export default function SocialPanel({
         .order("username", { ascending: true });
 
       if (peopleError) {
-        markDbError(peopleError.message);
+        markDbError(peopleError);
         return;
       }
 
@@ -2001,7 +2064,7 @@ export default function SocialPanel({
       .eq("following_id", userId);
 
     if (followerErr) {
-      markDbError(followerErr.message);
+      markDbError(followerErr);
       return;
     }
 
@@ -2018,7 +2081,7 @@ export default function SocialPanel({
       .order("username", { ascending: true });
 
     if (followerPeopleErr) {
-      markDbError(followerPeopleErr.message);
+      markDbError(followerPeopleErr);
       return;
     }
 
@@ -2114,7 +2177,7 @@ export default function SocialPanel({
         ]);
 
         if (favoritesRes.error) {
-          markDbError(favoritesRes.error.message);
+          markDbError(favoritesRes.error);
           hasError = true;
           if (!firstError) firstError = favoritesRes.error.message;
         } else {
@@ -2127,7 +2190,7 @@ export default function SocialPanel({
         }
 
         if (checkinsRes.error) {
-          markDbError(checkinsRes.error.message);
+          markDbError(checkinsRes.error);
           hasError = true;
           if (!firstError) firstError = checkinsRes.error.message;
         } else {
@@ -2139,7 +2202,7 @@ export default function SocialPanel({
         const message = String(error?.message || "social_panel_hydration_failed");
         hasError = true;
         if (!firstError) firstError = message;
-        markDbError(message);
+        markDbError(error);
       }
       const hydrationEnded = typeof performance !== "undefined" ? performance.now() : Date.now();
       trackPerfEvent({
@@ -2170,7 +2233,7 @@ export default function SocialPanel({
     if (error) {
       const msg = String(error.message || "").toLowerCase();
       if (msg.includes("does not exist") || msg.includes("column")) return;
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
 
@@ -2212,7 +2275,7 @@ export default function SocialPanel({
       } else {
         const assignMsg = String(assignErr.message || "").toLowerCase();
         if (!(assignMsg.includes("does not exist") || assignMsg.includes("column"))) {
-          markDbError(assignErr.message);
+          markDbError(assignErr);
         }
       }
     }
@@ -2789,7 +2852,7 @@ export default function SocialPanel({
     setSavingProfile(false);
 
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
 
@@ -2822,8 +2885,8 @@ export default function SocialPanel({
         .upload(uploadPath, prepared.blob, { upsert: true, contentType: "image/jpeg" });
       if (upErr) {
         console.error("avatar upload error:", upErr.message);
-        markDbError(upErr.message);
-        alert(`Avatar yuklenemedi: ${upErr.message}`);
+        markDbError(upErr);
+        alert(errorText(upErr, "Avatar yuklenemedi.", "Avatar upload failed."));
         return;
       }
 
@@ -2833,8 +2896,8 @@ export default function SocialPanel({
         .eq("user_id", userId);
       if (dbErr) {
         console.error("avatar profile update error:", dbErr.message);
-        markDbError(dbErr.message);
-        alert(`Profil avatari guncellenemedi: ${dbErr.message}`);
+        markDbError(dbErr);
+        alert(errorText(dbErr, "Profil avatari guncellenemedi.", "Profile avatar update failed."));
         return;
       }
       const queueRes = await supabase.rpc("queue_avatar_moderation", {
@@ -2842,14 +2905,14 @@ export default function SocialPanel({
         p_flags: prepared.moderationFlags as any,
       });
       if (queueRes.error && !isMissingFunctionError(queueRes.error.message, "queue_avatar_moderation")) {
-        markDbError(queueRes.error.message);
+        markDbError(queueRes.error);
       }
 
       setAvatarPath(uploadPath);
       setProfile((prev) => (prev ? { ...prev, avatar_path: uploadPath } : prev));
       trackEvent({ eventName: "avatar_uploaded", userId, props: { path: uploadPath } });
     } catch (e: any) {
-      alert(e?.message || "Avatar islenemedi.");
+      alert(errorText(e, "Avatar islenemedi.", "Avatar processing failed."));
     } finally {
       setAvatarUploading(false);
     }
@@ -2864,7 +2927,7 @@ export default function SocialPanel({
       .eq("user_id", userId)
       .order("rank", { ascending: true });
     if (readErr) {
-      markDbError(readErr.message);
+      markDbError(readErr);
       return;
     }
     const current = ((rows as FavoriteBeerRow[] | null) ?? []).map((f) => ({
@@ -2919,7 +2982,7 @@ export default function SocialPanel({
         setFavorites(refreshed);
         return;
       }
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
 
@@ -2943,7 +3006,7 @@ export default function SocialPanel({
       .eq("rank", rank);
 
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
 
@@ -2973,7 +3036,7 @@ export default function SocialPanel({
     setSearchBusy(false);
 
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
 
@@ -3070,7 +3133,7 @@ export default function SocialPanel({
 
     if (profileErr) {
       setDiscoverBusy(false);
-      markDbError(profileErr.message);
+      markDbError(profileErr);
       finishPerf(false, 0, profileErr.message, "legacy");
       return;
     }
@@ -3092,12 +3155,12 @@ export default function SocialPanel({
     setDiscoverBusy(false);
 
     if (followerErr) {
-      markDbError(followerErr.message);
+      markDbError(followerErr);
       finishPerf(false, base.length, followerErr.message, "legacy");
       return;
     }
     if (logErr) {
-      markDbError(logErr.message);
+      markDbError(logErr);
       finishPerf(false, base.length, logErr.message, "legacy");
       return;
     }
@@ -3140,7 +3203,7 @@ export default function SocialPanel({
     });
 
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
 
@@ -3157,7 +3220,7 @@ export default function SocialPanel({
       ref_id: String(target.user_id),
       payload: { follower_user_id: userId },
     });
-    if (notifErr) markDbError(notifErr.message);
+    if (notifErr) markDbError(notifErr);
 
     void loadFollowing();
     scheduleLeaderboardRefresh();
@@ -3173,7 +3236,7 @@ export default function SocialPanel({
       .eq("following_id", target.user_id);
 
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
 
@@ -3211,8 +3274,8 @@ export default function SocialPanel({
     setCommentSendingFor("");
 
     if (error) {
-      markDbError(error.message);
-      alert(error.message);
+      markDbError(error);
+      alert(errorText(error, "Yorum gonderilemedi.", "Comment could not be sent."));
       return;
     }
 
@@ -3258,7 +3321,7 @@ export default function SocialPanel({
         },
       }));
       const { error: notifErr } = await supabase.from("notifications").insert(rows);
-      if (notifErr) markDbError(notifErr.message);
+      if (notifErr) markDbError(notifErr);
     }
 
     setCommentDraftByCheckin((prev) => ({ ...prev, [checkinId]: "" }));
@@ -3277,7 +3340,7 @@ export default function SocialPanel({
         .eq("user_id", userId);
       setCommentLikeBusyId(0);
       if (error) {
-        markDbError(error.message);
+        markDbError(error);
         return;
       }
       setCommentLikedByMe((prev) => ({ ...prev, [comment.id]: false }));
@@ -3291,7 +3354,7 @@ export default function SocialPanel({
     });
     setCommentLikeBusyId(0);
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
 
@@ -3305,7 +3368,7 @@ export default function SocialPanel({
         ref_id: comment.checkin_id,
         payload: { comment_id: comment.id, checkin_id: comment.checkin_id },
       });
-      if (notifErr) markDbError(notifErr.message);
+      if (notifErr) markDbError(notifErr);
     }
   }
 
@@ -3321,7 +3384,7 @@ export default function SocialPanel({
         .eq("user_id", userId);
       setCheckinLikeBusyId("");
       if (error) {
-        markDbError(error.message);
+        markDbError(error);
         return;
       }
       setCheckinLikedByMe((prev) => ({ ...prev, [checkinId]: false }));
@@ -3335,7 +3398,7 @@ export default function SocialPanel({
     });
     setCheckinLikeBusyId("");
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
 
@@ -3349,7 +3412,7 @@ export default function SocialPanel({
         ref_id: checkinId,
         payload: { checkin_id: checkinId },
       });
-      if (notifErr) markDbError(notifErr.message);
+      if (notifErr) markDbError(notifErr);
     }
   }
 
@@ -3371,7 +3434,7 @@ export default function SocialPanel({
     });
     setReportBusyKey("");
     if (error) {
-      markDbError(error.message);
+      markDbError(error);
       return;
     }
     alert(tx(lang, "Rapor alindi.", "Report received."));
@@ -3445,8 +3508,8 @@ export default function SocialPanel({
     setInviteCreating(false);
 
     if (error) {
-      markDbError(error.message);
-      alert(error.message);
+      markDbError(error);
+      alert(errorText(error, "Davet gonderilemedi.", "Invite could not be sent."));
       return;
     }
 
@@ -3464,8 +3527,8 @@ export default function SocialPanel({
     setInviteBusyId(0);
 
     if (error) {
-      markDbError(error.message);
-      alert(error.message);
+      markDbError(error);
+      alert(errorText(error, "Davet kabul edilemedi.", "Invite could not be accepted."));
       return;
     }
 
@@ -3490,8 +3553,8 @@ export default function SocialPanel({
     setInviteBusyId(0);
 
     if (error) {
-      markDbError(error.message);
-      alert(error.message);
+      markDbError(error);
+      alert(errorText(error, "Davet reddedilemedi.", "Invite could not be declined."));
       return;
     }
 
@@ -3572,16 +3635,35 @@ export default function SocialPanel({
               </button>
             </div>
             <div className="mt-2 space-y-2">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                <div className="rounded-xl border border-red-400/35 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-100">
+                  {tx(lang, "Kritik metrik", "Critical metrics")}: {perfAlarmSummary.criticalCount}
+                </div>
+                <div className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-100">
+                  {tx(lang, "Uyari metrik", "Warning metrics")}: {perfAlarmSummary.warnCount}
+                </div>
+                <div className="rounded-xl border border-white/15 bg-black/25 px-2 py-1.5 text-[11px]">
+                  {tx(lang, "En riskli", "Most risky")}:{" "}
+                  <span className="font-medium">{perfAlarmSummary.worstLabel}</span>{" "}
+                  • p95 {Math.round(perfAlarmSummary.worstP95)}ms • fail %{perfAlarmSummary.worstFailPct.toFixed(2)}
+                </div>
+              </div>
               {perfRiskRows.length ? (
                 <div className="rounded-xl border border-red-400/35 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-100">
-                  {tx(lang, "Uyari:", "Alert:")} {perfRiskRows.length} {tx(lang, "metrikte p95/fail esigi asildi.", "metrics exceed p95/fail threshold.")}
+                  {tx(lang, "Uyari:", "Alert:")} {perfRiskRows.length}{" "}
+                  {tx(
+                    lang,
+                    `metrik kritik esigi asti (p95 >= ${PERF_P95_CRITICAL_MS}ms veya fail >= %${PERF_FAIL_RATE_CRITICAL}).`,
+                    `metrics crossed critical threshold (p95 >= ${PERF_P95_CRITICAL_MS}ms or fail >= %${PERF_FAIL_RATE_CRITICAL}).`
+                  )}
                 </div>
               ) : null}
               {perfRows.map((row) => {
                 const failRate = Number(row.fail_rate_pct || 0);
                 const p95 = Number(row.p95_ms || 0);
-                const isRisk = failRate >= 5 || p95 >= 900;
-                const isWarn = !isRisk && (failRate >= 1 || p95 >= 500);
+                const severity = perfSeverity(failRate, p95);
+                const isRisk = severity === "critical";
+                const isWarn = severity === "warn";
                 return (
                   <div
                     key={`perf-${row.metric_key}`}
@@ -3614,8 +3696,9 @@ export default function SocialPanel({
                 </div>
                 <div className="mt-2 space-y-1">
                   {perfWeeklyTrend.map((day) => {
-                    const isRisk = day.failRatePct >= 5 || day.maxP95 >= 900;
-                    const isWarn = !isRisk && (day.failRatePct >= 1 || day.maxP95 >= 500);
+                    const severity = perfSeverity(day.failRatePct, day.maxP95);
+                    const isRisk = severity === "critical";
+                    const isWarn = severity === "warn";
                     return (
                       <div key={`perf-day-${day.snapshotDate}`} className="flex items-center justify-between gap-2 text-[11px]">
                         <div className="shrink-0 opacity-75">

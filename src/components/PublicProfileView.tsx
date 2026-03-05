@@ -10,6 +10,7 @@ import LoadingPulse from "@/components/LoadingPulse";
 import RatingStars from "@/components/RatingStars";
 import FollowsYouBadge from "@/components/FollowsYouBadge";
 import { supabase } from "@/lib/supabase";
+import { formatApiErrorText, normalizeApiError } from "@/lib/apiError";
 import { normalizeUsername, usernameFromEmail } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
@@ -156,6 +157,14 @@ function parseGridCellMetric(value: unknown): GridCellMetric | null {
 export default function PublicProfileView({ username }: { username: string }) {
   const router = useRouter();
   const { lang, setLang } = useAppLang("tr");
+  const apiErrorText = (error: unknown, fallbackTr: string, fallbackEn: string) =>
+    formatApiErrorText(
+      normalizeApiError(error, {
+        lang,
+        fallbackTr,
+        fallbackEn,
+      })
+    );
   const dateLocale = lang === "en" ? "en-US" : "tr-TR";
   const textLocale = lang === "en" ? "en" : "tr";
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
@@ -466,7 +475,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       }
 
       if (error) {
-        setErrorText(error.message);
+        setErrorText(apiErrorText(error, "Profil yuklenemedi.", "Profile could not be loaded."));
         setLoading(false);
         return;
       }
@@ -535,11 +544,11 @@ export default function PublicProfileView({ username }: { username: string }) {
           .limit(8),
       ]);
 
-      if (favoritesRes.error) setErrorText(favoritesRes.error.message);
-      if ((checkinsRes as any).error) setErrorText((checkinsRes as any).error.message);
-      if (followersRes.error) setErrorText(followersRes.error.message);
-      if (followingRes.error) setErrorText(followingRes.error.message);
-      if (badgesRes.error) setErrorText(badgesRes.error.message);
+      if (favoritesRes.error) setErrorText(apiErrorText(favoritesRes.error, "Favoriler yuklenemedi.", "Favorites could not be loaded."));
+      if ((checkinsRes as any).error) setErrorText(apiErrorText((checkinsRes as any).error, "Loglar yuklenemedi.", "Check-ins could not be loaded."));
+      if (followersRes.error) setErrorText(apiErrorText(followersRes.error, "Takipci sayisi yuklenemedi.", "Follower count could not be loaded."));
+      if (followingRes.error) setErrorText(apiErrorText(followingRes.error, "Takip edilen sayisi yuklenemedi.", "Following count could not be loaded."));
+      if (badgesRes.error) setErrorText(apiErrorText(badgesRes.error, "Rozetler yuklenemedi.", "Badges could not be loaded."));
 
       setFavorites((favoritesRes.data as FavoriteBeerRow[] | null) ?? []);
       setCheckins(((checkinsRes as any).data as CheckinRow[] | null) ?? []);
@@ -592,7 +601,7 @@ export default function PublicProfileView({ username }: { username: string }) {
         .eq("following_id", profile.user_id);
 
       if (error) {
-        alert(error.message);
+        alert(apiErrorText(error, "Islem basarisiz.", "Action failed."));
         return;
       }
 
@@ -612,7 +621,7 @@ export default function PublicProfileView({ username }: { username: string }) {
     });
 
     if (error) {
-      alert(error.message);
+      alert(apiErrorText(error, "Islem basarisiz.", "Action failed."));
       return;
     }
 
@@ -679,7 +688,7 @@ export default function PublicProfileView({ username }: { username: string }) {
         .eq("username", nextHandle)
         .maybeSingle();
       if (takenErr) {
-        alert(takenErr.message);
+        alert(apiErrorText(takenErr, "Handle kontrolu basarisiz.", "Handle validation failed."));
         return;
       }
       if (takenRow && String((takenRow as any).user_id || "") !== sessionUserId) {
@@ -693,7 +702,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       const { data: authData, error: authErr } = await supabase.auth.updateUser({ email: targetEmail });
       if (authErr) {
         setSavingProfile(false);
-        alert(authErr.message);
+        alert(apiErrorText(authErr, "E-posta guncellenemedi.", "E-mail could not be updated."));
         return;
       }
       finalEmail = (authData.user?.email || targetEmail).trim().toLowerCase();
@@ -737,7 +746,7 @@ export default function PublicProfileView({ username }: { username: string }) {
     }
     if (error) {
       setSavingProfile(false);
-      alert(error.message);
+      alert(apiErrorText(error, "Islem basarisiz.", "Action failed."));
       return;
     }
 
@@ -784,7 +793,7 @@ export default function PublicProfileView({ username }: { username: string }) {
         .from("avatars")
         .upload(uploadPath, prepared.blob, { upsert: true, contentType: "image/jpeg" });
       if (upErr) {
-        alert(upErr.message);
+        alert(apiErrorText(upErr, "Avatar yuklenemedi.", "Avatar upload failed."));
         return;
       }
       const { error: dbErr } = await supabase
@@ -792,7 +801,7 @@ export default function PublicProfileView({ username }: { username: string }) {
         .update({ avatar_path: uploadPath })
         .eq("user_id", sessionUserId);
       if (dbErr) {
-        alert(dbErr.message);
+        alert(apiErrorText(dbErr, "Profil avatari guncellenemedi.", "Profile avatar update failed."));
         return;
       }
       const queueRes = await supabase.rpc("queue_avatar_moderation", {
@@ -805,7 +814,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       setProfile((prev) => (prev ? { ...prev, avatar_path: uploadPath } : prev));
       trackEvent({ eventName: "avatar_uploaded", userId: sessionUserId, props: { path: uploadPath } });
     } catch (e: any) {
-      alert(e?.message || "Avatar islenemedi.");
+      alert(apiErrorText(e, "Avatar islenemedi.", "Avatar processing failed."));
     } finally {
       setAvatarUploading(false);
     }
@@ -821,7 +830,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       .eq("user_id", sessionUserId)
       .order("rank", { ascending: true });
     if (readErr) {
-      alert(readErr.message);
+      alert(apiErrorText(readErr, "Veri okunamadi.", "Data could not be read."));
       return;
     }
     const current = ((rows as FavoriteBeerRow[] | null) ?? []).map((f) => ({
@@ -869,7 +878,7 @@ export default function PublicProfileView({ username }: { username: string }) {
         setFavorites(refreshed);
         return;
       }
-      alert(error.message);
+      alert(apiErrorText(error, "Islem basarisiz.", "Action failed."));
       return;
     }
     setFavorites((prev) => {
@@ -887,7 +896,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       .eq("user_id", sessionUserId)
       .eq("rank", rank);
     if (error) {
-      alert(error.message);
+      alert(apiErrorText(error, "Islem basarisiz.", "Action failed."));
       return;
     }
     setFavorites((prev) => prev.filter((f) => Number(f.rank) !== rank));
@@ -966,7 +975,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       day_period: "evening",
     });
     if (error) {
-      alert(error.message);
+      alert(apiErrorText(error, "Islem basarisiz.", "Action failed."));
       return;
     }
     const refreshed = await fetchYearCheckins(sessionUserId, year);
@@ -989,7 +998,7 @@ export default function PublicProfileView({ username }: { username: string }) {
     const deleted = checkins.find((c) => String(c.id) === String(id));
     const { data, error } = await supabase.rpc("delete_own_checkin", { p_id: String(id) });
     if (error || data !== true) {
-      alert(error?.message || "Kayit bulunamadi.");
+      alert(apiErrorText(error || "Kayit bulunamadi.", "Kayit bulunamadi.", "Record not found."));
       return;
     }
     setCheckins((prev) => prev.filter((c) => c.id !== id));
@@ -1038,7 +1047,7 @@ export default function PublicProfileView({ username }: { username: string }) {
       .eq("id", payload.id)
       .eq("user_id", sessionUserId);
     if (error) {
-      alert(error.message);
+      alert(apiErrorText(error, "Islem basarisiz.", "Action failed."));
       return;
     }
     setCheckins((prev) =>
@@ -1063,7 +1072,7 @@ export default function PublicProfileView({ username }: { username: string }) {
     const { data, error } = await supabase.rpc("delete_my_account");
     if (error || data !== true) {
       setDeletingAccount(false);
-      alert(error?.message || tx(lang, "Hesap silme islemi basarisiz.", "Account deletion failed."));
+      alert(apiErrorText(error || "delete_my_account_failed", "Hesap silme islemi basarisiz.", "Account deletion failed."));
       return;
     }
     await supabase.auth.signOut();
@@ -1076,7 +1085,7 @@ export default function PublicProfileView({ username }: { username: string }) {
     const { data, error } = await supabase.rpc("export_my_data");
     setExportingData(false);
     if (error) {
-      alert(error.message || tx(lang, "Veri disa aktarma basarisiz.", "Data export failed."));
+      alert(apiErrorText(error, "Veri disa aktarma basarisiz.", "Data export failed."));
       return;
     }
     const payload = JSON.stringify(data ?? {}, null, 2);

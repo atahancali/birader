@@ -14,6 +14,7 @@ import BeerWheel from "@/components/BeerWheel";
 import FavoriteReplaceModal from "@/components/FavoriteReplaceModal";
 import LoadingPulse from "@/components/LoadingPulse";
 import RatingStars from "@/components/RatingStars";
+import { formatApiErrorText, normalizeApiError } from "@/lib/apiError";
 import { normalizeUsername, usernameFromEmail, usernameToCandidateEmails } from "@/lib/identity";
 import { bindGlobalErrorTracking, trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
@@ -985,6 +986,14 @@ export default function Home() {
         : ([] as string[]),
     [authIdentifier, authMode]
   );
+  const apiErrorText = (error: unknown, fallbackTr: string, fallbackEn: string) =>
+    formatApiErrorText(
+      normalizeApiError(error, {
+        lang,
+        fallbackTr,
+        fallbackEn,
+      })
+    );
 
   async function upsertComplianceProfile(userId: string, email: string, payload: {
     birthDate: string;
@@ -1078,7 +1087,7 @@ export default function Home() {
           if (msg.includes("rate limit")) {
             alert(tx(lang, "Cok sik kayit denemesi yapildi. 1-2 dakika bekleyip tekrar dene.", "Too many signup attempts. Wait 1-2 minutes and try again."));
           } else {
-            alert(error.message || tx(lang, "Kayit basarisiz.", "Signup failed."));
+            alert(apiErrorText(error, "Kayit basarisiz.", "Signup failed."));
           }
           return;
         }
@@ -1109,7 +1118,7 @@ export default function Home() {
           if (msg.includes("email not confirmed")) {
             alert(tx(lang, "Hesap olusturuldu. Giris icin e-postani dogrula.", "Account created. Confirm your e-mail to sign in."));
           } else {
-            alert(e2.message);
+            alert(apiErrorText(e2, "Giris basarisiz.", "Sign in failed."));
           }
         } else {
           const { data: s } = await supabase.auth.getSession();
@@ -1145,7 +1154,7 @@ export default function Home() {
         }
 
         if (!loggedIn && lastError) {
-          alert(lastError);
+          alert(apiErrorText(lastError, "Giris basarisiz.", "Sign in failed."));
         } else if (loggedIn) {
           trackEvent({
             eventName: "auth_success",
@@ -2240,7 +2249,7 @@ export default function Home() {
       .eq("user_id", session.user.id)
       .order("rank", { ascending: true });
     if (currentErr) {
-      alert(currentErr.message);
+      alert(apiErrorText(currentErr, "Favoriler yuklenemedi.", "Favorites could not be loaded."));
       return "noop";
     }
     const current = ((currentRows as FavoriteBeer[] | null) ?? []).map((f) => ({
@@ -2273,7 +2282,7 @@ export default function Home() {
           await loadFavorites();
           return "noop";
         }
-        alert(error.message);
+        alert(apiErrorText(error, "Favori ekleme basarisiz.", "Favorite add failed."));
         return "noop";
       }
 
@@ -2305,7 +2314,7 @@ export default function Home() {
         .eq("user_id", session.user.id)
         .order("rank", { ascending: true });
       if (currentErr) {
-        alert(currentErr.message);
+        alert(apiErrorText(currentErr, "Favoriler yuklenemedi.", "Favorites could not be loaded."));
         return;
       }
       const current = ((currentRows as FavoriteBeer[] | null) ?? []).map((f) => ({
@@ -2335,7 +2344,7 @@ export default function Home() {
           setFavoriteReplaceOptions([]);
           return;
         }
-        alert(error.message);
+        alert(apiErrorText(error, "Favori degistirme basarisiz.", "Favorite replace failed."));
         return;
       }
 
@@ -2512,7 +2521,7 @@ export default function Home() {
     });
     setSuggestionBusy(false);
     if (error) {
-      alert(`${tx(lang, "Oneri gonderilemedi", "Suggestion failed")}: ${error.message}`);
+      alert(apiErrorText(error, "Oneri gonderilemedi.", "Suggestion failed."));
       return;
     }
     trackEvent({
@@ -2535,7 +2544,7 @@ export default function Home() {
       .limit(200);
     setAdminSuggestionsBusy(false);
     if (error) {
-      alert(`Oneri listesi yuklenemedi: ${error.message}`);
+      alert(apiErrorText(error, "Oneri listesi yuklenemedi.", "Suggestion list could not be loaded."));
       return;
     }
 
@@ -2633,7 +2642,7 @@ export default function Home() {
     const { data, error } = await supabase.rpc("run_retention_nudges", { p_limit: 240 });
     setRetentionNudgeBusy(false);
     if (error) {
-      alert(`${tx(lang, "Retention nudge basarisiz", "Retention nudge failed")}: ${error.message}`);
+      alert(apiErrorText(error, "Retention nudge basarisiz.", "Retention nudge failed."));
       return;
     }
     setRetentionNudgeRows((data as RetentionNudgeRow[] | null) ?? []);
@@ -2784,7 +2793,7 @@ export default function Home() {
     const { error } = await supabase.rpc("refresh_all_user_badges");
     setBadgeRefreshBusy(false);
     if (error) {
-      alert(`${tx(lang, "Rozetler yenilenemedi", "Badges refresh failed")}: ${error.message}`);
+      alert(apiErrorText(error, "Rozetler yenilenemedi.", "Badges refresh failed."));
       return;
     }
     await loadMyBadges();
@@ -2851,7 +2860,7 @@ export default function Home() {
       .update({ status: nextStatus })
       .eq("id", id);
     if (error) {
-      alert(`${tx(lang, "Durum guncellenemedi", "Status update failed")}: ${error.message}`);
+      alert(apiErrorText(error, "Durum guncellenemedi.", "Status update failed."));
       return;
     }
     setAdminSuggestions((prev) => prev.map((r) => (r.id === id ? { ...r, status: nextStatus } : r)));
@@ -2993,7 +3002,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       await loadCheckins();
       return;
     }
-    alert(`${tx(lang, "Guncelleme basarisiz", "Update failed")}: ${error.message}`);
+    alert(apiErrorText(error, "Guncelleme basarisiz.", "Update failed."));
     return;
   }
 
@@ -4557,11 +4566,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             if (!guarded.ok && guarded.fallbackLegacy) {
               const legacyError = await insertLegacyCheckins([serverRow]);
               if (legacyError) {
-                alert(legacyError.message);
+                alert(apiErrorText(legacyError, "Kayit eklenemedi.", "Check-in could not be added."));
                 return;
               }
             } else if (!guarded.ok) {
-              alert(guarded.message);
+              alert(apiErrorText(guarded, "Kayit eklenemedi.", "Check-in could not be added."));
               return;
             }
 

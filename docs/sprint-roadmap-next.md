@@ -7,13 +7,13 @@ Bu dosya, tamamlanan 50-madde backlog sonrasi yeni faz icin uygulanacak sprint p
 - Kural: Her parca icin `build` yesil olmadan push yok
 - Durum alanlari: `todo` / `in-progress` / `done`
 
-## Sprint N1 - Stabilizasyon ve Guvenlik (in-progress)
+## Sprint N1 - Stabilizasyon ve Guvenlik (done)
 Hedef: Kritik akislarda regressionsiz calisan, izlenebilir temel.
 
-- [ ] `N1-01` Auth + log + profile + social icin E2E smoke seti (in-progress)
-- [ ] `N1-02` RLS policy audit checklist + eksik policy fixleri (todo)
-- [ ] `N1-03` Merkezi API hata modeli (`code`, `message`, `hint`) standardi (todo)
-- [ ] `N1-04` Hata/latency metrikleri icin admin kartlarinda threshold alarmi (todo)
+- [x] `N1-01` Auth + log + profile + social icin E2E smoke seti (done)
+- [x] `N1-02` RLS policy audit checklist + eksik policy fixleri (done)
+- [x] `N1-03` Merkezi API hata modeli (`code`, `message`, `hint`) standardi (done)
+- [x] `N1-04` Hata/latency metrikleri icin admin kartlarinda threshold alarmi (done)
 
 Push parcasi onerisi:
 1. Test altyapisi
@@ -22,6 +22,10 @@ Push parcasi onerisi:
 
 N1 notlari:
 - 2026-03-05: `N1-01` icin Playwright smoke altyapisi + auth/log/profile/social smoke senaryosu eklendi (ilk pass).
+- 2026-03-05: `N1-01` icin GitHub Action (`workflow_dispatch`) smoke pipeline eklendi.
+- 2026-03-05: `N1-02` icin `scripts/sql/n1_rls_audit.sql` ve `scripts/sql/n1_rls_minimum_fixes.sql` eklendi.
+- 2026-03-05: `N1-03` icin merkezi error modeli `src/lib/apiError.ts` ile Home/Social/Profile tarafina uygulandi.
+- 2026-03-05: `N1-04` icin Social admin kartina kritik/uyari threshold ozetleri eklendi.
 
 ## Sprint N2 - Performans (todo)
 Hedef: Sosyal panel ve heatmap ilk acilisini hizlandirmak.
