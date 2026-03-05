@@ -74,7 +74,7 @@ while (cells.length % 7 !== 0) cells.push(null);
 
 return (
   <div className="fixed inset-0 z-40 bg-black/80 backdrop-blur-md">
-    <div className="mx-auto max-w-md min-h-screen px-4 pt-6 pb-8 flex flex-col">
+    <div className="mx-auto max-w-md md:max-w-3xl lg:max-w-5xl min-h-screen px-4 pt-6 pb-8 flex flex-col">
 
       {/* HEADER */}
       <div className="flex items-center justify-between mb-6">

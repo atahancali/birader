@@ -192,14 +192,14 @@ export default function ConnectionsView() {
 
   if (loading) {
     return (
-      <main className="min-h-screen max-w-md mx-auto p-4 pb-24">
+      <main className="min-h-screen max-w-md md:max-w-3xl lg:max-w-5xl mx-auto p-4 pb-24">
         <LoadingPulse lang={lang} labelTr="Baglantilar yukleniyor..." labelEn="Loading connections..." />
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen max-w-md mx-auto p-4 pb-24">
+    <main className="min-h-screen max-w-md md:max-w-3xl lg:max-w-5xl mx-auto p-4 pb-24">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-xs opacity-70">{tx(lang, "Sosyal", "Social")}</div>
@@ -311,4 +311,3 @@ export default function ConnectionsView() {
     </main>
   );
 }
-

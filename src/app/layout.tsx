@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import ComplianceLayer from "@/components/ComplianceLayer";
 import GlobalBottomNav from "@/components/GlobalBottomNav";
 import HealthNoticeBar from "@/components/HealthNoticeBar";
+import InstallPromptBar from "@/components/InstallPromptBar";
 import SiteFooter from "@/components/SiteFooter";
 import "./globals.css";
 
@@ -50,6 +51,7 @@ export default function RootLayout({
         <ComplianceLayer />
         <div className="flex min-h-screen flex-col">
           <HealthNoticeBar />
+          <InstallPromptBar />
           <div className="flex-1">{children}</div>
           <SiteFooter />
           <GlobalBottomNav />

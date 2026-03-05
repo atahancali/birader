@@ -85,8 +85,8 @@ Hedef: yeni kullanici akisinda tekrar eden sikintilari kapatmak ve metin/tasarim
 ## Sprint 7 (Platform + Dagitim)
 Hedef: cihaz gecislerinde deneyimi ve ulasim kabiliyetini arttirmak.
 
-- [ ] `#47` Mobil/Desktop/App icin breakpoint tabanli layout matrisi (`M`, `todo`)
-- [ ] `#48` PWA install banner + app deep-link akisi (`M`, `todo`)
+- [x] `#47` Mobil/Desktop/App icin breakpoint tabanli layout matrisi (`M`, `done`)
+- [x] `#48` PWA install banner + app deep-link akisi (`M`, `done`)
 - [ ] `#07` `social_perf_daily` icin haftalik trend view (`S`, `todo`)
 
 ## Sprint 8 (Uyumluluk + Admin Operasyon)
@@ -97,6 +97,6 @@ Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 
 ## Yurutme Notu
 - Aktif sprint: `Sprint 7`
-- Aktif paket: `#47 + #48`
+- Aktif paket: `#07`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.

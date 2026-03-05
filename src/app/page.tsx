@@ -3188,7 +3188,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
   if (!session) {
     return (
-      <main className={`app-shell min-h-screen p-4 max-w-md mx-auto ${theme === "light" ? "light-ui" : "dark-ui"}`}>
+      <main className={`app-shell min-h-screen p-4 max-w-md md:max-w-3xl lg:max-w-5xl mx-auto ${theme === "light" ? "light-ui" : "dark-ui"}`}>
         <div className="mb-2 flex items-center justify-end gap-1">
           <button
             type="button"
@@ -3396,7 +3396,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
   }
 
   return (
-    <main className={`app-shell min-h-screen p-4 pb-24 max-w-md mx-auto ${theme === "light" ? "light-ui" : "dark-ui"}`}>
+    <main className={`app-shell min-h-screen p-4 pb-24 max-w-md md:max-w-3xl lg:max-w-5xl mx-auto ${theme === "light" ? "light-ui" : "dark-ui"}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <Image src="/favicon.svg" alt="Birader" width={28} height={28} className="rounded-md" />

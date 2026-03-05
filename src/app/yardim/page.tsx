@@ -7,7 +7,7 @@ import { tx } from "@/lib/i18n";
 export default function HelpPage() {
   const { lang, setLang } = useAppLang("tr");
   return (
-    <main className="min-h-screen max-w-md mx-auto p-4 pb-24">
+    <main className="min-h-screen max-w-md md:max-w-3xl lg:max-w-5xl mx-auto p-4 pb-24">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">{tx(lang, "Birader Yardım", "Birader Help")}</h1>
         <div className="flex items-center gap-1">
@@ -36,8 +36,15 @@ export default function HelpPage() {
         <div className="mt-1 text-sm opacity-85">
           {tx(
             lang,
-            "iOS/Android uygulama linkleri ve web app kurulumu icin gecici alan.",
-            "Temporary area for iOS/Android app links and web app install."
+            "iOS/Android magaza linkleri ve web app (PWA) kurulum yonlendirmeleri.",
+            "iOS/Android store links and web app (PWA) install guidance."
+          )}
+        </div>
+        <div className="mt-2 text-xs opacity-75">
+          {tx(
+            lang,
+            "Safari: Paylas > Ana Ekrana Ekle. Android/Chrome: acilan kurulum onerisi ile tek tik kurulum.",
+            "Safari: Share > Add to Home Screen. Android/Chrome: one-tap install via install prompt."
           )}
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
