@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { AppLang } from "@/lib/i18n";
 
 type CheckinGeo = {
@@ -16,7 +16,7 @@ type DistrictCount = { district: string; count: number };
 type PairCount = { key: string; city: string; district: string; count: number };
 
 export default function GeoHeatmap({ year, checkins, lang = "tr" }: { year: number; checkins: CheckinGeo[]; lang?: AppLang }) {
-  const [mode, setMode] = useState<"city" | "district">("city");
+  const [layer, setLayer] = useState<"city" | "district" | "pair">("city");
   const cityCounts = useMemo<CityCount[]>(() => {
     const map = new Map<string, number>();
     for (const c of checkins) {
@@ -34,6 +34,16 @@ export default function GeoHeatmap({ year, checkins, lang = "tr" }: { year: numb
   const [activeCity, setActiveCity] = useState<string>("");
 
   const selectedCity = activeCity || cityCounts[0]?.city || "";
+
+  useEffect(() => {
+    if (!cityCounts.length) {
+      setActiveCity("");
+      return;
+    }
+    if (!activeCity || !cityCounts.some((c) => c.city === activeCity)) {
+      setActiveCity(cityCounts[0].city);
+    }
+  }, [activeCity, cityCounts]);
 
   const districtCounts = useMemo<DistrictCount[]>(() => {
     if (!selectedCity) return [];
@@ -79,22 +89,29 @@ export default function GeoHeatmap({ year, checkins, lang = "tr" }: { year: numb
       <div className="mb-2 flex items-center justify-between gap-2">
         <div>
           <div className="text-sm opacity-80">{lang === "en" ? "Turkey location heatmap" : "Turkiye konum isi haritasi"}</div>
-          <div className="text-xs opacity-60">{lang === "en" ? `City/district log density (${year})` : `Sehir/ilce bazli log yogunlugu (${year})`}</div>
+          <div className="text-xs opacity-60">{lang === "en" ? `City/district layer density (${year})` : `Sehir/ilce katman yogunlugu (${year})`}</div>
         </div>
         <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-black/25 p-1">
           <button
             type="button"
-            onClick={() => setMode("city")}
-            className={`rounded-md px-2 py-1 text-[11px] ${mode === "city" ? "bg-white/15" : "bg-black/20"}`}
+            onClick={() => setLayer("city")}
+            className={`rounded-md px-2 py-1 text-[11px] ${layer === "city" ? "bg-white/15" : "bg-black/20"}`}
           >
             {lang === "en" ? "City" : "Sehir"}
           </button>
           <button
             type="button"
-            onClick={() => setMode("district")}
-            className={`rounded-md px-2 py-1 text-[11px] ${mode === "district" ? "bg-white/15" : "bg-black/20"}`}
+            onClick={() => setLayer("district")}
+            className={`rounded-md px-2 py-1 text-[11px] ${layer === "district" ? "bg-white/15" : "bg-black/20"}`}
           >
             {lang === "en" ? "District" : "Ilce"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setLayer("pair")}
+            className={`rounded-md px-2 py-1 text-[11px] ${layer === "pair" ? "bg-white/15" : "bg-black/20"}`}
+          >
+            {lang === "en" ? "Pair" : "Il/Ilce"}
           </button>
         </div>
       </div>
@@ -105,7 +122,7 @@ export default function GeoHeatmap({ year, checkins, lang = "tr" }: { year: numb
         </div>
       ) : (
         <>
-          {mode === "city" ? (
+          {layer === "city" ? (
             <>
               <div className="mb-2 text-xs opacity-70">{lang === "en" ? "Cities" : "Sehir"}: {cityCounts.length}</div>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -135,30 +152,49 @@ export default function GeoHeatmap({ year, checkins, lang = "tr" }: { year: numb
                   );
                 })}
               </div>
-
-              <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
-                <div className="text-xs opacity-75">{selectedCity} {lang === "en" ? "district distribution" : "ilce dagilimi"}</div>
-                <div className="mt-2 space-y-2">
-                  {districtCounts.slice(0, 10).map((d) => (
-                    <div key={d.district}>
-                      <div className="mb-1 flex items-center justify-between text-xs">
-                        <span className="truncate pr-2">{d.district}</span>
-                        <span className="opacity-70">{d.count}</span>
-                      </div>
-                      <div className="h-2 rounded-full bg-white/10">
-                        <div
-                          className="h-2 rounded-full bg-amber-300/80"
-                          style={{ width: `${Math.max(6, (d.count / districtMax) * 100)}%` }}
-                        />
+            </>
+          ) : layer === "district" ? (
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-xs opacity-70">{lang === "en" ? "Selected city" : "Secili sehir"}:</div>
+                <select
+                  value={selectedCity}
+                  onChange={(e) => setActiveCity(e.target.value)}
+                  className="rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs outline-none"
+                >
+                  {cityCounts.map((row) => (
+                    <option key={`geo-city-${row.city}`} value={row.city}>
+                      {row.city}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {districtCounts.slice(0, 18).map((d) => {
+                  const intensity = d.count / districtMax;
+                  return (
+                    <div
+                      key={`${selectedCity}-${d.district}`}
+                      className="rounded-xl border border-white/10 bg-black/30 px-3 py-2"
+                      style={{
+                        boxShadow: `inset 0 0 ${6 + intensity * 18}px rgba(245,158,11,${0.08 + intensity * 0.26})`,
+                      }}
+                      title={`${selectedCity} / ${d.district} • ${d.count} ${lang === "en" ? "logs" : "log"}`}
+                    >
+                      <div className="truncate text-xs font-semibold">{d.district}</div>
+                      <div className="mt-1 text-[11px] opacity-70">
+                        {d.count} {lang === "en" ? "logs" : "log"}
                       </div>
                     </div>
-                  ))}
-                  {!districtCounts.length ? (
-                    <div className="text-xs opacity-60">{lang === "en" ? "No district data for this city." : "Bu sehir icin ilce verisi yok."}</div>
-                  ) : null}
-                </div>
+                  );
+                })}
               </div>
-            </>
+              {!districtCounts.length ? (
+                <div className="mt-2 text-xs opacity-60">
+                  {lang === "en" ? "No district data for this city." : "Bu sehir icin ilce verisi yok."}
+                </div>
+              ) : null}
+            </div>
           ) : (
             <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
               <div className="mb-2 text-xs opacity-75">{lang === "en" ? "Top city/district pairs" : "Top il/ilce kombinasyonlari"}</div>

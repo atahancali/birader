@@ -472,6 +472,34 @@ function normalizeTR(input: string) {
     .trim();
 }
 
+function boundedLevenshtein(aRaw: string, bRaw: string, maxDistance = 2) {
+  const a = normalizeTR(aRaw).slice(0, 64);
+  const b = normalizeTR(bRaw).slice(0, 64);
+  if (!a || !b) return maxDistance + 1;
+  if (Math.abs(a.length - b.length) > maxDistance) return maxDistance + 1;
+  if (a === b) return 0;
+
+  const cols = b.length + 1;
+  let prev = Array.from({ length: cols }, (_, i) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    const curr = new Array<number>(cols);
+    curr[0] = i;
+    let minRow = curr[0];
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + cost
+      );
+      if (curr[j] < minRow) minRow = curr[j];
+    }
+    if (minRow > maxDistance) return maxDistance + 1;
+    prev = curr;
+  }
+  return prev[b.length];
+}
+
 function looksLikeEmail(input: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.trim().toLowerCase());
 }
@@ -2251,6 +2279,17 @@ export default function Home() {
         else if (full.includes(q)) score += 20;
         if (cityOnly.startsWith(q) || districtOnly.startsWith(q)) score += 24;
         else if (cityOnly.includes(q) || districtOnly.includes(q)) score += 12;
+
+        // typo tolerance: single/double edit distance (e.g. kadikpy -> kadikoy)
+        if (q.length >= 3) {
+          const maxDist = q.length >= 6 ? 2 : 1;
+          const cityDist = boundedLevenshtein(q, cityOnly, maxDist);
+          const districtDist = boundedLevenshtein(q, districtOnly, maxDist);
+          const fullDist = boundedLevenshtein(q, full, maxDist);
+          const best = Math.min(cityDist, districtDist, fullDist);
+          if (best <= 1) score += 22;
+          else if (best === 2) score += 12;
+        }
         return { ...r, score };
       })
       .sort((a, b) => b.score - a.score)
@@ -3691,7 +3730,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   <input
                     value={locationSuggestQuery}
                     onChange={(e) => setLocationSuggestQuery(e.target.value)}
-                    placeholder={tx(lang, "Il/ilce onerisi ara (orn: kadikoy, besiktas)", "Search city/district suggestion (e.g. kadikoy, besiktas)")}
+                    placeholder={tx(
+                      lang,
+                      "Il/ilce onerisi ara (typo toleransli, orn: kadikpy, besiktaz)",
+                      "Search city/district suggestion (typo-tolerant, e.g. kadikpy, besiktaz)"
+                    )}
                     className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
                   />
                   <div className="mt-2 flex flex-wrap gap-2">
