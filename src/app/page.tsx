@@ -668,6 +668,58 @@ function StarIcon({ fillRatio, id }: { fillRatio: 0 | 0.5 | 1; id: string }) {
   );
 }
 
+function FormatDraftIcon({ active }: { active: boolean }) {
+  return (
+    <div className="relative h-16 w-11">
+      <div
+        className={`absolute inset-0 overflow-hidden border bg-gradient-to-b from-white/12 via-white/5 to-white/0 ${
+          active ? "border-amber-200/60 shadow-[0_0_16px_rgba(245,158,11,0.35)]" : "border-white/30"
+        }`}
+        style={{ clipPath: "polygon(22% 2%, 78% 2%, 92% 98%, 8% 98%)" }}
+      >
+        <div
+          className="absolute inset-x-[8%] bottom-[4%] rounded-b-[9px]"
+          style={{
+            height: active ? "70%" : "58%",
+            background:
+              "linear-gradient(180deg, rgba(252,211,77,0.95) 0%, rgba(245,158,11,0.88) 48%, rgba(180,83,9,0.9) 100%)",
+          }}
+        />
+        <div className="absolute inset-x-[10%] h-[8%] rounded-b-sm bg-gradient-to-b from-amber-50/95 via-amber-100/85 to-transparent" style={{ bottom: active ? "67%" : "55%" }} />
+      </div>
+      <div className="absolute bottom-[1px] left-1/2 h-[4px] w-[64%] -translate-x-1/2 rounded-full bg-white/18" />
+    </div>
+  );
+}
+
+function FormatBottleIcon({ active }: { active: boolean }) {
+  return (
+    <div className="relative h-16 w-11">
+      <div
+        className={`absolute left-1/2 top-0 h-5 w-[11px] -translate-x-1/2 rounded-t-md border border-b-0 ${
+          active ? "border-amber-200/55 bg-amber-100/15" : "border-white/35 bg-white/5"
+        }`}
+      />
+      <div
+        className={`absolute left-1/2 top-3 h-[50px] w-8 -translate-x-1/2 overflow-hidden rounded-b-[11px] rounded-t-[6px] border ${
+          active ? "border-amber-200/60 shadow-[0_0_16px_rgba(245,158,11,0.35)]" : "border-white/30"
+        } bg-gradient-to-b from-white/12 via-white/5 to-white/0`}
+      >
+        <div
+          className="absolute inset-x-[10%] bottom-[4%] rounded-b-[8px]"
+          style={{
+            height: active ? "68%" : "56%",
+            background:
+              "linear-gradient(180deg, rgba(252,211,77,0.95) 0%, rgba(245,158,11,0.88) 48%, rgba(180,83,9,0.9) 100%)",
+          }}
+        />
+        <div className="absolute inset-x-[14%] h-[8%] rounded-b-sm bg-gradient-to-b from-amber-50/95 via-amber-100/85 to-transparent" style={{ bottom: active ? "65%" : "53%" }} />
+      </div>
+      <div className="absolute left-1/2 top-[2px] h-[2px] w-[8px] -translate-x-1/2 rounded-full bg-white/45" />
+    </div>
+  );
+}
+
 function StarRatingHalf({
   value,
   onChange,
@@ -3732,19 +3784,30 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         {logStep === 1 ? (
           <div>
             <div className="mb-2 text-xs opacity-70">{tx(lang, "Sunum tarzini sec", "Choose serving style")}</div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <button
                 type="button"
                 onClick={() => {
                   setFormat("Fici");
                   setFormatConfirmed(true);
                 }}
-                className={`rounded-3xl border p-4 text-left ${
-                  format === "Fici" ? "border-amber-300/35 bg-amber-500/10" : "border-white/10 bg-black/20"
+                className={`group relative overflow-hidden rounded-3xl border p-4 text-left transition-all duration-200 hover:-translate-y-0.5 ${
+                  format === "Fici"
+                    ? "border-amber-300/40 bg-gradient-to-br from-amber-500/22 via-amber-500/10 to-black/30"
+                    : "border-white/10 bg-black/20 hover:border-white/20"
                 }`}
               >
-                <div className="text-lg font-semibold">{tx(lang, "Fici", "Draft")}</div>
-                <div className="mt-1 text-xs opacity-70">{tx(lang, "Bar / draft deneyimi", "Bar / draft experience")}</div>
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_85%_20%,rgba(251,191,36,0.22),transparent_55%)] opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+                <div className="relative flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-lg font-semibold">{tx(lang, "Fici", "Draft")}</div>
+                    <div className="mt-1 text-xs opacity-75">{tx(lang, "Bar / draft deneyimi", "Bar / draft experience")}</div>
+                    <div className="mt-2 inline-flex items-center rounded-full border border-white/15 bg-black/25 px-2 py-0.5 text-[10px] opacity-80">
+                      {tx(lang, "Bardak sunum", "Glass service")}
+                    </div>
+                  </div>
+                  <FormatDraftIcon active={format === "Fici"} />
+                </div>
               </button>
               <button
                 type="button"
@@ -3752,12 +3815,23 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   setFormat("Şişe/Kutu");
                   setFormatConfirmed(true);
                 }}
-                className={`rounded-3xl border p-4 text-left ${
-                  format === "Şişe/Kutu" ? "border-amber-300/35 bg-amber-500/10" : "border-white/10 bg-black/20"
+                className={`group relative overflow-hidden rounded-3xl border p-4 text-left transition-all duration-200 hover:-translate-y-0.5 ${
+                  format === "Şişe/Kutu"
+                    ? "border-amber-300/40 bg-gradient-to-br from-amber-500/22 via-amber-500/10 to-black/30"
+                    : "border-white/10 bg-black/20 hover:border-white/20"
                 }`}
               >
-                <div className="text-lg font-semibold">{tx(lang, "Sise / Kutu", "Bottle / Can")}</div>
-                <div className="mt-1 text-xs opacity-70">{tx(lang, "Market / paket secimleri", "Market / package options")}</div>
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_85%_20%,rgba(251,191,36,0.22),transparent_55%)] opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+                <div className="relative flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-lg font-semibold">{tx(lang, "Sise / Kutu", "Bottle / Can")}</div>
+                    <div className="mt-1 text-xs opacity-75">{tx(lang, "Market / paket secimleri", "Market / package options")}</div>
+                    <div className="mt-2 inline-flex items-center rounded-full border border-white/15 bg-black/25 px-2 py-0.5 text-[10px] opacity-80">
+                      {tx(lang, "Sisede servis", "Bottle service")}
+                    </div>
+                  </div>
+                  <FormatBottleIcon active={format === "Şişe/Kutu"} />
+                </div>
               </button>
             </div>
           </div>
