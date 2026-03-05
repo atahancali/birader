@@ -2733,6 +2733,11 @@ export default function SocialPanel({
       setFeedMinRating(0);
       setFeedFormat("all");
       setFeedOnlyMyCity(false);
+      trackEvent({
+        eventName: "social_feed_preset_applied",
+        userId,
+        props: { preset: "discover", scope: "all", window: "24h", minRating: 0, format: "all", onlyMyCity: false },
+      });
       return;
     }
     if (preset === "following") {
@@ -2741,6 +2746,11 @@ export default function SocialPanel({
       setFeedMinRating(0);
       setFeedFormat("all");
       setFeedOnlyMyCity(false);
+      trackEvent({
+        eventName: "social_feed_preset_applied",
+        userId,
+        props: { preset: "following", scope: "following", window: "7d", minRating: 0, format: "all", onlyMyCity: false },
+      });
       return;
     }
     setFeedScope("all");
@@ -2748,6 +2758,11 @@ export default function SocialPanel({
     setFeedMinRating(3.5);
     setFeedFormat("all");
     setFeedOnlyMyCity(false);
+    trackEvent({
+      eventName: "social_feed_preset_applied",
+      userId,
+      props: { preset: "quality", scope: "all", window: "7d", minRating: 3.5, format: "all", onlyMyCity: false },
+    });
   }
 
   useEffect(() => {

@@ -46,18 +46,24 @@ N2 notlari:
 - 2026-03-05: `FieldHeatmap` yil-grid/day-stats hesaplari `useMemo` ile stabilize edildi, hover render maliyeti dustu.
 - 2026-03-05: `scripts/sql/n2_feed_perf.sql` eklendi (index + analyze + explain paket).
 
-## Sprint N3 - Growth ve Retention (todo)
+## Sprint N3 - Growth ve Retention (done)
 Hedef: Kullanici geri donus ve haftalik aktifligi artirmak.
 
-- [ ] `N3-01` Haftalik recap strip + trend KPI (todo)
-- [ ] `N3-02` Rozet ilerleme paneli (`hedefe kalan`) (todo)
-- [ ] `N3-03` Inaktif kullanici win-back bildirimleri (3/7 gun) (todo)
-- [ ] `N3-04` Social feed kalite filtreleri (gorev odakli) (todo)
+- [x] `N3-01` Haftalik recap strip + trend KPI (done)
+- [x] `N3-02` Rozet ilerleme paneli (`hedefe kalan`) (done)
+- [x] `N3-03` Inaktif kullanici win-back bildirimleri (3/7 gun) (done)
+- [x] `N3-04` Social feed kalite filtreleri (gorev odakli) (done)
 
 Push parcasi onerisi:
 1. Recap + rozet ilerleme
 2. Bildirim kurallari
 3. A/B metrik tagleme
+
+N3 notlari:
+- 2026-03-05: Haftalik recap/mission KPI kartlari ve sosyal ticker akisi standart deneyime alindi.
+- 2026-03-05: Rozet ilerleme paneli (hedefe kalan) sosyal panelde kalici hale getirildi.
+- 2026-03-05: `run_retention_nudges` icin admin auto-run (6 saat throttled) eklendi; 3/7 gun win-back tetikleri periyodik isleniyor.
+- 2026-03-05: Sosyal feed preset (kesfet/takip/kaliteli) secimlerine event-tag eklendi.
 
 ## Sprint N4 - Sosyal Derinlesme (todo)
 Hedef: Feed etkileşimini ve takip iliskisini kuvvetlendirmek.

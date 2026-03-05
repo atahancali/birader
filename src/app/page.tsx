@@ -221,6 +221,8 @@ const OFFLINE_LOG_QUEUE_KEY = "birader:offline-log-queue:v1";
 const TUTORIAL_DONE_KEY = "birader:tutorial-done:v1";
 const THEME_KEY = "birader:theme:v1";
 const BUG_BASH_KEY = "birader:admin-bugbash:v1";
+const RETENTION_NUDGE_AUTO_KEY = "birader:retention-nudge-auto:v1";
+const RETENTION_NUDGE_AUTO_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const CHECKINS_SELECT_WITH_MEDIA =
   "id, beer_name, rating, created_at, day_period, country_code, city, district, location_text, price_try, note, latitude, longitude, media_url, media_type";
 const CHECKINS_SELECT_BASE =
@@ -1810,6 +1812,7 @@ export default function Home() {
       void loadAdminSuggestions();
       void loadAdminReports();
       void loadAdminAnalyticsPanel();
+      void runRetentionNudgesAuto();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canManageSuggestions]);
@@ -2646,6 +2649,59 @@ export default function Home() {
       return;
     }
     setRetentionNudgeRows((data as RetentionNudgeRow[] | null) ?? []);
+    await loadAdminAnalyticsPanel();
+  }
+
+  function retentionAutoStampKey(userId: string) {
+    return `${RETENTION_NUDGE_AUTO_KEY}:${userId}`;
+  }
+
+  function canRunRetentionNudgesAuto(userId: string) {
+    if (typeof window === "undefined") return false;
+    try {
+      const raw = localStorage.getItem(retentionAutoStampKey(userId));
+      if (!raw) return true;
+      const lastRunAt = Number(raw);
+      if (!Number.isFinite(lastRunAt) || lastRunAt <= 0) return true;
+      return Date.now() - lastRunAt >= RETENTION_NUDGE_AUTO_INTERVAL_MS;
+    } catch {
+      return true;
+    }
+  }
+
+  function markRetentionNudgesAutoRun(userId: string) {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(retentionAutoStampKey(userId), String(Date.now()));
+    } catch {}
+  }
+
+  async function runRetentionNudgesAuto() {
+    const uid = session?.user?.id;
+    if (!uid || !canManageSuggestions || retentionNudgeBusy) return;
+    if (!canRunRetentionNudgesAuto(uid)) return;
+    markRetentionNudgesAutoRun(uid);
+
+    setRetentionNudgeBusy(true);
+    const { data, error } = await supabase.rpc("run_retention_nudges", { p_limit: 240 });
+    setRetentionNudgeBusy(false);
+
+    if (error) {
+      trackEvent({
+        eventName: "retention_nudges_auto_error",
+        userId: uid,
+        props: { message: String(error.message || "unknown") },
+      });
+      return;
+    }
+
+    const rows = (data as RetentionNudgeRow[] | null) ?? [];
+    if (rows.length) setRetentionNudgeRows(rows);
+    trackEvent({
+      eventName: "retention_nudges_auto_run",
+      userId: uid,
+      props: { summary: rows.map((r) => `${r.kind}:${r.sent_count}`).join(",") },
+    });
     await loadAdminAnalyticsPanel();
   }
 
