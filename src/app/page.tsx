@@ -680,14 +680,16 @@ function FormatBottleIcon({ active }: { active: boolean }) {
     <div className={`h-16 w-11 ${active ? "text-white/55" : "text-white/35"}`}>
       <svg viewBox="0 0 52 72" className="h-full w-full" aria-hidden="true">
         <path
-          d="M22 6 H30 V11 C30 12.6 30.9 14.1 32.2 15.3 L33.8 16.9 C35.3 18.3 36.1 20.2 36.1 22.2 V60.2 C36.1 63.9 33.2 67 29.5 67 H22.5 C18.8 67 15.9 63.9 15.9 60.2 V22.2 C15.9 20.2 16.7 18.3 18.2 16.9 L19.8 15.3 C21.1 14.1 22 12.6 22 11 Z"
+          d="M23 5 H29 V9.8 C29 10.8 29.5 11.8 30.4 12.6 L32.1 14.1 C33.9 15.7 35 18 35 20.4 V58.6 C35 62.7 31.7 66 27.6 66 H24.4 C20.3 66 17 62.7 17 58.6 V20.4 C17 18 18.1 15.7 19.9 14.1 L21.6 12.6 C22.5 11.8 23 10.8 23 9.8 Z"
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
           strokeLinejoin="round"
         />
-        <path d="M22.5 11 H29.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        <path d="M19.5 39.5 H32.5" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
+        <path d="M22.6 9.8 H29.4" fill="none" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" />
+        <path d="M20.2 33.5 H31.8" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        <path d="M20.2 37.7 H31.8" fill="none" stroke="currentColor" strokeWidth="1.15" strokeLinecap="round" />
+        <path d="M21.2 61.3 H30.8" fill="none" stroke="currentColor" strokeWidth="1.15" strokeLinecap="round" opacity="0.9" />
       </svg>
     </div>
   );
