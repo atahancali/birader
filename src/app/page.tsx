@@ -4795,16 +4795,9 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       <path d={bodyPath} fill={`url(#${shineId})`} />
                     </g>
 
-                    <ellipse cx="50" cy="14" rx="31.5" ry="4.1" fill="none" stroke="rgba(255,255,255,0.46)" strokeWidth="1.2" />
-                    <ellipse cx="50" cy="14" rx="27" ry="2.4" fill="rgba(255,255,255,0.11)" />
-                    <path
-                      d="M22 151 Q50 148 78 151 L75 158 Q50 160 25 158 Z"
-                      fill="rgba(255,255,255,0.2)"
-                      stroke="rgba(255,255,255,0.24)"
-                      strokeWidth="0.7"
-                    />
-                    <ellipse cx="50" cy="152.8" rx="20.5" ry="2.8" fill="rgba(20,20,20,0.24)" />
-                    <ellipse cx="50" cy="153.1" rx="16.5" ry="1.7" fill="rgba(255,255,255,0.22)" />
+                    <path d="M24 14 Q50 11.5 76 14" stroke="rgba(255,255,255,0.45)" strokeWidth="1.1" fill="none" />
+                    <path d="M27 150 Q50 152.4 73 150" stroke="rgba(255,255,255,0.26)" strokeWidth="1.05" fill="none" />
+                    <ellipse cx="50" cy="154.3" rx="18.8" ry="2.1" fill="rgba(20,20,20,0.2)" />
                   </svg>
                 </div>
 
