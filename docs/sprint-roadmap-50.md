@@ -69,8 +69,8 @@ Hedef: profile, takip ve bildirim akisini daha net ve guvenli hale getirmek.
 - [x] `#36` "Seni takip ediyor" etiketini profil + listede ortaklastirma (`S`, `done`)
 - [x] `#37` Kimlik modelini netlestirme (`login_username/display_name/handle`) (`L`, `done`)
 - [x] `#38` Nick degisim gecmisini kullaniciya gorunur yapma (`S`, `done`)
-- [ ] `#39` Avatar upload size/format kontrol + otomatik sikistirma (`M`, `todo`)
-- [ ] `#40` Avatar moderasyon hatti (basit NSFW/abuse) (`M`, `todo`)
+- [x] `#39` Avatar upload size/format kontrol + otomatik sikistirma (`M`, `done`)
+- [x] `#40` Avatar moderasyon hatti (basit NSFW/abuse) (`M`, `done`)
 
 ## Sprint 6 (Onboarding + I18N + Tasarim Tutarliligi)
 Hedef: yeni kullanici akisinda tekrar eden sikintilari kapatmak ve metin/tasarim kalitesini arttirmak.
@@ -97,6 +97,6 @@ Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 
 ## Yurutme Notu
 - Aktif sprint: `Sprint 3`
-- Aktif paket: `#39 + #40`
+- Aktif paket: `#41 + #42`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.

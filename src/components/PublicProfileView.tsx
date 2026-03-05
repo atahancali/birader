@@ -13,6 +13,7 @@ import { supabase } from "@/lib/supabase";
 import { normalizeUsername, usernameFromEmail } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
 import { favoriteBeerName } from "@/lib/beer";
+import { prepareAvatarUpload } from "@/lib/avatar";
 import { dayPeriodLabelEn, dayPeriodLabelTr, type DayPeriod } from "@/lib/dayPeriod";
 import { HEATMAP_PALETTES } from "@/lib/heatmapTheme";
 import { badgeMetaForKey } from "@/lib/badgeMeta";
@@ -369,26 +370,6 @@ export default function PublicProfileView({ username }: { username: string }) {
     if (!clean) return "";
     const { data } = supabase.storage.from("avatars").getPublicUrl(clean);
     return data.publicUrl;
-  }
-
-  async function fileToJpegBlob(file: File) {
-    const bitmap = await createImageBitmap(file);
-    const maxSide = 512;
-    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-    const w = Math.max(1, Math.round(bitmap.width * scale));
-    const h = Math.max(1, Math.round(bitmap.height * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Gorsel islenemedi.");
-    ctx.drawImage(bitmap, 0, 0, w, h);
-    bitmap.close();
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.9)
-    );
-    if (!blob) throw new Error("Gorsel donusturulemedi.");
-    return blob;
   }
 
   useEffect(() => {
@@ -788,22 +769,17 @@ export default function PublicProfileView({ username }: { username: string }) {
 
   async function onAvatarFileChange(file?: File) {
     if (!file || !sessionUserId || !isOwnProfile) return;
-    const type = (file.type || "").toLowerCase();
-    if (!["image/jpeg", "image/png", "image/webp"].includes(type)) {
-      alert("Sadece JPG, PNG veya WebP yukleyebilirsin.");
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      alert("Avatar en fazla 2MB olabilir.");
+    const prepared = await prepareAvatarUpload(file);
+    if (!prepared.ok) {
+      alert(lang === "en" ? prepared.errorEn : prepared.errorTr);
       return;
     }
     try {
       setAvatarUploading(true);
-      const blob = await fileToJpegBlob(file);
       const uploadPath = `${sessionUserId}/avatar.jpg`;
       const { error: upErr } = await supabase.storage
         .from("avatars")
-        .upload(uploadPath, blob, { upsert: true, contentType: "image/jpeg" });
+        .upload(uploadPath, prepared.blob, { upsert: true, contentType: "image/jpeg" });
       if (upErr) {
         alert(upErr.message);
         return;
@@ -816,7 +792,15 @@ export default function PublicProfileView({ username }: { username: string }) {
         alert(dbErr.message);
         return;
       }
+      const queueRes = await supabase.rpc("queue_avatar_moderation", {
+        p_avatar_path: uploadPath,
+        p_flags: prepared.moderationFlags as any,
+      });
+      if (queueRes.error && !isMissingRpcFunctionError(queueRes.error, "queue_avatar_moderation")) {
+        console.error("queue_avatar_moderation failed:", queueRes.error.message);
+      }
       setProfile((prev) => (prev ? { ...prev, avatar_path: uploadPath } : prev));
+      trackEvent({ eventName: "avatar_uploaded", userId: sessionUserId, props: { path: uploadPath } });
     } catch (e: any) {
       alert(e?.message || "Avatar islenemedi.");
     } finally {

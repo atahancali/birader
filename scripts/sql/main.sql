@@ -137,6 +137,21 @@ create table if not exists public.custom_beer_moderation_queue (
   constraint custom_beer_queue_raw_non_empty check (length(trim(raw_input)) > 0)
 );
 
+create table if not exists public.avatar_moderation_queue (
+  id bigserial primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  avatar_path text not null,
+  status text not null default 'pending',
+  flags jsonb not null default '{}'::jsonb,
+  reviewed_by uuid null references auth.users(id) on delete set null,
+  reviewed_at timestamptz,
+  review_note text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint avatar_moderation_status_check check (status in ('pending', 'approved', 'rejected')),
+  constraint avatar_moderation_avatar_path_non_empty check (length(trim(avatar_path)) > 0)
+);
+
 create or replace function public.parse_beer_label_parts(p_label text)
 returns table(
   brand text,
@@ -224,6 +239,11 @@ create index if not exists idx_custom_beer_queue_status_created_at on public.cus
 create index if not exists idx_custom_beer_queue_normalized on public.custom_beer_moderation_queue (normalized_input);
 create unique index if not exists idx_custom_beer_queue_user_pending_unique
   on public.custom_beer_moderation_queue (user_id, normalized_input)
+  where status = 'pending';
+create index if not exists idx_avatar_moderation_status_created_at on public.avatar_moderation_queue (status, created_at desc);
+create index if not exists idx_avatar_moderation_user_created_at on public.avatar_moderation_queue (user_id, created_at desc);
+create unique index if not exists idx_avatar_moderation_user_path_pending
+  on public.avatar_moderation_queue (user_id, avatar_path)
   where status = 'pending';
 
 with official_catalog(canonical_name) as (
@@ -629,10 +649,162 @@ grant execute on function public.queue_custom_beer_name(text, jsonb) to authenti
 revoke all on function public.review_custom_beer_name(bigint, text, bigint, text) from public;
 grant execute on function public.review_custom_beer_name(bigint, text, bigint, text) to authenticated;
 
+create or replace function public.queue_avatar_moderation(
+  p_avatar_path text,
+  p_flags jsonb default '{}'::jsonb
+)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_path text := nullif(trim(coalesce(p_avatar_path, '')), '');
+  v_existing_id bigint;
+  v_id bigint;
+begin
+  if v_uid is null or v_path is null then
+    return null;
+  end if;
+
+  select q.id
+  into v_existing_id
+  from public.avatar_moderation_queue q
+  where q.user_id = v_uid
+    and q.avatar_path = v_path
+    and q.status = 'pending'
+  order by q.created_at desc
+  limit 1;
+
+  if v_existing_id is not null then
+    update public.avatar_moderation_queue q
+    set
+      flags = coalesce(q.flags, '{}'::jsonb) || coalesce(p_flags, '{}'::jsonb),
+      updated_at = now()
+    where q.id = v_existing_id
+    returning q.id into v_id;
+    return v_id;
+  end if;
+
+  insert into public.avatar_moderation_queue (
+    user_id,
+    avatar_path,
+    status,
+    flags
+  ) values (
+    v_uid,
+    v_path,
+    'pending',
+    coalesce(p_flags, '{}'::jsonb)
+  )
+  returning id into v_id;
+
+  return v_id;
+end;
+$$;
+
+create or replace function public.review_avatar_moderation(
+  p_queue_id bigint,
+  p_status text,
+  p_note text default ''
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_is_admin boolean := false;
+  v_target record;
+begin
+  select exists(
+    select 1
+    from public.profiles p
+    where p.user_id = v_uid
+      and p.is_admin = true
+  )
+  into v_is_admin;
+
+  if not v_is_admin then
+    raise exception 'not allowed';
+  end if;
+
+  if p_status not in ('approved', 'rejected') then
+    raise exception 'invalid status';
+  end if;
+
+  select q.id, q.user_id, q.avatar_path
+  into v_target
+  from public.avatar_moderation_queue q
+  where q.id = p_queue_id
+  limit 1;
+
+  if v_target.id is null then
+    return false;
+  end if;
+
+  update public.avatar_moderation_queue q
+  set
+    status = p_status,
+    reviewed_by = v_uid,
+    reviewed_at = now(),
+    review_note = coalesce(p_note, ''),
+    updated_at = now()
+  where q.id = p_queue_id;
+
+  if p_status = 'rejected' then
+    update public.profiles p
+    set avatar_path = ''
+    where p.user_id = v_target.user_id
+      and p.avatar_path = v_target.avatar_path;
+  end if;
+
+  return true;
+end;
+$$;
+
 drop trigger if exists trg_profiles_updated_at on public.profiles;
 create trigger trg_profiles_updated_at
 before update on public.profiles
 for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_avatar_moderation_updated_at on public.avatar_moderation_queue;
+create trigger trg_avatar_moderation_updated_at
+before update on public.avatar_moderation_queue
+for each row execute function public.set_updated_at();
+
+create or replace function public.enqueue_avatar_for_moderation()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if coalesce(new.avatar_path, '') <> ''
+     and coalesce(old.avatar_path, '') is distinct from coalesce(new.avatar_path, '') then
+    perform public.queue_avatar_moderation(
+      new.avatar_path,
+      jsonb_build_object(
+        'source', 'profile_trigger',
+        'profile_updated_at', now()
+      )
+    );
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_profiles_avatar_moderation on public.profiles;
+create trigger trg_profiles_avatar_moderation
+after update of avatar_path on public.profiles
+for each row execute function public.enqueue_avatar_for_moderation();
+
+revoke all on function public.queue_avatar_moderation(text, jsonb) from public;
+grant execute on function public.queue_avatar_moderation(text, jsonb) to authenticated;
+revoke all on function public.review_avatar_moderation(bigint, text, text) from public;
+grant execute on function public.review_avatar_moderation(bigint, text, text) to authenticated;
 
 alter table public.profiles enable row level security;
 alter table public.follows enable row level security;
@@ -646,6 +818,7 @@ alter table public.social_perf_daily enable row level security;
 alter table public.beer_master enable row level security;
 alter table public.beer_alias enable row level security;
 alter table public.custom_beer_moderation_queue enable row level security;
+alter table public.avatar_moderation_queue enable row level security;
 
 -- 002_profile_display_name_and_public_checkins
 alter table public.profiles add column if not exists display_name text not null default '';
@@ -1254,6 +1427,40 @@ for update using (
   )
 );
 
+drop policy if exists avatar_queue_insert_owner on public.avatar_moderation_queue;
+create policy avatar_queue_insert_owner on public.avatar_moderation_queue
+for insert with check (auth.uid() = user_id);
+
+drop policy if exists avatar_queue_read_own_or_admin on public.avatar_moderation_queue;
+create policy avatar_queue_read_own_or_admin on public.avatar_moderation_queue
+for select using (
+  auth.uid() = user_id
+  or exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
+drop policy if exists avatar_queue_update_admin on public.avatar_moderation_queue;
+create policy avatar_queue_update_admin on public.avatar_moderation_queue
+for update using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+) with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  )
+);
+
 drop policy if exists analytics_insert_auth on public.analytics_events;
 create policy analytics_insert_auth on public.analytics_events
 for insert with check (auth.uid() is not null);
@@ -1430,6 +1637,9 @@ grant select on public.beer_alias to authenticated;
 revoke all on public.custom_beer_moderation_queue from anon;
 revoke all on public.custom_beer_moderation_queue from authenticated;
 grant insert, select, update on public.custom_beer_moderation_queue to authenticated;
+revoke all on public.avatar_moderation_queue from anon;
+revoke all on public.avatar_moderation_queue from authenticated;
+grant insert, select, update on public.avatar_moderation_queue to authenticated;
 
 create or replace function public.compute_and_store_user_badges(p_user_id uuid)
 returns integer
@@ -3509,6 +3719,7 @@ begin
   delete from public.social_perf_events where user_id = v_uid;
   delete from public.product_suggestions where user_id = v_uid;
   delete from public.content_reports where reporter_id = v_uid or target_user_id = v_uid;
+  delete from public.avatar_moderation_queue where user_id = v_uid;
   delete from public.app_action_logs where user_id = v_uid;
   delete from public.user_daily_metrics where user_id = v_uid;
   delete from public.social_leaderboard_snapshots where user_id = v_uid;
@@ -3544,6 +3755,7 @@ select
   to_regclass('public.checkin_comment_likes') as checkin_comment_likes_table,
   to_regclass('public.checkin_likes') as checkin_likes_table,
   to_regclass('public.notifications') as notifications_table,
+  to_regclass('public.avatar_moderation_queue') as avatar_moderation_queue_table,
   to_regclass('public.profile_identity_history') as profile_identity_history_table,
   to_regclass('public.app_action_logs') as app_action_logs_table,
   to_regclass('public.user_daily_metrics') as user_daily_metrics_table,

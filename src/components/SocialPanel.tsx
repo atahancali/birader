@@ -12,6 +12,7 @@ import { normalizeUsername, usernameFromEmail } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
 import { measurePerf, trackPerfEvent } from "@/lib/perf";
 import { favoriteBeerName } from "@/lib/beer";
+import { prepareAvatarUpload } from "@/lib/avatar";
 import type { AppLang } from "@/lib/i18n";
 import { tx } from "@/lib/i18n";
 import { BADGE_THRESHOLDS, badgeMetaForKey } from "@/lib/badgeMeta";
@@ -193,6 +194,18 @@ type PerfOverviewRow = {
   max_ms: number | null;
   unique_users: number;
   last_seen_at: string | null;
+};
+
+type AvatarModerationRow = {
+  id: number;
+  user_id: string;
+  avatar_path: string;
+  status: "pending" | "approved" | "rejected";
+  flags?: Record<string, any> | null;
+  review_note?: string | null;
+  created_at: string;
+  username?: string;
+  display_name?: string | null;
 };
 
 type DiscoverRpcRow = {
@@ -594,6 +607,9 @@ export default function SocialPanel({
   const [leaderBusy, setLeaderBusy] = useState(false);
   const [perfRows, setPerfRows] = useState<PerfOverviewRow[]>([]);
   const [perfBusy, setPerfBusy] = useState(false);
+  const [avatarModerationRows, setAvatarModerationRows] = useState<AvatarModerationRow[]>([]);
+  const [avatarModerationBusy, setAvatarModerationBusy] = useState(false);
+  const [avatarReviewBusyId, setAvatarReviewBusyId] = useState<number>(0);
   const [weeklyScope, setWeeklyScope] = useState<"all" | "followed">("all");
   const [weeklyBusy, setWeeklyBusy] = useState(false);
   const [weeklyItems, setWeeklyItems] = useState<WeeklyTickerItem[]>([]);
@@ -913,28 +929,6 @@ export default function SocialPanel({
     if (!clean) return "";
     const { data } = supabase.storage.from("avatars").getPublicUrl(clean);
     return data.publicUrl;
-  }
-
-  async function fileToJpegBlob(file: File) {
-    const bitmap = await createImageBitmap(file);
-    const maxSide = 512;
-    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-    const w = Math.max(1, Math.round(bitmap.width * scale));
-    const h = Math.max(1, Math.round(bitmap.height * scale));
-
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Gorsel islenemedi.");
-    ctx.drawImage(bitmap, 0, 0, w, h);
-    bitmap.close();
-
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.9)
-    );
-    if (!blob) throw new Error("Gorsel donusturulemedi.");
-    return blob;
   }
 
   async function reserveProfile() {
@@ -1800,6 +1794,84 @@ export default function SocialPanel({
     setPerfRows((data as PerfOverviewRow[] | null) ?? []);
   }
 
+  async function loadAvatarModerationQueue(adminOverride = false) {
+    const canRead = adminOverride || Boolean(profile?.is_admin);
+    if (!canRead) {
+      setAvatarModerationRows([]);
+      return;
+    }
+    setAvatarModerationBusy(true);
+    const { data, error } = await supabase
+      .from("avatar_moderation_queue")
+      .select("id, user_id, avatar_path, status, flags, review_note, created_at")
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(20);
+    setAvatarModerationBusy(false);
+    if (error) {
+      markDbError(error.message);
+      return;
+    }
+
+    const baseRows = (data as AvatarModerationRow[] | null) ?? [];
+    const userIds = Array.from(new Set(baseRows.map((r) => r.user_id).filter(Boolean)));
+    let byUser = new Map<string, { username: string; display_name?: string | null }>();
+    if (userIds.length) {
+      const { data: profiles, error: pErr } = await supabase
+        .from("profiles")
+        .select("user_id, username, display_name")
+        .in("user_id", userIds);
+      if (pErr) {
+        markDbError(pErr.message);
+      } else {
+        byUser = new Map(
+          ((profiles as Array<{ user_id: string; username: string; display_name?: string | null }> | null) ?? []).map((p) => [
+            p.user_id,
+            { username: p.username, display_name: p.display_name },
+          ])
+        );
+      }
+    }
+
+    setAvatarModerationRows(
+      baseRows.map((row) => ({
+        ...row,
+        username: byUser.get(row.user_id)?.username || "kullanici",
+        display_name: byUser.get(row.user_id)?.display_name || "",
+      }))
+    );
+  }
+
+  async function reviewAvatarModeration(row: AvatarModerationRow, nextStatus: "approved" | "rejected") {
+    if (avatarReviewBusyId) return;
+    setAvatarReviewBusyId(row.id);
+    const note = nextStatus === "rejected" ? "admin_rejected" : "admin_approved";
+    const { data, error } = await supabase.rpc("review_avatar_moderation", {
+      p_queue_id: row.id,
+      p_status: nextStatus,
+      p_note: note,
+    });
+    setAvatarReviewBusyId(0);
+    if (error) {
+      markDbError(error.message);
+      return;
+    }
+    if (data !== true) {
+      alert(tx(lang, "Moderasyon islemi tamamlanamadi.", "Moderation action failed."));
+      return;
+    }
+    trackEvent({
+      eventName: "avatar_reviewed",
+      userId,
+      props: { queue_id: row.id, status: nextStatus, target_user_id: row.user_id },
+    });
+    if (nextStatus === "rejected" && row.user_id === userId) {
+      setAvatarPath("");
+      setProfile((prev) => (prev ? { ...prev, avatar_path: "" } : prev));
+    }
+    await loadAvatarModerationQueue(true);
+  }
+
   async function loadFollowing() {
     const { data: rows, error } = await supabase
       .from("follows")
@@ -1916,8 +1988,13 @@ export default function SocialPanel({
     void loadPendingInvites();
     void loadNotificationUnreadCount();
     void loadDiscoverProfiles();
-    if (ensured.is_admin) void loadPerfOverview(true);
-    else setPerfRows([]);
+    if (ensured.is_admin) {
+      void loadPerfOverview(true);
+      void loadAvatarModerationQueue(true);
+    } else {
+      setPerfRows([]);
+      setAvatarModerationRows([]);
+    }
     if (notifPanelOpen) {
       void loadNotifications(notifLimit);
     }
@@ -2291,9 +2368,11 @@ export default function SocialPanel({
   useEffect(() => {
     if (!profile?.is_admin) {
       setPerfRows([]);
+      setAvatarModerationRows([]);
       return;
     }
     void loadPerfOverview();
+    void loadAvatarModerationQueue();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.is_admin]);
 
@@ -2637,23 +2716,18 @@ export default function SocialPanel({
 
   async function onAvatarFileChange(file?: File) {
     if (!file) return;
-    const type = (file.type || "").toLowerCase();
-    if (!["image/jpeg", "image/png", "image/webp"].includes(type)) {
-      alert("Sadece JPG, PNG veya WebP yukleyebilirsin.");
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      alert("Avatar en fazla 2MB olabilir.");
+    const prepared = await prepareAvatarUpload(file);
+    if (!prepared.ok) {
+      alert(lang === "en" ? prepared.errorEn : prepared.errorTr);
       return;
     }
 
     try {
       setAvatarUploading(true);
-      const blob = await fileToJpegBlob(file);
       const uploadPath = `${userId}/avatar.jpg`;
       const { error: upErr } = await supabase.storage
         .from("avatars")
-        .upload(uploadPath, blob, { upsert: true, contentType: "image/jpeg" });
+        .upload(uploadPath, prepared.blob, { upsert: true, contentType: "image/jpeg" });
       if (upErr) {
         console.error("avatar upload error:", upErr.message);
         markDbError(upErr.message);
@@ -2670,6 +2744,13 @@ export default function SocialPanel({
         markDbError(dbErr.message);
         alert(`Profil avatari guncellenemedi: ${dbErr.message}`);
         return;
+      }
+      const queueRes = await supabase.rpc("queue_avatar_moderation", {
+        p_avatar_path: uploadPath,
+        p_flags: prepared.moderationFlags as any,
+      });
+      if (queueRes.error && !isMissingFunctionError(queueRes.error.message, "queue_avatar_moderation")) {
+        markDbError(queueRes.error.message);
       }
 
       setAvatarPath(uploadPath);
@@ -3448,6 +3529,97 @@ export default function SocialPanel({
               {!perfBusy && !perfRows.length ? (
                 <div className="text-xs opacity-60">
                   {tx(lang, "Perf verisi henuz yok.", "No performance data yet.")}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {profile?.is_admin ? (
+          <div className="rounded-2xl border border-fuchsia-300/20 bg-fuchsia-500/5 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs text-fuchsia-200/85">
+                  {tx(lang, "Avatar moderasyon", "Avatar moderation")}
+                </div>
+                <div className="text-sm font-semibold">
+                  {tx(lang, "Bekleyen avatarlar", "Pending avatars")}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadAvatarModerationQueue(true)}
+                className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
+              >
+                {tx(lang, "Yenile", "Refresh")}
+              </button>
+            </div>
+            <div className="mt-2 space-y-2">
+              {avatarModerationRows.map((row) => {
+                const visible = visibleName({
+                  username: String(row.username || "kullanici"),
+                  display_name: row.display_name || "",
+                });
+                const flagKeys = Object.keys((row.flags || {}) as Record<string, any>);
+                return (
+                  <div key={`avatar-mod-${row.id}`} className="rounded-xl border border-white/10 bg-black/25 p-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex items-start gap-2">
+                        <div className="h-11 w-11 overflow-hidden rounded-full border border-white/15 bg-black/35">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={avatarPublicUrl(row.avatar_path)} alt="pending avatar" className="h-full w-full object-cover" />
+                        </div>
+                        <div className="min-w-0">
+                          <Link href={`/u/${encodeURIComponent(String(row.username || ""))}`} className="truncate text-xs underline">
+                            {visible}
+                          </Link>
+                          <div className="truncate text-[11px] opacity-65">@{row.username}</div>
+                          <div className="text-[11px] opacity-60">{new Date(row.created_at).toLocaleString(locale)}</div>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={avatarReviewBusyId === row.id}
+                          onClick={() => void reviewAvatarModeration(row, "approved")}
+                          className="rounded-lg border border-emerald-300/30 bg-emerald-500/10 px-2 py-1 text-[11px]"
+                        >
+                          {tx(lang, "Onay", "Approve")}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={avatarReviewBusyId === row.id}
+                          onClick={() => void reviewAvatarModeration(row, "rejected")}
+                          className="rounded-lg border border-red-300/35 bg-red-500/10 px-2 py-1 text-[11px]"
+                        >
+                          {tx(lang, "Red", "Reject")}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mt-1 text-[11px] opacity-65">
+                      {tx(lang, "Path", "Path")}: {row.avatar_path}
+                    </div>
+                    {flagKeys.length ? (
+                      <div className="mt-1 text-[11px] opacity-60">
+                        {tx(lang, "Bayraklar", "Flags")}: {flagKeys.join(", ")}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+              {avatarModerationBusy ? (
+                <LoadingPulse
+                  lang={lang}
+                  labelTr="Avatar moderasyon kuyruğu yukleniyor..."
+                  labelEn="Loading avatar moderation queue..."
+                  compact
+                  inline
+                  className="text-xs"
+                />
+              ) : null}
+              {!avatarModerationBusy && !avatarModerationRows.length ? (
+                <div className="text-xs opacity-60">
+                  {tx(lang, "Bekleyen avatar yok.", "No pending avatars.")}
                 </div>
               ) : null}
             </div>
