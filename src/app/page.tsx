@@ -236,6 +236,7 @@ type TutorialStepKey = {
   section: HomeSection;
 };
 type AppTheme = "dark" | "light";
+type RatingGlassStyle = "mix" | "pint" | "tulip" | "weizen" | "goblet";
 type BugBashItem = { id: string; tr: string; en: string };
 
 type BeerItem = {
@@ -352,6 +353,18 @@ const BEER_CATALOG: BeerItem[] = [
 ];
 
 const LS_KEY = "birader:checkins:v1";
+const RATING_GLASS_SEQUENCE: Array<Exclude<RatingGlassStyle, "mix">> = ["pint", "tulip", "weizen", "goblet"];
+const RATING_GLASS_CLIP_PATHS: Record<Exclude<RatingGlassStyle, "mix">, string> = {
+  pint: "polygon(12% 0%, 88% 0%, 92% 100%, 8% 100%)",
+  tulip: "polygon(24% 0%, 76% 0%, 88% 24%, 84% 72%, 72% 100%, 28% 100%, 16% 72%, 12% 24%)",
+  weizen: "polygon(30% 0%, 70% 0%, 86% 38%, 82% 80%, 68% 100%, 32% 100%, 18% 80%, 14% 38%)",
+  goblet: "polygon(20% 0%, 80% 0%, 90% 26%, 78% 70%, 58% 86%, 58% 100%, 42% 100%, 42% 86%, 22% 70%, 10% 26%)",
+};
+
+function resolvedRatingGlassStyle(style: RatingGlassStyle, bucketIndex: number): Exclude<RatingGlassStyle, "mix"> {
+  if (style !== "mix") return style;
+  return RATING_GLASS_SEQUENCE[Math.abs(bucketIndex) % RATING_GLASS_SEQUENCE.length];
+}
 
 function loadLocalCheckins(): Checkin[] {
   try {
@@ -1192,6 +1205,7 @@ export default function Home() {
   const [adminSuggestionCategoryFilter, setAdminSuggestionCategoryFilter] = useState<string>("all");
   const [bugBashChecks, setBugBashChecks] = useState<Record<string, boolean>>({});
   const [missionNoticeDismissed, setMissionNoticeDismissed] = useState(false);
+  const [ratingGlassStyle, setRatingGlassStyle] = useState<RatingGlassStyle>("mix");
   const [theme, setTheme] = useState<AppTheme>("dark");
   const [pendingUndoCheckin, setPendingUndoCheckin] = useState<DeletedCheckinUndo | null>(null);
   const lastLogAttemptAtRef = useRef(0);
@@ -4555,8 +4569,22 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
         <div className="mb-4 flex items-center justify-between gap-3">
           <div className="text-sm text-amber-200">{tx(lang, "Puan dagilimi (0.5 adim)", "Rating distribution (0.5 step)")}</div>
-          <div className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs">
-            {tx(lang, "Toplam log", "Total logs")}: {ratingDistribution.total}
+          <div className="flex items-center gap-2">
+            <select
+              value={ratingGlassStyle}
+              onChange={(e) => setRatingGlassStyle(e.target.value as RatingGlassStyle)}
+              className="rounded-full border border-white/15 bg-black/35 px-2 py-1 text-[11px] outline-none"
+              aria-label={tx(lang, "Bardak stili", "Glass style")}
+            >
+              <option value="mix">{tx(lang, "Karisik stil", "Mixed style")}</option>
+              <option value="pint">{tx(lang, "Pint", "Pint")}</option>
+              <option value="tulip">{tx(lang, "Lale", "Tulip")}</option>
+              <option value="weizen">{tx(lang, "Bugday", "Weizen")}</option>
+              <option value="goblet">{tx(lang, "Kadeh", "Goblet")}</option>
+            </select>
+            <div className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs">
+              {tx(lang, "Toplam log", "Total logs")}: {ratingDistribution.total}
+            </div>
           </div>
         </div>
 
@@ -4564,10 +4592,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           className="relative grid h-56 grid-cols-11 items-end gap-2"
           onMouseLeave={() => setActiveRatingBucket(null)}
         >
-          {ratingDistribution.buckets.map((b) => {
+          {ratingDistribution.buckets.map((b, idx) => {
             const intensity = ratingDistribution.max > 0 ? b.count / ratingDistribution.max : 0;
             const fillPct = b.count === 0 ? 6 : Math.max(14, Math.round(intensity * 94));
             const isActive = activeBucketInfo?.bucket.rating === b.rating;
+            const resolvedShape = resolvedRatingGlassStyle(ratingGlassStyle, idx);
+            const clipPath = RATING_GLASS_CLIP_PATHS[resolvedShape];
 
             return (
               <button
@@ -4583,31 +4613,35 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   {b.count} ({b.percent.toFixed(0)}%)
                 </div>
 
-                <div className="relative h-[132px] w-full overflow-hidden rounded-t-[8px] rounded-b-[14px] border border-white/25 bg-gradient-to-b from-white/8 via-white/4 to-transparent">
+                <div className="relative h-[136px] w-full">
                   <div
-                    className={`absolute inset-x-[2px] bottom-[2px] overflow-hidden rounded-b-[10px] transition-all duration-300 ${
-                      isActive
-                        ? "shadow-[0_0_24px_rgba(245,158,11,0.55)]"
-                        : ""
-                    }`}
-                    style={{
-                      height: `${fillPct}%`,
-                      background:
-                        "linear-gradient(180deg, rgba(251,191,36,0.92) 0%, rgba(245,158,11,0.9) 45%, rgba(180,83,9,0.92) 100%)",
-                    }}
+                    className="absolute inset-0 overflow-hidden border border-white/25 bg-gradient-to-b from-white/10 via-white/4 to-transparent"
+                    style={{ clipPath }}
                   >
-                    <div className="absolute inset-x-0 top-0 h-3 bg-gradient-to-b from-amber-50/95 via-amber-100/80 to-transparent" />
+                    <div className="absolute inset-x-[10%] top-1 h-[3px] rounded-full bg-white/35" />
                     <div
-                      className="absolute left-[18%] bottom-[18%] h-1.5 w-1.5 rounded-full bg-amber-50/70"
-                      style={{ animation: "bubble-rise 1.7s ease-out infinite" }}
-                    />
-                    <div
-                      className="absolute left-[56%] bottom-[12%] h-1.5 w-1.5 rounded-full bg-amber-100/60"
-                      style={{ animation: "bubble-rise 1.9s ease-out infinite 160ms" }}
-                    />
+                      className={`absolute inset-x-[3px] bottom-[2px] overflow-hidden transition-all duration-300 ${
+                        isActive ? "shadow-[0_0_24px_rgba(245,158,11,0.55)]" : ""
+                      }`}
+                      style={{
+                        height: `${fillPct}%`,
+                        background:
+                          "linear-gradient(180deg, rgba(252,211,77,0.95) 0%, rgba(245,158,11,0.9) 48%, rgba(180,83,9,0.92) 100%)",
+                      }}
+                    >
+                      <div className="absolute inset-x-[2%] top-0 h-3 rounded-b-md bg-gradient-to-b from-amber-50/95 via-amber-100/85 to-transparent" />
+                      <div
+                        className="absolute left-[20%] bottom-[16%] h-1.5 w-1.5 rounded-full bg-amber-50/70"
+                        style={{ animation: "bubble-rise 1.7s ease-out infinite" }}
+                      />
+                      <div
+                        className="absolute left-[58%] bottom-[12%] h-1.5 w-1.5 rounded-full bg-amber-100/60"
+                        style={{ animation: "bubble-rise 1.9s ease-out infinite 160ms" }}
+                      />
+                    </div>
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/10 via-transparent to-white/6" />
                   </div>
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/8 via-transparent to-white/5" />
-                  <div className="absolute bottom-0 left-1/2 h-1 w-[72%] -translate-x-1/2 rounded-full bg-white/15" />
+                  <div className="absolute bottom-0 left-1/2 h-[5px] w-[62%] -translate-x-1/2 rounded-full bg-white/18" />
                 </div>
 
                 <div className={`mt-1 text-[10px] transition-opacity ${isActive ? "opacity-80" : "opacity-45"}`}>
