@@ -100,6 +100,7 @@ export default function ComplianceLayer() {
               <button
                 type="button"
                 onClick={acceptAge}
+                data-testid="age-gate-accept"
                 className="rounded-xl border border-amber-300/35 bg-amber-500/15 px-3 py-2 text-sm"
               >
                 {tx(lang, "Evet, 18+ yasindayim", "Yes, I am 18+")}
@@ -107,6 +108,7 @@ export default function ComplianceLayer() {
               <button
                 type="button"
                 onClick={rejectAge}
+                data-testid="age-gate-reject"
                 className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm"
               >
                 {tx(lang, "Hayir", "No")}
@@ -130,6 +132,7 @@ export default function ComplianceLayer() {
               <button
                 type="button"
                 onClick={acceptCookies}
+                data-testid="cookie-consent-accept"
                 className="rounded-lg border border-amber-300/35 bg-amber-500/15 px-3 py-1.5 text-xs"
               >
                 {tx(lang, "Kabul Et", "Accept")}
@@ -137,6 +140,7 @@ export default function ComplianceLayer() {
               <button
                 type="button"
                 onClick={rejectCookies}
+                data-testid="cookie-consent-reject"
                 className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs"
               >
                 {tx(lang, "Reddet", "Reject")}
@@ -144,6 +148,7 @@ export default function ComplianceLayer() {
               <button
                 type="button"
                 onClick={() => setManageOpen((v) => !v)}
+                data-testid="cookie-consent-manage"
                 className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs"
               >
                 {tx(lang, "Tercihleri Yonet", "Manage Preferences")}

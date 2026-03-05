@@ -805,7 +805,7 @@ function ComboboxBeer({
     [...options, ...pinned].some((x) => x.toLowerCase() === customCandidate.toLowerCase());
 
   return (
-    <div className="rounded-2xl border border-amber-300/18 bg-gradient-to-br from-amber-500/8 via-black/25 to-black/30 p-3">
+    <div data-testid="beer-combobox-card" className="rounded-2xl border border-amber-300/18 bg-gradient-to-br from-amber-500/8 via-black/25 to-black/30 p-3">
       {pinned.length > 0 && (
         <div className="mb-3 rounded-xl border border-white/10 bg-black/25 p-2.5">
           <div className="mb-2 flex items-center justify-between gap-2">
@@ -822,6 +822,7 @@ function ComboboxBeer({
                   key={b}
                   type="button"
                   onClick={() => onChange(b)}
+                  data-testid="beer-combobox-pinned-chip"
                   className={`rounded-full border px-3 py-1 text-xs transition ${
                     active
                       ? "border-amber-300/40 bg-amber-500/20 text-amber-50"
@@ -846,12 +847,14 @@ function ComboboxBeer({
               setOpen(true);
             }}
             onFocus={() => setOpen(true)}
+            data-testid="beer-combobox-input"
             placeholder={tx(lang, `${formatLabel} icin ara... (orn. efes, 330)`, `Search in ${formatLabel}... (e.g. efes, 330)`)}
             className="w-full rounded-xl border border-white/12 bg-black/35 px-3 py-3 pr-20 text-sm outline-none transition focus:border-amber-300/40"
           />
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
+            data-testid="beer-combobox-toggle"
             className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-white/15 bg-white/8 px-2 py-1 text-xs transition hover:border-amber-300/35 hover:bg-amber-500/15"
           >
             {open ? tx(lang, "Kapat", "Close") : tx(lang, "Ac", "Open")}
@@ -873,6 +876,7 @@ function ComboboxBeer({
                 setQuery(customCandidate);
                 setOpen(false);
               }}
+              data-testid="beer-combobox-use-custom"
               className="mb-2 w-full rounded-lg border border-amber-300/30 bg-amber-500/14 px-2 py-2 text-left text-sm"
             >
               {tx(lang, "Listede yok, bunu kullan", "Not in list, use this")}: {customCandidate}
@@ -889,6 +893,7 @@ function ComboboxBeer({
                   onChange(b);
                   setOpen(false);
                 }}
+                data-testid="beer-combobox-option"
                 className={`w-full rounded-lg px-2 py-2 text-left text-sm transition ${
                   b === value ? "bg-amber-500/20 text-amber-50" : "hover:bg-white/10"
                 }`}
@@ -3433,7 +3438,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           </div>
         ) : null}
 
-        <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
+        <div data-testid="auth-card" className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
           <div className="flex items-center justify-between">
             <div className="text-sm opacity-80">{authMode === "login" ? tx(lang, "Giriş", "Sign in") : tx(lang, "Kayıt ol", "Sign up")}</div>
             <button
@@ -3449,6 +3454,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             <input
               value={authIdentifier}
               onChange={(e) => setAuthIdentifier(e.target.value)}
+              data-testid="auth-identifier-input"
               placeholder={
                 authMode === "login"
                   ? tx(lang, "kullanıcı adı veya e-posta", "username or e-mail")
@@ -3518,6 +3524,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             <input
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              data-testid="auth-password-input"
               placeholder={tx(lang, "şifre", "password")}
               type="password"
               className="w-full rounded-2xl bg-black/20 border border-white/10 px-3 py-3 outline-none"
@@ -3527,6 +3534,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           <button
             onClick={authWithUsernamePassword}
             disabled={authBusy}
+            data-testid="auth-submit-button"
             className="mt-3 w-full rounded-2xl bg-white text-black py-3 font-semibold active:scale-[0.99] disabled:opacity-50"
           >
             {authBusy ? "..." : authMode === "login" ? tx(lang, "Giriş yap", "Sign in") : tx(lang, "Hesap oluştur", "Create account")}
@@ -3646,6 +3654,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           <div className="flex items-center justify-end gap-2 flex-wrap">
             <Link
               href={headerProfileHref}
+              data-testid="header-profile-link"
               className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-2 py-1.5"
             >
               <div className="h-8 w-8 overflow-hidden rounded-full border border-white/20 bg-black/40">
@@ -3665,6 +3674,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             </Link>
             <Link
               href="/yardim"
+              data-testid="header-help-link"
               className="rounded-md border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/80"
             >
               {t(lang, "nav_help")}
@@ -3672,6 +3682,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
             <button
               onClick={logout}
+              data-testid="header-exit-button"
               className="rounded-md border border-red-300/70 bg-red-500/15 px-3 py-1 text-xs font-bold tracking-[0.12em] text-red-200 shadow-[0_0_12px_rgba(248,113,113,0.35)]"
             >
               EXIT ⟶
@@ -3745,7 +3756,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       ) : null}
 
       {activeSection === "log" ? (
-      <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
+      <section data-testid="log-wizard" className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
         <div className="mb-2 flex items-center justify-between">
           <div className="text-sm text-amber-200">{t(lang, "heading_log")}</div>
           <div className="text-xs opacity-70">{tx(lang, "Adim", "Step")} {logStep}/4</div>
@@ -3761,6 +3772,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 key={label}
                 type="button"
                 onClick={() => goToLogStep(step)}
+                data-testid={`log-step-${step}`}
                 disabled={blocked}
                 className={`rounded-xl border px-2 py-2 text-[11px] ${
                   active
@@ -3786,6 +3798,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   setFormat("Fici");
                   setFormatConfirmed(true);
                 }}
+                data-testid="log-format-draft"
                 className={`group relative overflow-hidden rounded-3xl border p-4 text-left transition-all duration-200 hover:-translate-y-0.5 ${
                   format === "Fici"
                     ? "border-amber-300/40 bg-gradient-to-br from-amber-500/22 via-amber-500/10 to-black/30"
@@ -3810,6 +3823,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   setFormat("Şişe/Kutu");
                   setFormatConfirmed(true);
                 }}
+                data-testid="log-format-bottle"
                 className={`group relative overflow-hidden rounded-3xl border p-4 text-left transition-all duration-200 hover:-translate-y-0.5 ${
                   format === "Şişe/Kutu"
                     ? "border-amber-300/40 bg-gradient-to-br from-amber-500/22 via-amber-500/10 to-black/30"
@@ -3833,7 +3847,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         ) : null}
 
         {logStep === 2 ? (
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+          <div data-testid="log-step-beer-panel" className="rounded-2xl border border-white/10 bg-black/20 p-3">
             <div className="mb-3 flex items-center justify-between gap-2">
               <div className="text-xs uppercase tracking-[0.12em] text-amber-200/90">{tx(lang, "Birani sec", "Choose your beer")}</div>
               <div className="rounded-full border border-white/15 bg-black/30 px-2 py-0.5 text-[10px] text-white/65">
@@ -3868,7 +3882,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         ) : null}
 
         {logStep === 3 ? (
-          <div className="space-y-3">
+          <div data-testid="log-step-detail-panel" className="space-y-3">
             <div className="grid gap-3 md:grid-cols-2">
               <div className="rounded-2xl border border-amber-300/20 bg-gradient-to-br from-amber-500/10 via-black/20 to-black/30 p-3">
                 <label className="mb-2 block text-[11px] uppercase tracking-[0.14em] text-amber-200/85">
@@ -4127,7 +4141,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         ) : null}
 
         {logStep === 4 ? (
-          <div className="space-y-3">
+          <div data-testid="log-step-confirm-panel" className="space-y-3">
             <div className="rounded-2xl border border-amber-300/20 bg-gradient-to-br from-amber-500/10 via-black/25 to-black/30 p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="text-[11px] uppercase tracking-[0.14em] text-amber-200/90">
@@ -4228,6 +4242,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
 
             <button
               onClick={addCheckin}
+              data-testid="log-save-button"
               disabled={
                 isLogMutating ||
                 !(isBackDate ? batchBeerNames.length > 0 || !!beerName : !!beerName) ||
@@ -4244,6 +4259,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           <button
             type="button"
             onClick={() => setLogStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3 | 4) : s))}
+            data-testid="log-back-button"
             disabled={logStep === 1}
             className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs disabled:opacity-40"
           >
@@ -4255,6 +4271,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               const next = (logStep < 4 ? (logStep + 1) : logStep) as 1 | 2 | 3 | 4;
               goToLogStep(next);
             }}
+            data-testid="log-next-button"
             disabled={
               logStep === 4 ||
               (logStep === 1 && !formatConfirmed) ||

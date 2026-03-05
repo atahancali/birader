@@ -3508,11 +3508,11 @@ export default function SocialPanel({
   }
 
   return (
-    <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
+    <section data-testid="social-panel-root" className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-sm opacity-70">{tx(lang, "Sosyal", "Social")}</div>
-          <div className="text-lg font-semibold">{tx(lang, "Profil ve takip", "Profile and follow")}</div>
+          <div data-testid="social-panel-heading" className="text-lg font-semibold">{tx(lang, "Profil ve takip", "Profile and follow")}</div>
         </div>
         {profile ? (
           <Link className="text-xs underline opacity-80" href={`/u/${profile.username}`}>

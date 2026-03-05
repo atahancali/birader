@@ -10,7 +10,7 @@ Bu dosya, tamamlanan 50-madde backlog sonrasi yeni faz icin uygulanacak sprint p
 ## Sprint N1 - Stabilizasyon ve Guvenlik (in-progress)
 Hedef: Kritik akislarda regressionsiz calisan, izlenebilir temel.
 
-- [ ] `N1-01` Auth + log + profile + social icin E2E smoke seti (todo)
+- [ ] `N1-01` Auth + log + profile + social icin E2E smoke seti (in-progress)
 - [ ] `N1-02` RLS policy audit checklist + eksik policy fixleri (todo)
 - [ ] `N1-03` Merkezi API hata modeli (`code`, `message`, `hint`) standardi (todo)
 - [ ] `N1-04` Hata/latency metrikleri icin admin kartlarinda threshold alarmi (todo)
@@ -19,6 +19,9 @@ Push parcasi onerisi:
 1. Test altyapisi
 2. Policy/DB fixleri
 3. UI hata mesajlari + izleme
+
+N1 notlari:
+- 2026-03-05: `N1-01` icin Playwright smoke altyapisi + auth/log/profile/social smoke senaryosu eklendi (ilk pass).
 
 ## Sprint N2 - Performans (todo)
 Hedef: Sosyal panel ve heatmap ilk acilisini hizlandirmak.
