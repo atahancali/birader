@@ -54,9 +54,9 @@ Hedef: sosyal akis/leaderboard bildirimi daha stabil ve tutarli hale getirmek.
 
 - [x] `#02` Feed icin tam cursor pagination standardi (`M`, `done`)
 - [x] `#03` Ilk ekran progressive hydration (`M`, `done`)
-- [ ] `#04` Realtime debounce/throttle stratejisini tek noktada toplama (`M`, `todo`)
+- [x] `#04` Realtime debounce/throttle stratejisini tek noktada toplama (`M`, `done`)
 - [x] `#29` Leaderboard'da friends + me pinned tum periyotlar (`M`, `done`)
-- [ ] `#30` Leaderboard haftalik/aylik snapshot tablosu (`M`, `todo`)
+- [x] `#30` Leaderboard haftalik/aylik snapshot tablosu (`M`, `done`)
 - [x] `#31` Haftanin nabzi ticker query optimizasyonu (`S`, `done`)
 - [x] `#32` Sosyal akis all/followed filtrelerini user pref olarak saklama (`S`, `done`)
 - [ ] `#33` 24h/7d default stratejisi icin A/B test setup (`M`, `todo`)
@@ -97,6 +97,6 @@ Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 
 ## Yurutme Notu
 - Aktif sprint: `Sprint 3`
-- Aktif paket: `#04 + #30`
+- Aktif paket: `#33 + #34`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.

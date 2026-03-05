@@ -1827,6 +1827,126 @@ as $$
   order by t.priority;
 $$;
 
+create table if not exists public.social_leaderboard_snapshots (
+  snapshot_at timestamptz not null default now(),
+  window_key text not null,
+  rank_no int not null,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  logs int not null default 0,
+  avg_rating numeric(6,2) not null default 0,
+  created_at timestamptz not null default now(),
+  constraint social_leaderboard_snapshots_window_check check (window_key in ('7d', '30d', '90d', '365d')),
+  constraint social_leaderboard_snapshots_rank_check check (rank_no between 1 and 500),
+  primary key (window_key, snapshot_at, rank_no),
+  unique (window_key, snapshot_at, user_id)
+);
+
+create index if not exists idx_social_leaderboard_snapshots_window_time_rank
+  on public.social_leaderboard_snapshots (window_key, snapshot_at desc, rank_no);
+create index if not exists idx_social_leaderboard_snapshots_user_time
+  on public.social_leaderboard_snapshots (user_id, snapshot_at desc);
+
+create or replace function public.refresh_social_leaderboard_snapshots(
+  p_window text default null,
+  p_limit int default 50
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_now timestamptz := now();
+  v_rowcount integer := 0;
+begin
+  if auth.uid() is not null and not exists (
+    select 1
+    from public.profiles p
+    where p.user_id = auth.uid()
+      and p.is_admin = true
+  ) then
+    raise exception 'not allowed';
+  end if;
+
+  p_limit := greatest(1, least(coalesce(p_limit, 50), 200));
+
+  with windows as (
+    select w.window_key, w.lookback
+    from (
+      values
+        ('7d'::text, interval '7 day'),
+        ('30d'::text, interval '30 day'),
+        ('90d'::text, interval '90 day'),
+        ('365d'::text, interval '365 day')
+    ) as w(window_key, lookback)
+    where p_window is null
+       or lower(trim(coalesce(p_window, ''))) = ''
+       or lower(trim(p_window)) = w.window_key
+  ),
+  visible_profiles as (
+    select p.user_id, p.username
+    from public.profiles p
+    where p.is_public = true
+  ),
+  agg as (
+    select
+      w.window_key,
+      c.user_id,
+      count(*)::int as logs,
+      round(avg(case when c.rating is not null and c.rating > 0 then c.rating end)::numeric, 2) as avg_rating
+    from windows w
+    join public.checkins c
+      on c.created_at >= (v_now - w.lookback)
+     and c.deleted_at is null
+    join visible_profiles vp on vp.user_id = c.user_id
+    group by w.window_key, c.user_id
+  ),
+  ranked as (
+    select
+      a.window_key,
+      a.user_id,
+      a.logs,
+      coalesce(a.avg_rating, 0)::numeric(6,2) as avg_rating,
+      row_number() over (
+        partition by a.window_key
+        order by a.logs desc, coalesce(a.avg_rating, 0) desc, vp.username asc
+      )::int as rank_no
+    from agg a
+    join visible_profiles vp on vp.user_id = a.user_id
+  ),
+  ins as (
+    insert into public.social_leaderboard_snapshots (
+      snapshot_at,
+      window_key,
+      rank_no,
+      user_id,
+      logs,
+      avg_rating
+    )
+    select
+      v_now,
+      r.window_key,
+      r.rank_no,
+      r.user_id,
+      r.logs,
+      r.avg_rating
+    from ranked r
+    where r.rank_no <= p_limit
+    on conflict (window_key, snapshot_at, rank_no) do update set
+      user_id = excluded.user_id,
+      logs = excluded.logs,
+      avg_rating = excluded.avg_rating
+    returning 1
+  )
+  select count(*) into v_rowcount from ins;
+
+  delete from public.social_leaderboard_snapshots
+  where snapshot_at < (v_now - interval '60 day');
+
+  return coalesce(v_rowcount, 0);
+end;
+$$;
+
 create or replace function public.get_social_leaderboard(
   p_window text default '7d',
   p_scope text default 'all'
@@ -1848,11 +1968,32 @@ as $$
       auth.uid() as uid,
       case when lower(coalesce(p_scope, 'all')) = 'followed' then 'followed' else 'all' end as scope,
       case
+        when lower(coalesce(p_window, '7d')) = '30d' then '30d'
+        when lower(coalesce(p_window, '7d')) = '90d' then '90d'
+        when lower(coalesce(p_window, '7d')) = '365d' then '365d'
+        else '7d'
+      end as window_key,
+      case
         when lower(coalesce(p_window, '7d')) = '30d' then interval '30 day'
         when lower(coalesce(p_window, '7d')) = '90d' then interval '90 day'
         when lower(coalesce(p_window, '7d')) = '365d' then interval '365 day'
         else interval '7 day'
       end as lookback
+  ),
+  latest_snapshot as (
+    select max(s.snapshot_at) as snapshot_at
+    from public.social_leaderboard_snapshots s
+    join params pa on pa.scope = 'all' and s.window_key = pa.window_key
+    where s.snapshot_at >= now() - interval '12 hour'
+  ),
+  snapshot_agg as (
+    select
+      s.user_id,
+      s.logs,
+      s.avg_rating
+    from public.social_leaderboard_snapshots s
+    join params pa on pa.scope = 'all' and s.window_key = pa.window_key
+    join latest_snapshot ls on ls.snapshot_at is not null and s.snapshot_at = ls.snapshot_at
   ),
   scope_users as (
     select p.user_id
@@ -1877,13 +2018,44 @@ as $$
     where c.created_at >= now() - pa.lookback
       and c.deleted_at is null
   ),
-  agg as (
+  dynamic_agg as (
     select
       fc.user_id,
       count(*)::int as logs,
       round(avg(case when fc.rating is not null and fc.rating > 0 then fc.rating end)::numeric, 2) as avg_rating
     from filtered_checkins fc
     group by fc.user_id
+  ),
+  selected_agg as (
+    select
+      sa.user_id,
+      sa.logs,
+      sa.avg_rating
+    from snapshot_agg sa
+    join params pa on pa.scope = 'all'
+    where exists (select 1 from latest_snapshot ls where ls.snapshot_at is not null)
+
+    union all
+
+    select
+      da.user_id,
+      da.logs,
+      da.avg_rating
+    from dynamic_agg da
+    join params pa on true
+    where pa.scope = 'followed'
+       or not exists (select 1 from latest_snapshot ls where ls.snapshot_at is not null)
+
+    union all
+
+    select
+      da.user_id,
+      da.logs,
+      da.avg_rating
+    from dynamic_agg da
+    join params pa on pa.scope = 'all' and pa.uid is not null and da.user_id = pa.uid
+    where exists (select 1 from latest_snapshot ls where ls.snapshot_at is not null)
+      and not exists (select 1 from snapshot_agg sa where sa.user_id = da.user_id)
   )
   select
     a.user_id,
@@ -1891,7 +2063,7 @@ as $$
     p.display_name,
     a.logs,
     coalesce(a.avg_rating, 0)::numeric as avg_rating
-  from agg a
+  from selected_agg a
   join public.profiles p on p.user_id = a.user_id
   order by a.logs desc, coalesce(a.avg_rating, 0) desc, p.username asc
   limit 25;
@@ -1901,6 +2073,27 @@ revoke all on function public.get_weekly_highlights(text) from public;
 grant execute on function public.get_weekly_highlights(text) to authenticated;
 revoke all on function public.get_social_leaderboard(text, text) from public;
 grant execute on function public.get_social_leaderboard(text, text) to authenticated;
+revoke all on function public.refresh_social_leaderboard_snapshots(text, int) from public;
+grant execute on function public.refresh_social_leaderboard_snapshots(text, int) to authenticated;
+
+do $do$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    begin
+      perform cron.unschedule(jobid) from cron.job where jobname = 'birader_refresh_social_leaderboard_snapshots';
+    exception when others then
+      null;
+    end;
+    perform cron.schedule(
+      'birader_refresh_social_leaderboard_snapshots',
+      '*/30 * * * *',
+      'select public.refresh_social_leaderboard_snapshots(null, 50);'
+    );
+  end if;
+exception when others then
+  null;
+end;
+$do$;
 
 do $do$
 begin
@@ -3140,6 +3333,7 @@ begin
   delete from public.content_reports where reporter_id = v_uid or target_user_id = v_uid;
   delete from public.app_action_logs where user_id = v_uid;
   delete from public.user_daily_metrics where user_id = v_uid;
+  delete from public.social_leaderboard_snapshots where user_id = v_uid;
   delete from public.follows where follower_id = v_uid or following_id = v_uid;
   delete from public.checkins where user_id = v_uid;
   delete from public.profile_identity_history where user_id = v_uid;
@@ -3163,6 +3357,7 @@ select
   to_regclass('public.analytics_events') as analytics_events_table,
   to_regclass('public.social_perf_events') as social_perf_events_table,
   to_regclass('public.social_perf_daily') as social_perf_daily_table,
+  to_regclass('public.social_leaderboard_snapshots') as social_leaderboard_snapshots_table,
   to_regclass('public.checkins') as checkins_table,
   to_regclass('public.product_suggestions') as product_suggestions_table,
   to_regclass('public.user_badges') as user_badges_table,

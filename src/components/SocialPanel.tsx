@@ -597,8 +597,9 @@ export default function SocialPanel({
   const feedIdsRef = useRef<string[]>([]);
   const feedFilterSigRef = useRef("");
   const feedLoadMoreRef = useRef<HTMLDivElement | null>(null);
-  const weeklyRefreshTimerRef = useRef<number | null>(null);
-  const leaderboardRefreshTimerRef = useRef<number | null>(null);
+  const realtimeTimersRef = useRef<Record<string, number>>({});
+  const realtimeRunningRef = useRef<Record<string, boolean>>({});
+  const realtimeQueuedRef = useRef<Record<string, boolean>>({});
   const weeklyHighlightsCacheRef = useRef<
     Partial<Record<"all" | "followed", { at: number; rows: WeeklyHighlightRow[] }>>
   >({});
@@ -772,20 +773,63 @@ export default function SocialPanel({
     return String(message || "").toLowerCase().includes("favorite_limit_exceeded");
   }
 
+  function clearRealtimeTimers() {
+    for (const key of Object.keys(realtimeTimersRef.current)) {
+      const id = realtimeTimersRef.current[key];
+      if (typeof id === "number") window.clearTimeout(id);
+      delete realtimeTimersRef.current[key];
+    }
+    realtimeQueuedRef.current = {};
+    realtimeRunningRef.current = {};
+  }
+
+  function scheduleRealtimeTask(taskKey: string, runner: () => Promise<void> | void, delayMs = REALTIME_REFRESH_THROTTLE_MS) {
+    if (typeof window === "undefined") return;
+    if (realtimeTimersRef.current[taskKey]) {
+      realtimeQueuedRef.current[taskKey] = true;
+      return;
+    }
+
+    realtimeTimersRef.current[taskKey] = window.setTimeout(() => {
+      delete realtimeTimersRef.current[taskKey];
+
+      if (realtimeRunningRef.current[taskKey]) {
+        realtimeQueuedRef.current[taskKey] = true;
+        scheduleRealtimeTask(taskKey, runner, Math.max(120, Math.floor(delayMs / 2)));
+        return;
+      }
+
+      realtimeRunningRef.current[taskKey] = true;
+      Promise.resolve(runner())
+        .catch(() => {
+          // errors are handled in each runner
+        })
+        .finally(() => {
+          realtimeRunningRef.current[taskKey] = false;
+          if (realtimeQueuedRef.current[taskKey]) {
+            delete realtimeQueuedRef.current[taskKey];
+            scheduleRealtimeTask(taskKey, runner, Math.max(120, Math.floor(delayMs / 2)));
+          }
+        });
+    }, delayMs);
+  }
+
   function scheduleWeeklyHighlightsRefresh() {
-    if (weeklyRefreshTimerRef.current !== null) return;
-    weeklyRefreshTimerRef.current = window.setTimeout(() => {
-      weeklyRefreshTimerRef.current = null;
-      void loadWeeklyHighlights({ force: true });
-    }, REALTIME_REFRESH_THROTTLE_MS);
+    scheduleRealtimeTask(
+      "weekly_highlights",
+      () => loadWeeklyHighlights({ force: true }),
+      REALTIME_REFRESH_THROTTLE_MS
+    );
   }
 
   function scheduleLeaderboardRefresh() {
-    if (leaderboardRefreshTimerRef.current !== null) return;
-    leaderboardRefreshTimerRef.current = window.setTimeout(() => {
-      leaderboardRefreshTimerRef.current = null;
-      void leaderboardReloadRef.current?.();
-    }, REALTIME_REFRESH_THROTTLE_MS);
+    scheduleRealtimeTask(
+      "leaderboard_refresh",
+      async () => {
+        await leaderboardReloadRef.current?.();
+      },
+      REALTIME_REFRESH_THROTTLE_MS
+    );
   }
 
   function hasCommentsLoaded(checkinId: string) {
@@ -2347,8 +2391,10 @@ export default function SocialPanel({
             rowCount: 1,
             context: { table: "notifications", event: "*" },
           });
-          void loadNotificationUnreadCount();
-          if (notifPanelOpenRef.current) void loadNotifications();
+          scheduleRealtimeTask("notif_unread", () => loadNotificationUnreadCount(), 450);
+          if (notifPanelOpenRef.current) {
+            scheduleRealtimeTask("notif_panel", () => loadNotifications(), 650);
+          }
         }
       )
       .on(
@@ -2366,7 +2412,7 @@ export default function SocialPanel({
             rowCount: 1,
             context: { table: "follows", event: "*", side: "follower" },
           });
-          void loadFollowing();
+          scheduleRealtimeTask("follow_graph", () => loadFollowing(), 600);
         }
       )
       .on(
@@ -2384,7 +2430,7 @@ export default function SocialPanel({
             rowCount: 1,
             context: { table: "follows", event: "*", side: "following" },
           });
-          void loadFollowing();
+          scheduleRealtimeTask("follow_graph", () => loadFollowing(), 600);
         }
       )
       .on(
@@ -2405,7 +2451,7 @@ export default function SocialPanel({
             commentPanelOpenByCheckinRef.current[checkinId] ||
             Object.prototype.hasOwnProperty.call(feedCommentsByCheckinRef.current, checkinId)
           ) {
-            void loadCommentsForCheckins([checkinId]);
+            scheduleRealtimeTask(`comments:${checkinId}`, () => loadCommentsForCheckins([checkinId]), 420);
           }
         }
       )
@@ -2418,20 +2464,13 @@ export default function SocialPanel({
           filter: `invited_user_id=eq.${userId}`,
         },
         () => {
-          void loadPendingInvites();
+          scheduleRealtimeTask("pending_invites", () => loadPendingInvites(), 550);
         }
       )
       .subscribe();
 
     return () => {
-      if (weeklyRefreshTimerRef.current !== null) {
-        window.clearTimeout(weeklyRefreshTimerRef.current);
-        weeklyRefreshTimerRef.current = null;
-      }
-      if (leaderboardRefreshTimerRef.current !== null) {
-        window.clearTimeout(leaderboardRefreshTimerRef.current);
-        leaderboardRefreshTimerRef.current = null;
-      }
+      clearRealtimeTimers();
       void supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
