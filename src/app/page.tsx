@@ -353,7 +353,7 @@ const BEER_CATALOG: BeerItem[] = [
 
 const LS_KEY = "birader:checkins:v1";
 const RATING_GLASS_PATH =
-  "M22 10 Q50 5 78 10 C82 18 80 34 74 44 C70 52 70 74 72 122 C73 142 66 154 50 156 C34 154 27 142 28 122 C30 74 30 52 26 44 C20 34 18 18 22 10 Z";
+  "M18 14 Q50 6 82 14 C84 28 80 44 74 56 C67 72 67 92 71 128 C72 146 64 156 50 158 C36 156 28 146 29 128 C33 92 33 72 26 56 C20 44 16 28 18 14 Z";
 
 function loadLocalCheckins(): Checkin[] {
   try {
@@ -4783,9 +4783,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       <path d={bodyPath} fill={`url(#${shineId})`} />
                     </g>
 
-                    <path d="M22 16 Q50 12 78 16" stroke="rgba(255,255,255,0.5)" strokeWidth="1.2" fill="none" />
+                    <ellipse cx="50" cy="14" rx="31.5" ry="4.1" fill="none" stroke="rgba(255,255,255,0.46)" strokeWidth="1.2" />
+                    <ellipse cx="50" cy="14" rx="27" ry="2.4" fill="rgba(255,255,255,0.11)" />
+                    <ellipse cx="50" cy="158" rx="24" ry="3.9" fill="rgba(255,255,255,0.16)" />
+                    <ellipse cx="50" cy="157" rx="19" ry="2.2" fill="rgba(255,255,255,0.28)" />
                   </svg>
-                  <div className="absolute bottom-0 left-1/2 h-[4px] w-[58%] -translate-x-1/2 rounded-full bg-white/20" />
                 </div>
 
                 <div className={`mt-1 text-[10px] transition-opacity ${isActive ? "opacity-80" : "opacity-45"}`}>
