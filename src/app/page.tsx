@@ -4327,7 +4327,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             {tx(lang, "Son 7g log", "Last 7d logs")}: <span className="font-semibold">{weeklyRecap.count}</span>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-            {tx(lang, "Son 7g ort", "Last 7d avg")}: <span className="font-semibold">{weeklyRecap.avg.toFixed(2)}⭐</span>
+            <div className="flex items-center justify-between gap-2">
+              <span>{tx(lang, "Son 7g ort", "Last 7d avg")}:</span>
+              <RatingStars value={weeklyRecap.avg > 0 ? weeklyRecap.avg : null} size="xs" unratedLabel={tx(lang, "Puansiz", "Unrated")} />
+            </div>
           </div>
           <div className="col-span-2 rounded-xl border border-white/10 bg-black/20 p-2">
             {tx(lang, "Son 7g top bira", "Top beer in last 7d")}: <span className="font-semibold">{weeklyRecap.topBeer}</span>
@@ -4343,7 +4346,14 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             </span>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-            {tx(lang, "Bu ay ort.", "This month avg")}: <span className="font-semibold">{monthComparison.currentAvg.toFixed(2)}⭐</span>
+            <div className="flex items-center justify-between gap-2">
+              <span>{tx(lang, "Bu ay ort.", "This month avg")}:</span>
+              <RatingStars
+                value={monthComparison.currentAvg > 0 ? monthComparison.currentAvg : null}
+                size="xs"
+                unratedLabel={tx(lang, "Puansiz", "Unrated")}
+              />
+            </div>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">
             {tx(lang, "Puansiz oran", "Unrated share")}: <span className="font-semibold">%{monthComparison.unratedShare}</span>
@@ -4383,8 +4393,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   <span className="mr-2 opacity-70">#{idx + 1}</span>
                   {b.beer}
                 </div>
-                <div className="text-xs opacity-80">
-                  {b.logs} {tx(lang, "log", "logs")} • {b.avg.toFixed(2)}⭐
+                <div className="flex items-center gap-2 text-xs opacity-80">
+                  <span>{b.logs} {tx(lang, "log", "logs")}</span>
+                  <span>•</span>
+                  <RatingStars value={b.avg > 0 ? b.avg : null} size="xs" unratedLabel={tx(lang, "Puansiz", "Unrated")} />
                 </div>
               </div>
             ))}

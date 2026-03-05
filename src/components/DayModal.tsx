@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { dayPeriodLabelEn, dayPeriodLabelTr } from "@/lib/dayPeriod";
 import type { AppLang } from "@/lib/i18n";
+import LoadingPulse from "@/components/LoadingPulse";
 import RatingStars from "@/components/RatingStars";
 
 type Checkin = {
@@ -146,13 +147,23 @@ export default function DayModal({
           <div>
             <div className="text-xs opacity-70">{day}</div>
             <div className="text-lg font-bold">{lang === "en" ? "Day details" : "Gün Detayı"}</div>
-            <div className="text-sm opacity-80 mt-1">
-              {checkins.length} {lang === "en" ? "beers" : "bira"} • {lang === "en" ? "Average" : "Ortalama"}: {avg ? avg.toFixed(2) : "-"} ⭐
+            <div className="mt-1 flex items-center gap-2 text-sm opacity-80">
+              <span>{checkins.length} {lang === "en" ? "beers" : "bira"} • {lang === "en" ? "Average" : "Ortalama"}:</span>
+              <RatingStars
+                value={avg > 0 ? avg : null}
+                size="xs"
+                unratedLabel={lang === "en" ? "unrated" : "puansiz"}
+              />
             </div>
             {loading ? (
-              <div className="mt-1 text-xs opacity-60">
-                {lang === "en" ? "Loading day details..." : "Gun detaylari yukleniyor..."}
-              </div>
+              <LoadingPulse
+                lang={lang}
+                labelTr="Gun detaylari yukleniyor..."
+                labelEn="Loading day details..."
+                compact
+                inline
+                className="mt-1 text-xs"
+              />
             ) : null}
           </div>
           <button onClick={onClose} className="text-xl opacity-80">
@@ -208,11 +219,14 @@ export default function DayModal({
                 type="button"
                 onClick={() => setRating(r)}
                 disabled={isFutureDay}
-                className={`px-3 py-2 rounded-2xl border text-sm ${
-                  rating === r ? "bg-white text-black" : "border-white/10 bg-black/20"
+                className={`px-3 py-2 rounded-2xl border ${
+                  rating === r
+                    ? "border-amber-300/45 bg-amber-500/15"
+                    : "border-white/10 bg-black/20"
                 }`}
+                aria-label={`${r} ${lang === "en" ? "stars" : "yildiz"}`}
               >
-                {r}⭐
+                <RatingStars value={r} size="xs" className="pointer-events-none" />
               </button>
             ))}
           </div>
@@ -234,9 +248,14 @@ export default function DayModal({
         {/* LIST */}
         <div className="mt-4 space-y-2">
           {loading ? (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm opacity-70">
-              {lang === "en" ? "Loading..." : "Yukleniyor..."}
-            </div>
+            <LoadingPulse
+              lang={lang}
+              compact
+              inline
+              labelTr="Yukleniyor..."
+              labelEn="Loading..."
+              className="rounded-2xl border border-white/10 bg-white/5 p-2 text-sm"
+            />
           ) : null}
 
           {!loading ? (
@@ -306,11 +325,14 @@ export default function DayModal({
                           key={r}
                           type="button"
                           onClick={() => setEditRating(r)}
-                          className={`px-3 py-2 rounded-2xl border text-sm ${
-                            editRating === r ? "bg-white text-black" : "border-white/10 bg-black/20"
+                          className={`px-3 py-2 rounded-2xl border ${
+                            editRating === r
+                              ? "border-amber-300/45 bg-amber-500/15"
+                              : "border-white/10 bg-black/20"
                           }`}
+                          aria-label={`${r} ${lang === "en" ? "stars" : "yildiz"}`}
                         >
-                          {r}⭐
+                          <RatingStars value={r} size="xs" className="pointer-events-none" />
                         </button>
                       ))}
                     </div>

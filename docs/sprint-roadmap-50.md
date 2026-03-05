@@ -79,8 +79,8 @@ Hedef: yeni kullanici akisinda tekrar eden sikintilari kapatmak ve metin/tasarim
 - [x] `#42` TR/EN key parity tamamlama (`M`, `done`)
 - [x] `#43` EN metin QA turu (tasma/baglam/ton) (`S`, `done`)
 - [x] `#44` Footer/legal/health metinlerini tum viewportlarda toparlama (`S`, `done`)
-- [ ] `#45` Rating UI'yi tamamen yarim/tam yildiz sistemine tasima (`M`, `todo`)
-- [ ] `#46` Loading state'leri tek "beer pour" animasyon setinde birlestirme (`M`, `todo`)
+- [x] `#45` Rating UI'yi tamamen yarim/tam yildiz sistemine tasima (`M`, `done`)
+- [x] `#46` Loading state'leri tek "beer pour" animasyon setinde birlestirme (`M`, `done`)
 
 ## Sprint 7 (Platform + Dagitim)
 Hedef: cihaz gecislerinde deneyimi ve ulasim kabiliyetini arttirmak.
@@ -96,7 +96,7 @@ Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 - [ ] `#50` Admin panelde growth + perf + moderation KPI tek ekran (`L`, `todo`)
 
 ## Yurutme Notu
-- Aktif sprint: `Sprint 6`
-- Aktif paket: `#45 + #46`
+- Aktif sprint: `Sprint 7`
+- Aktif paket: `#47 + #48`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.

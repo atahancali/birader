@@ -1304,7 +1304,14 @@ export default function PublicProfileView({ username }: { username: string }) {
           <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
             <div className="text-xs opacity-70">{tx(lang, "Nick degisim gecmisi", "Handle change history")}</div>
             {identityHistoryLoading ? (
-              <div className="mt-2 text-xs opacity-60">{tx(lang, "Yukleniyor...", "Loading...")}</div>
+              <LoadingPulse
+                lang={lang}
+                labelTr="Yukleniyor..."
+                labelEn="Loading..."
+                compact
+                inline
+                className="mt-2 text-xs"
+              />
             ) : identityHistory.length ? (
               <div className="mt-2 space-y-2">
                 {identityHistory.slice(0, 8).map((h) => {
@@ -1403,7 +1410,12 @@ export default function PublicProfileView({ username }: { username: string }) {
 
       <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
         <div className="grid grid-cols-2 gap-2 text-sm">
-          <div className="rounded-xl border border-white/10 bg-black/20 p-2">{tx(lang, "Ortalama", "Average")}: {avg.toFixed(2)}⭐</div>
+          <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+            <div className="flex items-center justify-between gap-2">
+              <span>{tx(lang, "Ortalama", "Average")}:</span>
+              <RatingStars value={avg > 0 ? avg : null} size="xs" unratedLabel={tx(lang, "Puansiz", "Unrated")} />
+            </div>
+          </div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">{year} {tx(lang, "log", "logs")}: {checkins.length}</div>
           {isOwnProfile ? (
             <Link href="/connections?tab=followers" className="rounded-xl border border-white/10 bg-black/20 p-2 underline">

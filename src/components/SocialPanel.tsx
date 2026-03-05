@@ -4068,7 +4068,7 @@ export default function SocialPanel({
                   </Link>
                   <div className="text-xs opacity-70">{row.logs} log</div>
                 </div>
-                <div className="text-sm">{row.avgRating.toFixed(2)}⭐</div>
+                <RatingStars value={row.avgRating > 0 ? row.avgRating : null} size="xs" unratedLabel={tx(lang, "Puansiz", "Unrated")} />
               </div>
             ))}
             {leaderBusy ? (
@@ -4355,7 +4355,14 @@ export default function SocialPanel({
                       </div>
                     ))}
                     {commentsBusy ? (
-                      <div className="text-[11px] opacity-55">{tx(lang, "Yorumlar yukleniyor...", "Loading comments...")}</div>
+                      <LoadingPulse
+                        lang={lang}
+                        labelTr="Yorumlar yukleniyor..."
+                        labelEn="Loading comments..."
+                        compact
+                        inline
+                        className="text-[11px]"
+                      />
                     ) : null}
                     {!commentsBusy && !comments.length ? (
                       <div className="text-[11px] opacity-55">{tx(lang, "Henuz yorum yok.", "No comments yet.")}</div>

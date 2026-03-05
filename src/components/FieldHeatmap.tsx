@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import RatingStars from "@/components/RatingStars";
 import { gradientColor } from "@/lib/heatmapTheme";
 import type { AppLang } from "@/lib/i18n";
 
@@ -444,7 +445,11 @@ export default function FieldHeatmap({
               </div>
               <div className="mt-1 flex items-center justify-between gap-2">
                 <span className="opacity-70">{lang === "en" ? "Avg rating" : "Ort. puan"}</span>
-                <span className="font-semibold">{avgRated.toFixed(2)}⭐</span>
+                <RatingStars
+                  value={avgRated > 0 ? avgRated : null}
+                  size="xs"
+                  unratedLabel={lang === "en" ? "unrated" : "puansiz"}
+                />
               </div>
             </div>
 
