@@ -4719,6 +4719,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             const bodyPath = RATING_GLASS_PATH;
             const fillHeight = hasBeer ? Math.max(8, Math.round((fillPct / 100) * 132)) : 0;
             const beerTopY = 154 - fillHeight;
+            const foamY = Math.max(12, beerTopY + 1);
+            const foamH = Math.max(6, Math.min(10, Math.round(fillHeight * 0.16)));
             const gradId = `rg-grad-${idx}`;
             const beerId = `rg-beer-${idx}`;
             const shineId = `rg-shine-${idx}`;
@@ -4767,8 +4769,13 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                       {hasBeer ? (
                         <>
                           <rect x="8" y={beerTopY} width="84" height={fillHeight + 8} fill={`url(#${beerId})`} />
-                          <ellipse cx="50" cy={Math.max(10, beerTopY + 2)} rx="31" ry="6.5" fill="rgba(255,248,220,0.94)" />
-                          <ellipse cx="50" cy={Math.max(12, beerTopY + 4)} rx="27" ry="4.6" fill="rgba(255,239,198,0.62)" />
+                          <rect x="15" y={foamY - Math.max(2, Math.floor(foamH / 3))} width="70" height={foamH} fill="rgba(255,255,255,0.9)" />
+                          <ellipse cx="50" cy={foamY} rx="33" ry="7.2" fill="rgba(255,251,236,0.98)" />
+                          <ellipse cx="50" cy={foamY + 1.8} rx="29" ry="4.8" fill="rgba(250,241,210,0.72)" />
+                          <circle cx="30" cy={foamY - 2.5} r="2.1" fill="rgba(255,255,255,0.85)" />
+                          <circle cx="41" cy={foamY - 3.3} r="1.7" fill="rgba(255,255,255,0.82)" />
+                          <circle cx="59" cy={foamY - 2.8} r="2.0" fill="rgba(255,255,255,0.88)" />
+                          <circle cx="69" cy={foamY - 2.2} r="1.6" fill="rgba(255,255,255,0.8)" />
                           <circle
                             cx="34"
                             cy={Math.min(145, beerTopY + 52)}
