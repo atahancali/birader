@@ -208,6 +208,7 @@ const SEARCH_SCAN_LIMIT = 120;
 const DISCOVER_SCAN_LIMIT = 40;
 const FEED_ENRICH_EAGER_COUNT = 8;
 const REALTIME_REFRESH_THROTTLE_MS = 2000;
+const WEEKLY_HIGHLIGHTS_CACHE_TTL_MS = 30_000;
 
 const NOTIF_PREFS_KEY = "birader:notif-prefs:v1";
 const FEED_PREFS_KEY = "birader:feed-prefs:v1";
@@ -579,6 +580,10 @@ export default function SocialPanel({
   const feedLoadMoreRef = useRef<HTMLDivElement | null>(null);
   const weeklyRefreshTimerRef = useRef<number | null>(null);
   const leaderboardRefreshTimerRef = useRef<number | null>(null);
+  const weeklyHighlightsCacheRef = useRef<
+    Partial<Record<"all" | "followed", { at: number; rows: WeeklyHighlightRow[] }>>
+  >({});
+  const weeklyHighlightsReqSeqRef = useRef(0);
 
   const fallbackBase = useMemo(() => {
     const fromEmail = usernameFromEmail(sessionEmail);
@@ -649,6 +654,10 @@ export default function SocialPanel({
     });
   }, [feedFormat, feedItems, feedMinRating, feedOnlyMyCity, feedQuery, feedScope, feedWindow, followingIds, primaryCity, userId]);
   const followerIds = useMemo(() => new Set(followerProfiles.map((p) => p.user_id)), [followerProfiles]);
+  const followingIdsSig = useMemo(
+    () => Array.from(followingIds).sort().join(","),
+    [followingIds]
+  );
   const unreadNotifCount = useMemo(
     () => {
       if (!notifLoaded) return notifUnreadCountServer;
@@ -748,7 +757,7 @@ export default function SocialPanel({
     if (weeklyRefreshTimerRef.current !== null) return;
     weeklyRefreshTimerRef.current = window.setTimeout(() => {
       weeklyRefreshTimerRef.current = null;
-      void loadWeeklyHighlights();
+      void loadWeeklyHighlights({ force: true });
     }, REALTIME_REFRESH_THROTTLE_MS);
   }
 
@@ -1379,34 +1388,56 @@ export default function SocialPanel({
     }
   }
 
-  async function loadWeeklyHighlights() {
-    setWeeklyBusy(true);
-    const { data, error } = await supabase.rpc("get_weekly_highlights", {
-      p_scope: weeklyScope,
-    });
-    setWeeklyBusy(false);
-
-    if (error) {
-      markDbError(error.message);
-      return;
-    }
-
-    const rows = ((data as WeeklyHighlightRow[] | null) ?? [])
-      .slice()
-      .sort((a, b) => Number(a.priority || 99) - Number(b.priority || 99));
-    const mapped: WeeklyTickerItem[] = rows.map((row) => ({
+  function mapWeeklyRows(rows: WeeklyHighlightRow[]): WeeklyTickerItem[] {
+    return rows.map((row) => ({
       key: row.item_key || `${row.label_tr || row.label_en || "item"}-${row.priority || 99}`,
       label: lang === "en" ? row.label_en || row.label_tr : row.label_tr || row.label_en,
       value: lang === "en" ? row.value_en || row.value_tr : row.value_tr || row.value_en,
       meta: lang === "en" ? row.meta_en || row.meta_tr : row.meta_tr || row.meta_en,
       href: (row.href || "").trim() || "/",
     }));
-    setWeeklyItems(mapped);
+  }
+
+  async function loadWeeklyHighlights(options?: { force?: boolean; scope?: "all" | "followed" }) {
+    const scope = options?.scope || weeklyScope;
+    const force = Boolean(options?.force);
+    const cached = weeklyHighlightsCacheRef.current[scope];
+    const now = Date.now();
+
+    if (!force && cached && now - cached.at < WEEKLY_HIGHLIGHTS_CACHE_TTL_MS) {
+      if (scope === weeklyScope) setWeeklyItems(mapWeeklyRows(cached.rows));
+      return;
+    }
+
+    const reqSeq = weeklyHighlightsReqSeqRef.current + 1;
+    weeklyHighlightsReqSeqRef.current = reqSeq;
+    if (scope === weeklyScope) setWeeklyBusy(true);
+
+    const { data, error } = await supabase.rpc("get_weekly_highlights", {
+      p_scope: scope,
+    });
+
+    const currentSeq = weeklyHighlightsReqSeqRef.current;
+    if (scope === weeklyScope && reqSeq === currentSeq) setWeeklyBusy(false);
+
+    if (error) {
+      if (scope === weeklyScope) markDbError(error.message);
+      return;
+    }
+
+    const rows = ((data as WeeklyHighlightRow[] | null) ?? [])
+      .slice()
+      .sort((a, b) => Number(a.priority || 99) - Number(b.priority || 99));
+    weeklyHighlightsCacheRef.current[scope] = { at: now, rows };
+
+    if (scope === weeklyScope) {
+      setWeeklyItems(mapWeeklyRows(rows));
+    }
 
     trackEvent({
       eventName: "weekly_highlights_loaded",
       userId,
-      props: { scope: weeklyScope, count: mapped.length },
+      props: { scope, count: rows.length, cached: false },
     });
   }
 
@@ -2035,10 +2066,21 @@ export default function SocialPanel({
   }, [profile?.is_admin]);
 
   useEffect(() => {
+    // followed scope depends on follow graph; force re-query when graph changes.
+    weeklyHighlightsCacheRef.current.followed = undefined;
+  }, [followingIdsSig]);
+
+  useEffect(() => {
     if (loading) return;
     void loadWeeklyHighlights();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, weeklyScope, followingIds, lang]);
+  }, [loading, weeklyScope, lang]);
+
+  useEffect(() => {
+    if (loading || weeklyScope !== "followed") return;
+    void loadWeeklyHighlights({ force: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, weeklyScope, followingIdsSig]);
 
   function applyFeedPreset(preset: "discover" | "following" | "quality") {
     if (preset === "discover") {
@@ -3091,7 +3133,7 @@ export default function SocialPanel({
             lang={lang}
             scope={weeklyScope}
             onScopeChange={setWeeklyScope}
-            onRefresh={() => void loadWeeklyHighlights()}
+            onRefresh={() => void loadWeeklyHighlights({ force: true })}
             items={weeklyItems}
             busy={weeklyBusy}
           />

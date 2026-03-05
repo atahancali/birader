@@ -47,7 +47,7 @@ Hedef: harita deneyimini temiz, hizli ve tutarli yapmak.
 - [x] `#25` Legend yerlesimini responsive breakpoint bazli duzenleme (`M`, `done`)
 - [x] `#26` Cografi haritada il/ilce katman ayristirma (`L`, `done`)
 - [x] `#27` Il/ilce seciminde typo toleransli oneriler (`M`, `done`)
-- [ ] `#28` Lokasyonsuz loglari geo analizden kesin dislama (`S`, `todo`)
+- [x] `#28` Lokasyonsuz loglari geo analizden kesin dislama (`S`, `done`)
 
 ## Sprint 4 (Sosyal Motor + Leaderboard)
 Hedef: sosyal akis/leaderboard bildirimi daha stabil ve tutarli hale getirmek.
@@ -55,10 +55,10 @@ Hedef: sosyal akis/leaderboard bildirimi daha stabil ve tutarli hale getirmek.
 - [ ] `#02` Feed icin tam cursor pagination standardi (`M`, `todo`)
 - [ ] `#03` Ilk ekran progressive hydration (`M`, `todo`)
 - [ ] `#04` Realtime debounce/throttle stratejisini tek noktada toplama (`M`, `todo`)
-- [ ] `#29` Leaderboard'da friends + me pinned tum periyotlar (`M`, `todo`)
+- [x] `#29` Leaderboard'da friends + me pinned tum periyotlar (`M`, `done`)
 - [ ] `#30` Leaderboard haftalik/aylik snapshot tablosu (`M`, `todo`)
-- [ ] `#31` Haftanin nabzi ticker query optimizasyonu (`S`, `todo`)
-- [ ] `#32` Sosyal akis all/followed filtrelerini user pref olarak saklama (`S`, `todo`)
+- [x] `#31` Haftanin nabzi ticker query optimizasyonu (`S`, `done`)
+- [x] `#32` Sosyal akis all/followed filtrelerini user pref olarak saklama (`S`, `done`)
 - [ ] `#33` 24h/7d default stratejisi icin A/B test setup (`M`, `todo`)
 
 ## Sprint 5 (Bildirim + Kimlik + Hesap)
@@ -97,6 +97,6 @@ Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 
 ## Yurutme Notu
 - Aktif sprint: `Sprint 3`
-- Aktif paket: `#28`
+- Aktif paket: `#02 + #03`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.

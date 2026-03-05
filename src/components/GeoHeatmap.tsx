@@ -15,6 +15,29 @@ type CityCount = { city: string; count: number };
 type DistrictCount = { district: string; count: number };
 type PairCount = { key: string; city: string; district: string; count: number };
 
+function cleanGeoValue(value: string | null | undefined) {
+  return String(value || "").trim();
+}
+
+function isLocationPlaceholder(value: string) {
+  const normalized = value.toLowerCase();
+  return (
+    normalized === "diger" ||
+    normalized === "diğer" ||
+    normalized === "belirtilmedi" ||
+    normalized === "unspecified" ||
+    normalized === "other"
+  );
+}
+
+function hasStrictGeo(c: CheckinGeo) {
+  const city = cleanGeoValue(c.city);
+  const district = cleanGeoValue(c.district);
+  if (!city || !district) return false;
+  if (isLocationPlaceholder(city) || isLocationPlaceholder(district)) return false;
+  return true;
+}
+
 export default function GeoHeatmap({ year, checkins, lang = "tr" }: { year: number; checkins: CheckinGeo[]; lang?: AppLang }) {
   const [layer, setLayer] = useState<"city" | "district" | "pair">("city");
   const cityCounts = useMemo<CityCount[]>(() => {
@@ -22,7 +45,8 @@ export default function GeoHeatmap({ year, checkins, lang = "tr" }: { year: numb
     for (const c of checkins) {
       const y = new Date(c.created_at).getUTCFullYear();
       if (y !== year) continue;
-      const city = (c.city || "").trim();
+      if (!hasStrictGeo(c)) continue;
+      const city = cleanGeoValue(c.city);
       if (!city) continue;
       map.set(city, (map.get(city) || 0) + 1);
     }
@@ -51,9 +75,10 @@ export default function GeoHeatmap({ year, checkins, lang = "tr" }: { year: numb
     for (const c of checkins) {
       const y = new Date(c.created_at).getUTCFullYear();
       if (y !== year) continue;
-      const city = (c.city || "").trim();
+      if (!hasStrictGeo(c)) continue;
+      const city = cleanGeoValue(c.city);
       if (city !== selectedCity) continue;
-      const district = (c.district || "").trim() || (lang === "en" ? "Unspecified" : "Belirtilmedi");
+      const district = cleanGeoValue(c.district);
       map.set(district, (map.get(district) || 0) + 1);
     }
     return Array.from(map.entries())
@@ -66,9 +91,9 @@ export default function GeoHeatmap({ year, checkins, lang = "tr" }: { year: numb
     for (const c of checkins) {
       const y = new Date(c.created_at).getUTCFullYear();
       if (y !== year) continue;
-      const city = (c.city || "").trim();
-      if (!city) continue;
-      const district = (c.district || "").trim() || (lang === "en" ? "Unspecified" : "Belirtilmedi");
+      if (!hasStrictGeo(c)) continue;
+      const city = cleanGeoValue(c.city);
+      const district = cleanGeoValue(c.district);
       const key = `${city}::${district}`;
       map.set(key, (map.get(key) || 0) + 1);
     }
@@ -78,7 +103,7 @@ export default function GeoHeatmap({ year, checkins, lang = "tr" }: { year: numb
         return { key, city, district, count };
       })
       .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key, "tr"));
-  }, [checkins, year, lang]);
+  }, [checkins, year]);
 
   const cityMax = Math.max(1, ...cityCounts.map((x) => x.count));
   const districtMax = Math.max(1, ...districtCounts.map((x) => x.count));
