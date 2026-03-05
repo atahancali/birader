@@ -354,11 +354,11 @@ const BEER_CATALOG: BeerItem[] = [
 
 const LS_KEY = "birader:checkins:v1";
 const RATING_GLASS_SEQUENCE: Array<Exclude<RatingGlassStyle, "mix">> = ["pint", "tulip", "weizen", "goblet"];
-const RATING_GLASS_CLIP_PATHS: Record<Exclude<RatingGlassStyle, "mix">, string> = {
-  pint: "polygon(12% 0%, 88% 0%, 92% 100%, 8% 100%)",
-  tulip: "polygon(24% 0%, 76% 0%, 88% 24%, 84% 72%, 72% 100%, 28% 100%, 16% 72%, 12% 24%)",
-  weizen: "polygon(30% 0%, 70% 0%, 86% 38%, 82% 80%, 68% 100%, 32% 100%, 18% 80%, 14% 38%)",
-  goblet: "polygon(20% 0%, 80% 0%, 90% 26%, 78% 70%, 58% 86%, 58% 100%, 42% 100%, 42% 86%, 22% 70%, 10% 26%)",
+const RATING_GLASS_PATHS: Record<Exclude<RatingGlassStyle, "mix">, string> = {
+  pint: "M20 10 Q50 5 80 10 L84 146 Q50 154 16 146 Z",
+  tulip: "M30 10 Q50 4 70 10 Q84 26 86 46 Q84 94 78 128 Q72 148 60 154 L40 154 Q28 148 22 128 Q16 94 14 46 Q16 26 30 10 Z",
+  weizen: "M34 10 Q50 2 66 10 Q80 20 84 42 Q82 96 74 132 Q68 154 52 156 L48 156 Q32 154 26 132 Q18 96 16 42 Q20 20 34 10 Z",
+  goblet: "M24 12 Q50 4 76 12 Q88 24 84 44 Q80 88 64 116 L56 126 L56 146 Q56 154 66 158 L34 158 Q44 154 44 146 L44 126 L36 116 Q20 88 16 44 Q12 24 24 12 Z",
 };
 
 function resolvedRatingGlassStyle(style: RatingGlassStyle, bucketIndex: number): Exclude<RatingGlassStyle, "mix"> {
@@ -4726,7 +4726,13 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             const fillPct = b.count === 0 ? 6 : Math.max(14, Math.round(intensity * 94));
             const isActive = activeBucketInfo?.bucket.rating === b.rating;
             const resolvedShape = resolvedRatingGlassStyle(ratingGlassStyle, idx);
-            const clipPath = RATING_GLASS_CLIP_PATHS[resolvedShape];
+            const bodyPath = RATING_GLASS_PATHS[resolvedShape];
+            const fillHeight = Math.max(8, Math.round((fillPct / 100) * 132));
+            const beerTopY = 154 - fillHeight;
+            const gradId = `rg-grad-${idx}-${resolvedShape}`;
+            const beerId = `rg-beer-${idx}-${resolvedShape}`;
+            const shineId = `rg-shine-${idx}-${resolvedShape}`;
+            const clipId = `rg-clip-${idx}-${resolvedShape}`;
 
             return (
               <button
@@ -4742,35 +4748,55 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   {b.count} ({b.percent.toFixed(0)}%)
                 </div>
 
-                <div className="relative h-[136px] w-full">
-                  <div
-                    className="absolute inset-0 overflow-hidden border border-white/25 bg-gradient-to-b from-white/10 via-white/4 to-transparent"
-                    style={{ clipPath }}
-                  >
-                    <div className="absolute inset-x-[10%] top-1 h-[3px] rounded-full bg-white/35" />
-                    <div
-                      className={`absolute inset-x-[3px] bottom-[2px] overflow-hidden transition-all duration-300 ${
-                        isActive ? "shadow-[0_0_24px_rgba(245,158,11,0.55)]" : ""
-                      }`}
-                      style={{
-                        height: `${fillPct}%`,
-                        background:
-                          "linear-gradient(180deg, rgba(252,211,77,0.95) 0%, rgba(245,158,11,0.9) 48%, rgba(180,83,9,0.92) 100%)",
-                      }}
-                    >
-                      <div className="absolute inset-x-[2%] top-0 h-3 rounded-b-md bg-gradient-to-b from-amber-50/95 via-amber-100/85 to-transparent" />
-                      <div
-                        className="absolute left-[20%] bottom-[16%] h-1.5 w-1.5 rounded-full bg-amber-50/70"
-                        style={{ animation: "bubble-rise 1.7s ease-out infinite" }}
+                <div className={`relative h-[140px] w-full ${isActive ? "drop-shadow-[0_0_18px_rgba(245,158,11,0.45)]" : ""}`}>
+                  <svg viewBox="0 0 100 160" className="h-full w-full" aria-hidden="true">
+                    <defs>
+                      <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="rgba(255,255,255,0.16)" />
+                        <stop offset="36%" stopColor="rgba(255,255,255,0.07)" />
+                        <stop offset="100%" stopColor="rgba(255,255,255,0.02)" />
+                      </linearGradient>
+                      <linearGradient id={beerId} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="rgba(252,211,77,0.96)" />
+                        <stop offset="52%" stopColor="rgba(245,158,11,0.9)" />
+                        <stop offset="100%" stopColor="rgba(180,83,9,0.9)" />
+                      </linearGradient>
+                      <linearGradient id={shineId} x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stopColor="rgba(255,255,255,0.22)" />
+                        <stop offset="35%" stopColor="rgba(255,255,255,0.06)" />
+                        <stop offset="100%" stopColor="rgba(255,255,255,0.03)" />
+                      </linearGradient>
+                      <clipPath id={clipId}>
+                        <path d={bodyPath} />
+                      </clipPath>
+                    </defs>
+
+                    <path d={bodyPath} fill={`url(#${gradId})`} stroke="rgba(255,255,255,0.28)" strokeWidth="1.4" />
+
+                    <g clipPath={`url(#${clipId})`}>
+                      <rect x="8" y={beerTopY} width="84" height={fillHeight + 8} fill={`url(#${beerId})`} />
+                      <ellipse cx="50" cy={Math.max(10, beerTopY + 2)} rx="31" ry="6.5" fill="rgba(255,248,220,0.94)" />
+                      <ellipse cx="50" cy={Math.max(12, beerTopY + 4)} rx="27" ry="4.6" fill="rgba(255,239,198,0.62)" />
+                      <circle
+                        cx="34"
+                        cy={Math.min(145, beerTopY + 52)}
+                        r="3.2"
+                        fill="rgba(255,239,198,0.45)"
+                        style={{ animation: "bubble-rise 1.75s ease-out infinite" }}
                       />
-                      <div
-                        className="absolute left-[58%] bottom-[12%] h-1.5 w-1.5 rounded-full bg-amber-100/60"
-                        style={{ animation: "bubble-rise 1.9s ease-out infinite 160ms" }}
+                      <circle
+                        cx="58"
+                        cy={Math.min(145, beerTopY + 44)}
+                        r="2.8"
+                        fill="rgba(255,239,198,0.35)"
+                        style={{ animation: "bubble-rise 1.95s ease-out infinite 150ms" }}
                       />
-                    </div>
-                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/10 via-transparent to-white/6" />
-                  </div>
-                  <div className="absolute bottom-0 left-1/2 h-[5px] w-[62%] -translate-x-1/2 rounded-full bg-white/18" />
+                      <path d={bodyPath} fill={`url(#${shineId})`} />
+                    </g>
+
+                    <path d="M22 16 Q50 12 78 16" stroke="rgba(255,255,255,0.5)" strokeWidth="1.2" fill="none" />
+                  </svg>
+                  <div className="absolute bottom-0 left-1/2 h-[4px] w-[58%] -translate-x-1/2 rounded-full bg-white/20" />
                 </div>
 
                 <div className={`mt-1 text-[10px] transition-opacity ${isActive ? "opacity-80" : "opacity-45"}`}>
