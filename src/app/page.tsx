@@ -4559,11 +4559,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         </div>
 
         <div
-          className="relative grid h-44 grid-cols-11 items-end gap-2"
+          className="relative grid h-56 grid-cols-11 items-end gap-2"
           onMouseLeave={() => setActiveRatingBucket(null)}
         >
           {ratingDistribution.buckets.map((b) => {
-            const h = b.count === 0 ? 8 : Math.max(16, Math.round((b.count / ratingDistribution.max) * 120));
+            const intensity = ratingDistribution.max > 0 ? b.count / ratingDistribution.max : 0;
+            const fillPct = b.count === 0 ? 6 : Math.max(14, Math.round(intensity * 94));
             const isActive = activeBucketInfo?.bucket.rating === b.rating;
 
             return (
@@ -4580,14 +4581,32 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   {b.count} ({b.percent.toFixed(0)}%)
                 </div>
 
-                <div
-                  className={`w-full rounded-t-md border transition-all duration-200 ${
-                    isActive
-                      ? "border-yellow-200/55 from-amber-500/75 via-amber-400/80 to-yellow-100/95 shadow-[0_0_20px_rgba(245,158,11,0.6)]"
-                      : "border-amber-100/10 from-amber-700/35 via-amber-500/40 to-yellow-200/55 opacity-40"
-                  } bg-gradient-to-t hover:border-yellow-200/50 hover:from-amber-500/70 hover:via-amber-400/75 hover:to-yellow-100/95 hover:shadow-[0_0_22px_rgba(245,158,11,0.65),0_0_42px_rgba(251,191,36,0.35)]`}
-                  style={{ height: `${h}px` }}
-                />
+                <div className="relative h-[132px] w-full overflow-hidden rounded-t-[8px] rounded-b-[14px] border border-white/25 bg-gradient-to-b from-white/8 via-white/4 to-transparent">
+                  <div
+                    className={`absolute inset-x-[2px] bottom-[2px] overflow-hidden rounded-b-[10px] transition-all duration-300 ${
+                      isActive
+                        ? "shadow-[0_0_24px_rgba(245,158,11,0.55)]"
+                        : ""
+                    }`}
+                    style={{
+                      height: `${fillPct}%`,
+                      background:
+                        "linear-gradient(180deg, rgba(251,191,36,0.92) 0%, rgba(245,158,11,0.9) 45%, rgba(180,83,9,0.92) 100%)",
+                    }}
+                  >
+                    <div className="absolute inset-x-0 top-0 h-3 bg-gradient-to-b from-amber-50/95 via-amber-100/80 to-transparent" />
+                    <div
+                      className="absolute left-[18%] bottom-[18%] h-1.5 w-1.5 rounded-full bg-amber-50/70"
+                      style={{ animation: "bubble-rise 1.7s ease-out infinite" }}
+                    />
+                    <div
+                      className="absolute left-[56%] bottom-[12%] h-1.5 w-1.5 rounded-full bg-amber-100/60"
+                      style={{ animation: "bubble-rise 1.9s ease-out infinite 160ms" }}
+                    />
+                  </div>
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/8 via-transparent to-white/5" />
+                  <div className="absolute bottom-0 left-1/2 h-1 w-[72%] -translate-x-1/2 rounded-full bg-white/15" />
+                </div>
 
                 <div className={`mt-1 text-[10px] transition-opacity ${isActive ? "opacity-80" : "opacity-45"}`}>
                   {ratingToStarsLabel(b.rating)}
