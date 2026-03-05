@@ -353,7 +353,7 @@ const BEER_CATALOG: BeerItem[] = [
 
 const LS_KEY = "birader:checkins:v1";
 const RATING_GLASS_PATH =
-  "M18 14 Q50 7 82 14 C84 28 80 44 74 56 C67 72 66 92 68 124 C69 137 67 145 62 150 L38 150 C33 145 31 137 32 124 C34 92 33 72 26 56 C20 44 16 28 18 14 Z";
+  "M22 14 Q50 10 78 14 L73 150 L27 150 Z";
 
 function loadLocalCheckins(): Checkin[] {
   try {
