@@ -11,6 +11,7 @@ type TabKey = "log" | "social" | "heatmap" | "stats" | "help";
 
 function activeTabFromRoute(pathname: string, section: string | null): TabKey {
   if (pathname === "/yardim") return "help";
+  if (pathname === "/connections") return "social";
   if (pathname.startsWith("/u/")) return "social";
   if (pathname === "/") {
     if (section === "social") return "social";

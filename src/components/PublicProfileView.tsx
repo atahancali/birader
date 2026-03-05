@@ -8,6 +8,7 @@ import FieldHeatmap from "@/components/FieldHeatmap";
 import DayModal from "@/components/DayModal";
 import LoadingPulse from "@/components/LoadingPulse";
 import RatingStars from "@/components/RatingStars";
+import FollowsYouBadge from "@/components/FollowsYouBadge";
 import { supabase } from "@/lib/supabase";
 import { normalizeUsername, usernameFromEmail } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
@@ -1244,8 +1245,20 @@ export default function PublicProfileView({ username }: { username: string }) {
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">{tx(lang, "Ortalama", "Average")}: {avg.toFixed(2)}⭐</div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">{year} {tx(lang, "log", "logs")}: {checkins.length}</div>
-          <div className="rounded-xl border border-white/10 bg-black/20 p-2">{tx(lang, "Takipci", "Followers")}: {followers}</div>
-          <div className="rounded-xl border border-white/10 bg-black/20 p-2">{tx(lang, "Takip", "Following")}: {following}</div>
+          {isOwnProfile ? (
+            <Link href="/connections?tab=followers" className="rounded-xl border border-white/10 bg-black/20 p-2 underline">
+              {tx(lang, "Takipci", "Followers")}: {followers}
+            </Link>
+          ) : (
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">{tx(lang, "Takipci", "Followers")}: {followers}</div>
+          )}
+          {isOwnProfile ? (
+            <Link href="/connections?tab=following" className="rounded-xl border border-white/10 bg-black/20 p-2 underline">
+              {tx(lang, "Takip", "Following")}: {following}
+            </Link>
+          ) : (
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">{tx(lang, "Takip", "Following")}: {following}</div>
+          )}
         </div>
 
         {sessionUserId && sessionUserId !== profile.user_id ? (
@@ -1257,7 +1270,7 @@ export default function PublicProfileView({ username }: { username: string }) {
             >
               {isFollowing ? tx(lang, "Takibi birak", "Unfollow") : tx(lang, "Takip et", "Follow")}
             </button>
-            {followsMe ? <div className="mt-2 text-xs text-amber-200/85">{tx(lang, "Seni takip ediyor", "Follows you")}</div> : null}
+            {followsMe ? <FollowsYouBadge lang={lang} className="mt-2 text-xs" /> : null}
           </div>
         ) : null}
       </section>

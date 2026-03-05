@@ -65,8 +65,8 @@ Hedef: sosyal akis/leaderboard bildirimi daha stabil ve tutarli hale getirmek.
 Hedef: profile, takip ve bildirim akisini daha net ve guvenli hale getirmek.
 
 - [x] `#34` Bildirim deep-link highlight animasyon duzeltme (`S`, `done`)
-- [ ] `#35` Takipci/takip edilen ekranini ayri sayfaya tasiyip arama ekleme (`M`, `todo`)
-- [ ] `#36` "Seni takip ediyor" etiketini profil + listede ortaklastirma (`S`, `todo`)
+- [x] `#35` Takipci/takip edilen ekranini ayri sayfaya tasiyip arama ekleme (`M`, `done`)
+- [x] `#36` "Seni takip ediyor" etiketini profil + listede ortaklastirma (`S`, `done`)
 - [ ] `#37` Kimlik modelini netlestirme (`login_username/display_name/handle`) (`L`, `todo`)
 - [ ] `#38` Nick degisim gecmisini kullaniciya gorunur yapma (`S`, `todo`)
 - [ ] `#39` Avatar upload size/format kontrol + otomatik sikistirma (`M`, `todo`)
@@ -97,6 +97,6 @@ Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 
 ## Yurutme Notu
 - Aktif sprint: `Sprint 3`
-- Aktif paket: `#35 + #36`
+- Aktif paket: `#37 + #38`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.

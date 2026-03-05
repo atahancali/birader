@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import LoadingPulse from "@/components/LoadingPulse";
 import RatingStars from "@/components/RatingStars";
 import WeeklyTickerBar, { type WeeklyTickerItem } from "@/components/WeeklyTickerBar";
+import FollowsYouBadge from "@/components/FollowsYouBadge";
 import { supabase } from "@/lib/supabase";
 import { normalizeUsername, usernameFromEmail } from "@/lib/identity";
 import { trackEvent } from "@/lib/analytics";
@@ -537,10 +538,6 @@ export default function SocialPanel({
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const [followingProfiles, setFollowingProfiles] = useState<SearchProfile[]>([]);
   const [followerProfiles, setFollowerProfiles] = useState<SearchProfile[]>([]);
-  const [relationView, setRelationView] = useState<"following" | "followers">("following");
-  const [relationsOpen, setRelationsOpen] = useState(false);
-  const [connectionsMenuOpen, setConnectionsMenuOpen] = useState(false);
-  const [relationHighlightUserId, setRelationHighlightUserId] = useState("");
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [feedBusy, setFeedBusy] = useState(false);
   const [feedLoadingMore, setFeedLoadingMore] = useState(false);
@@ -3219,13 +3216,9 @@ export default function SocialPanel({
       if (actorUsername && actorUsername !== "kullanici") {
         router.push(`/u/${encodeURIComponent(actorUsername)}`);
       } else {
-        setRelationView("followers");
-        setRelationsOpen(true);
         const targetUserId = String(item.actor_id || "");
-        if (targetUserId) {
-          setRelationHighlightUserId(targetUserId);
-          setTimeout(() => setRelationHighlightUserId(""), 2600);
-        }
+        const query = targetUserId ? `?tab=followers&highlight=${encodeURIComponent(targetUserId)}` : "?tab=followers";
+        router.push(`/connections${query}`);
       }
       setNotifActionBusyId(0);
       return;
@@ -3466,95 +3459,39 @@ export default function SocialPanel({
             <div className="text-xs opacity-70">
               {tx(lang, "Baglantilar", "Connections")} • {followingProfiles.length}/{followerProfiles.length}
             </div>
-            <button
-              type="button"
-              onClick={() => setConnectionsMenuOpen((v) => !v)}
+            <Link
+              href="/connections"
               className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[11px]"
             >
-              {connectionsMenuOpen ? tx(lang, "Gizle", "Hide") : tx(lang, "Ac", "Open")}
-            </button>
+              {tx(lang, "Detay", "Details")}
+            </Link>
           </div>
-          {connectionsMenuOpen ? <div className="mt-2 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setRelationView("following");
-                setRelationsOpen((v) => !v || relationView !== "following");
-              }}
-              className={`rounded-xl border px-3 py-2 text-left text-sm ${
-                relationView === "following" ? "border-amber-300/35 bg-amber-500/10" : "border-white/10 bg-black/20"
-              }`}
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <Link
+              href="/connections?tab=following"
+              className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-left text-sm"
             >
               <div className="text-xs opacity-70">{tx(lang, "Takip edilen", "Following")}</div>
               <div className="text-lg font-semibold">{followingProfiles.length}</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setRelationView("followers");
-                setRelationsOpen((v) => !v || relationView !== "followers");
-              }}
-              className={`rounded-xl border px-3 py-2 text-left text-sm ${
-                relationView === "followers" ? "border-amber-300/35 bg-amber-500/10" : "border-white/10 bg-black/20"
-              }`}
+              {followingProfiles.slice(0, 2).map((p) => (
+                <div key={`follow-preview-${p.user_id}`} className="truncate text-[11px] opacity-75">
+                  @{p.username}
+                </div>
+              ))}
+            </Link>
+            <Link
+              href="/connections?tab=followers"
+              className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-left text-sm"
             >
               <div className="text-xs opacity-70">{tx(lang, "Takipci", "Followers")}</div>
               <div className="text-lg font-semibold">{followerProfiles.length}</div>
-            </button>
-          </div> : null}
-
-          {connectionsMenuOpen && relationsOpen ? (
-            <div className="mt-3 space-y-2">
-              {(relationView === "following" ? followingProfiles : followerProfiles).map((p) => {
-                const isFollowing = followingIds.has(p.user_id);
-                const isFollowersView = relationView === "followers";
-                return (
-                  <div
-                    key={`${relationView}-top-${p.user_id}`}
-                    className={`flex items-center justify-between gap-3 rounded-xl border p-2 ${
-                      relationHighlightUserId === p.user_id
-                        ? "border-amber-300/45 bg-amber-500/10 shadow-[0_0_0_1px_rgba(252,211,77,0.18)]"
-                        : "border-white/10 bg-black/25"
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <Link href={`/u/${p.username}`} className="truncate text-sm underline">
-                        {visibleName(p)}
-                      </Link>
-                      <div className="truncate text-[11px] opacity-65">@{p.username}</div>
-                      {followerIds.has(p.user_id) ? (
-                        <div className="text-[11px] text-amber-200/85">{tx(lang, "Seni takip ediyor", "Follows you")}</div>
-                      ) : null}
-                    </div>
-                    {isFollowersView ? (
-                      <button
-                        type="button"
-                        onClick={() => void (isFollowing ? unfollow(p) : follow(p))}
-                        className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
-                      >
-                        {isFollowing ? tx(lang, "Takiptesin", "Following") : tx(lang, "Takip et", "Follow")}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => void unfollow(p)}
-                        className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs"
-                      >
-                        {tx(lang, "Cikar", "Remove")}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-              {(relationView === "following" ? followingProfiles.length : followerProfiles.length) === 0 ? (
-                <div className="text-xs opacity-60">
-                  {relationView === "following"
-                    ? tx(lang, "Henuz kimseyi takip etmiyorsun.", "You are not following anyone yet.")
-                    : tx(lang, "Henuz takipcin yok.", "No followers yet.")}
+              {followerProfiles.slice(0, 2).map((p) => (
+                <div key={`follower-preview-${p.user_id}`} className="truncate text-[11px] opacity-75">
+                  @{p.username}
                 </div>
-              ) : null}
-            </div>
-          ) : null}
+              ))}
+            </Link>
+          </div>
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
@@ -3591,9 +3528,7 @@ export default function SocialPanel({
                       {visibleName(p)}
                     </Link>
                     <div className="truncate text-[11px] opacity-65">@{p.username}</div>
-                    {followerIds.has(p.user_id) ? (
-                      <div className="text-[11px] text-amber-200/85">{tx(lang, "Seni takip ediyor", "Follows you")}</div>
-                    ) : null}
+                    {followerIds.has(p.user_id) ? <FollowsYouBadge lang={lang} /> : null}
                     {p.bio ? <div className="truncate text-xs opacity-70">{p.bio}</div> : null}
                   </div>
                   <button
