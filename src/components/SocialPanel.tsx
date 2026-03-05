@@ -196,6 +196,17 @@ type PerfOverviewRow = {
   last_seen_at: string | null;
 };
 
+type PerfDailyRow = {
+  snapshot_date: string;
+  metric_key: string;
+  total_calls: number;
+  failed_calls: number;
+  fail_rate_pct: number | null;
+  avg_ms: number | null;
+  p95_ms: number | null;
+  unique_users: number;
+};
+
 type AvatarModerationRow = {
   id: number;
   user_id: string;
@@ -607,6 +618,8 @@ export default function SocialPanel({
   const [leaderBusy, setLeaderBusy] = useState(false);
   const [perfRows, setPerfRows] = useState<PerfOverviewRow[]>([]);
   const [perfBusy, setPerfBusy] = useState(false);
+  const [perfDailyRows, setPerfDailyRows] = useState<PerfDailyRow[]>([]);
+  const [perfDailyBusy, setPerfDailyBusy] = useState(false);
   const [avatarModerationRows, setAvatarModerationRows] = useState<AvatarModerationRow[]>([]);
   const [avatarModerationBusy, setAvatarModerationBusy] = useState(false);
   const [avatarReviewBusyId, setAvatarReviewBusyId] = useState<number>(0);
@@ -742,6 +755,50 @@ export default function SocialPanel({
       }),
     [perfRows]
   );
+  const perfWeeklyTrend = useMemo(() => {
+    const byDate = new Map<
+      string,
+      {
+        snapshotDate: string;
+        totalCalls: number;
+        failedCalls: number;
+        weightedFailNumerator: number;
+        maxP95: number;
+        metrics: number;
+      }
+    >();
+
+    for (const row of perfDailyRows) {
+      const key = String(row.snapshot_date || "").slice(0, 10);
+      if (!key) continue;
+      const entry = byDate.get(key) || {
+        snapshotDate: key,
+        totalCalls: 0,
+        failedCalls: 0,
+        weightedFailNumerator: 0,
+        maxP95: 0,
+        metrics: 0,
+      };
+      const calls = Number(row.total_calls || 0);
+      const failed = Number(row.failed_calls || 0);
+      const failRatePct = Number(row.fail_rate_pct || 0);
+      const p95 = Number(row.p95_ms || 0);
+      entry.totalCalls += calls;
+      entry.failedCalls += failed;
+      entry.weightedFailNumerator += calls > 0 && Number.isFinite(failRatePct) ? failRatePct * calls : 0;
+      if (Number.isFinite(p95) && p95 > entry.maxP95) entry.maxP95 = p95;
+      entry.metrics += 1;
+      byDate.set(key, entry);
+    }
+
+    return Array.from(byDate.values())
+      .sort((a, b) => a.snapshotDate.localeCompare(b.snapshotDate))
+      .slice(-7)
+      .map((x) => ({
+        ...x,
+        failRatePct: x.totalCalls > 0 ? x.weightedFailNumerator / x.totalCalls : 0,
+      }));
+  }, [perfDailyRows]);
   const filteredNotifications = useMemo(() => {
     const prefFiltered = notifications.filter((n) => {
       if (n.type === "follow") return notifPrefs.follow;
@@ -1776,19 +1833,37 @@ export default function SocialPanel({
     const canRead = adminOverride || Boolean(profile?.is_admin);
     if (!canRead) {
       setPerfRows([]);
+      setPerfDailyRows([]);
       return;
     }
     setPerfBusy(true);
+    setPerfDailyBusy(true);
+    const sinceDate = new Date();
+    sinceDate.setDate(sinceDate.getDate() - 6);
+    const sinceIso = sinceDate.toISOString().slice(0, 10);
     const { data, error } = await supabase
       .from("social_perf_overview_24h")
       .select("metric_key, total_calls, failed_calls, fail_rate_pct, avg_ms, p95_ms, max_ms, unique_users, last_seen_at")
       .order("p95_ms", { ascending: false, nullsFirst: false })
       .limit(6);
+    const { data: dailyData, error: dailyError } = await supabase
+      .from("social_perf_daily")
+      .select("snapshot_date, metric_key, total_calls, failed_calls, fail_rate_pct, avg_ms, p95_ms, unique_users")
+      .gte("snapshot_date", sinceIso)
+      .order("snapshot_date", { ascending: false })
+      .limit(420);
     setPerfBusy(false);
+    setPerfDailyBusy(false);
 
     if (error) {
       markDbError(error.message);
       return;
+    }
+    if (dailyError) {
+      markDbError(dailyError.message);
+      setPerfDailyRows([]);
+    } else {
+      setPerfDailyRows((dailyData as PerfDailyRow[] | null) ?? []);
     }
 
     setPerfRows((data as PerfOverviewRow[] | null) ?? []);
@@ -3516,6 +3591,57 @@ export default function SocialPanel({
                   </div>
                 );
               })}
+              <div className="rounded-xl border border-white/10 bg-black/25 p-2">
+                <div className="text-[11px] opacity-70">
+                  {tx(lang, "Haftalik trend (social_perf_daily)", "Weekly trend (social_perf_daily)")}
+                </div>
+                <div className="mt-2 space-y-1">
+                  {perfWeeklyTrend.map((day) => {
+                    const isRisk = day.failRatePct >= 5 || day.maxP95 >= 900;
+                    const isWarn = !isRisk && (day.failRatePct >= 1 || day.maxP95 >= 500);
+                    return (
+                      <div key={`perf-day-${day.snapshotDate}`} className="flex items-center justify-between gap-2 text-[11px]">
+                        <div className="shrink-0 opacity-75">
+                          {new Date(day.snapshotDate).toLocaleDateString(locale, { month: "short", day: "2-digit" })}
+                        </div>
+                        <div className="truncate opacity-85">
+                          {day.totalCalls}c • p95 {Math.round(day.maxP95)}ms • fail {day.failRatePct.toFixed(1)}%
+                        </div>
+                        <div
+                          className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${
+                            isRisk
+                              ? "border-red-400/40 bg-red-500/12 text-red-100"
+                              : isWarn
+                              ? "border-amber-300/40 bg-amber-500/12 text-amber-100"
+                              : "border-emerald-300/35 bg-emerald-500/12 text-emerald-100"
+                          }`}
+                        >
+                          {isRisk
+                            ? tx(lang, "kritik", "risk")
+                            : isWarn
+                            ? tx(lang, "uyari", "warn")
+                            : tx(lang, "iyi", "ok")}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {!perfDailyBusy && !perfWeeklyTrend.length ? (
+                    <div className="text-[11px] opacity-60">
+                      {tx(lang, "Haftalik trend verisi yok.", "No weekly trend data.")}
+                    </div>
+                  ) : null}
+                  {perfDailyBusy ? (
+                    <LoadingPulse
+                      lang={lang}
+                      labelTr="Haftalik trend yukleniyor..."
+                      labelEn="Loading weekly trend..."
+                      compact
+                      inline
+                      className="text-[11px]"
+                    />
+                  ) : null}
+                </div>
+              </div>
               {perfBusy ? (
                 <LoadingPulse
                   lang={lang}

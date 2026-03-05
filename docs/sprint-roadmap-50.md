@@ -87,7 +87,7 @@ Hedef: cihaz gecislerinde deneyimi ve ulasim kabiliyetini arttirmak.
 
 - [x] `#47` Mobil/Desktop/App icin breakpoint tabanli layout matrisi (`M`, `done`)
 - [x] `#48` PWA install banner + app deep-link akisi (`M`, `done`)
-- [ ] `#07` `social_perf_daily` icin haftalik trend view (`S`, `todo`)
+- [x] `#07` `social_perf_daily` icin haftalik trend view (`S`, `done`)
 
 ## Sprint 8 (Uyumluluk + Admin Operasyon)
 Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
@@ -96,7 +96,7 @@ Hedef: yasal/operasyonel takip ve yonetim ekranlarini tamamlamak.
 - [ ] `#50` Admin panelde growth + perf + moderation KPI tek ekran (`L`, `todo`)
 
 ## Yurutme Notu
-- Aktif sprint: `Sprint 7`
-- Aktif paket: `#07`
+- Aktif sprint: `Sprint 8`
+- Aktif paket: `#49 + #50`
 - Kural: Her madde bitince bu dosyada durum `done` olacak.
 - Kural: Sprint disina tasan isler bir sonraki sprint'e re-planlanacak.
