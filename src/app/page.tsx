@@ -4127,10 +4127,17 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         ) : null}
 
         {logStep === 4 ? (
-          <div>
-            <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
-              <div className="text-xs opacity-70">{tx(lang, "Log ozeti", "Log summary")}</div>
-              <div className="mt-1 text-sm font-semibold">
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-amber-300/20 bg-gradient-to-br from-amber-500/10 via-black/25 to-black/30 p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="text-[11px] uppercase tracking-[0.14em] text-amber-200/90">
+                  {tx(lang, "Log ozeti", "Log summary")}
+                </div>
+                <div className="hidden sm:block">
+                  {format === "Fici" ? <FormatDraftIcon active /> : <FormatBottleIcon active />}
+                </div>
+              </div>
+              <div className="text-base font-semibold sm:text-lg">
                 {isBackDate && bulkImportTotalCount > 0
                   ? tx(
                       lang,
@@ -4139,20 +4146,38 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                     )
                   : beerName || tx(lang, "Bira secilmedi", "No beer selected")}
               </div>
-              <div className="mt-1 text-xs opacity-75">Format: {format}</div>
-              <div className="text-xs opacity-75">{tx(lang, "Tarih", "Date")}: {dateISO}</div>
-              <div className="flex items-center gap-2 text-xs opacity-75">
-                <span>{tx(lang, "Puan", "Rating")}:</span>
-                <RatingStars value={rating} size="xs" unratedLabel={tx(lang, "Puansiz", "Unrated")} />
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div className="rounded-xl border border-white/12 bg-black/25 px-3 py-2 text-xs">
+                  <div className="opacity-65">{tx(lang, "Format", "Format")}</div>
+                  <div className="mt-0.5 font-medium">{format}</div>
+                </div>
+                <div className="rounded-xl border border-white/12 bg-black/25 px-3 py-2 text-xs">
+                  <div className="opacity-65">{tx(lang, "Tarih", "Date")}</div>
+                  <div className="mt-0.5 font-medium">{dateISO}</div>
+                </div>
+                <div className="rounded-xl border border-white/12 bg-black/25 px-3 py-2 text-xs">
+                  <div className="opacity-65">{tx(lang, "Konum", "Location")}</div>
+                  <div className="mt-0.5 font-medium">
+                    {city}
+                    {resolvedDistrict ? ` / ${resolvedDistrict}` : ""}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-white/12 bg-black/25 px-3 py-2 text-xs">
+                  <div className="opacity-65">{tx(lang, "Puan", "Rating")}</div>
+                  <div className="mt-1">
+                    <RatingStars value={rating} size="xs" unratedLabel={tx(lang, "Puansiz", "Unrated")} />
+                  </div>
+                </div>
               </div>
-              <div className="text-xs opacity-75">{tx(lang, "Konum", "Location")}: {city}{resolvedDistrict ? ` / ${resolvedDistrict}` : ""}</div>
             </div>
 
             {isBackDate && bulkImportTotalCount > 0 ? (
-              <div className="mb-3 rounded-2xl border border-amber-300/25 bg-amber-500/10 p-3">
+              <div className="rounded-2xl border border-amber-300/25 bg-gradient-to-br from-amber-500/14 via-black/25 to-black/35 p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs text-amber-200">{tx(lang, "Import onizleme", "Import preview")}</div>
-                  <div className="text-[11px] text-amber-100/85">
+                  <div className="text-[11px] uppercase tracking-[0.14em] text-amber-200/90">
+                    {tx(lang, "Import onizleme", "Import preview")}
+                  </div>
+                  <div className="rounded-full border border-white/15 bg-black/30 px-2 py-0.5 text-[11px] text-amber-100/90">
                     {bulkImportTotalCount} {tx(lang, "kayit", "records")} • {bulkImportUniqueCount} {tx(lang, "farkli bira", "unique beers")}
                   </div>
                 </div>
@@ -4160,10 +4185,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                   {bulkImportPreview.map((row) => (
                     <div
                       key={row.beer}
-                      className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs"
+                      className="flex items-center justify-between rounded-lg border border-white/12 bg-black/28 px-2 py-1.5 text-xs"
                     >
                       <div className="truncate pr-2">{row.beer}</div>
-                      <div className="opacity-75">{row.qty}x</div>
+                      <div className="rounded-full border border-white/15 bg-white/8 px-2 py-0.5 text-[11px] opacity-85">{row.qty}x</div>
                     </div>
                   ))}
                 </div>
@@ -4177,28 +4202,28 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               </div>
             ) : null}
 
-            <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
-              <label className="flex items-center gap-2 text-xs opacity-85">
-                <input
-                  type="checkbox"
-                  checked={favoriteOnSave}
-                  onChange={(e) => setFavoriteOnSave(e.target.checked)}
-                />
-                {tx(lang, "Bu logdaki birayi favorilere ekle", "Add this beer to favorites")}
-              </label>
-            </div>
+            <label className="flex items-center gap-3 rounded-2xl border border-white/12 bg-black/25 px-3 py-3 text-sm transition hover:border-white/25">
+              <input
+                type="checkbox"
+                checked={favoriteOnSave}
+                onChange={(e) => setFavoriteOnSave(e.target.checked)}
+                className="h-4 w-4 accent-amber-400"
+              />
+              <span className="font-medium">{tx(lang, "Bu logdaki birayi favorilere ekle", "Add this beer to favorites")}</span>
+            </label>
 
             {isBackDate && batchBeerNames.length > 1 ? (
-              <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-3">
-                <label className="flex items-center gap-2 text-xs opacity-90">
-                  <input
-                    type="checkbox"
-                    checked={batchConfirmed}
-                    onChange={(e) => setBatchConfirmed(e.target.checked)}
-                  />
+              <label className="flex items-center gap-3 rounded-2xl border border-amber-300/20 bg-amber-500/10 px-3 py-3 text-sm transition hover:border-amber-300/35">
+                <input
+                  type="checkbox"
+                  checked={batchConfirmed}
+                  onChange={(e) => setBatchConfirmed(e.target.checked)}
+                  className="h-4 w-4 accent-amber-400"
+                />
+                <span className="font-medium">
                   {tx(lang, "Eminim", "I'm sure")}, {batchBeerNames.length} {tx(lang, "adet kaydi toplu olarak ekle", "records will be added in bulk")}
-                </label>
-              </div>
+                </span>
+              </label>
             ) : null}
 
             <button
@@ -4208,7 +4233,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 !(isBackDate ? batchBeerNames.length > 0 || !!beerName : !!beerName) ||
                 (isBackDate && batchBeerNames.length > 1 && !batchConfirmed)
               }
-              className="w-full rounded-2xl bg-white text-black py-3 font-semibold active:scale-[0.99] disabled:opacity-50"
+              className="w-full rounded-2xl border border-amber-200/45 bg-gradient-to-r from-amber-300 via-amber-200 to-amber-100 py-3 font-semibold text-black shadow-[0_0_28px_rgba(251,191,36,0.18)] transition hover:brightness-105 active:scale-[0.99] disabled:border-white/10 disabled:bg-white/15 disabled:text-white/40 disabled:shadow-none"
             >
               {isBackDate && batchBeerNames.length > 0 ? `${batchBeerNames.length} ${tx(lang, "birayi kaydet", "save beers")}` : tx(lang, "Kaydet", "Save")}
             </button>
