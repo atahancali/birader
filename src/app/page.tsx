@@ -14,6 +14,8 @@ import BeerWheel from "@/components/BeerWheel";
 import FavoriteReplaceModal from "@/components/FavoriteReplaceModal";
 import LoadingPulse from "@/components/LoadingPulse";
 import RatingStars from "@/components/RatingStars";
+import BadgeUnlockCelebration from "@/components/badges/BadgeUnlockCelebration";
+import ProfileBadgeShelf from "@/components/badges/ProfileBadgeShelf";
 import { formatApiErrorText, normalizeApiError } from "@/lib/apiError";
 import { normalizeUsername, usernameFromEmail, usernameToCandidateEmails } from "@/lib/identity";
 import { bindGlobalErrorTracking, trackEvent } from "@/lib/analytics";
@@ -25,6 +27,16 @@ import { BADGE_THRESHOLDS, badgeMetaForKey } from "@/lib/badgeMeta";
 import { getExperimentVariant } from "@/lib/ab";
 import { t, tx } from "@/lib/i18n";
 import { useAppLang } from "@/lib/appLang";
+import {
+  badgeById,
+  buildBadgeView,
+  checkBadgeUnlocks,
+  loadUnlockedAt,
+  saveUnlockedAt,
+  type Badge as RuntimeBadge,
+  type BadgeCheckin,
+  type BadgeEvent,
+} from "@/lib/badgeSystem";
 
 const SocialPanel = dynamic(() => import("@/components/SocialPanel"), {
   ssr: false,
@@ -227,6 +239,7 @@ const CHECKINS_SELECT_WITH_MEDIA =
   "id, beer_name, rating, created_at, day_period, country_code, city, district, location_text, price_try, note, latitude, longitude, media_url, media_type";
 const CHECKINS_SELECT_BASE =
   "id, beer_name, rating, created_at, day_period, country_code, city, district, location_text, price_try, note, latitude, longitude";
+const BADGE_CHECKINS_SELECT = "id, beer_name, created_at, city, district, location_text, note";
 
 type TutorialStep = {
   title: string;
@@ -614,6 +627,44 @@ function isoWeekKey(date = new Date()) {
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+}
+
+function toBadgeCheckins(rows: Array<{
+  id?: string | null;
+  beer_name?: string | null;
+  created_at: string;
+  city?: string | null;
+  district?: string | null;
+  location_text?: string | null;
+  note?: string | null;
+}>): BadgeCheckin[] {
+  return rows
+    .filter((row) => typeof row.created_at === "string" && row.created_at.length > 0)
+    .map((row) => ({
+      id: row.id ? String(row.id) : undefined,
+      beer_name: row.beer_name ?? null,
+      created_at: row.created_at,
+      city: row.city ?? null,
+      district: row.district ?? null,
+      location_text: row.location_text ?? null,
+      note: row.note ?? null,
+    }));
+}
+
+function mergeUniqueIds(prev: number[], nextIds: number[]) {
+  if (!nextIds.length) return prev;
+  return Array.from(new Set([...prev, ...nextIds]));
+}
+
+function sameUnlockedMap(a: Record<number, string>, b: Record<number, string>) {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const k of aKeys) {
+    const id = Number(k);
+    if (a[id] !== b[id]) return false;
+  }
+  return true;
 }
 
 const COMMON_EMAIL_DOMAINS = [
@@ -1243,6 +1294,10 @@ export default function Home() {
   const [isLogMutating, setIsLogMutating] = useState(false);
   const [isAdminUser, setIsAdminUser] = useState(false);
   const [dbBadges, setDbBadges] = useState<UserBadgeRow[]>([]);
+  const [runtimeBadgeCheckins, setRuntimeBadgeCheckins] = useState<BadgeCheckin[]>([]);
+  const [runtimeBadgeUnlockedAtById, setRuntimeBadgeUnlockedAtById] = useState<Record<number, string>>({});
+  const [runtimeBadgeQueue, setRuntimeBadgeQueue] = useState<number[]>([]);
+  const [activeRuntimeBadgeId, setActiveRuntimeBadgeId] = useState<number | null>(null);
   const [badgeRefreshBusy, setBadgeRefreshBusy] = useState(false);
   const [adminSuggestions, setAdminSuggestions] = useState<ProductSuggestionRow[]>([]);
   const [adminSuggestionsBusy, setAdminSuggestionsBusy] = useState(false);
@@ -1274,6 +1329,7 @@ export default function Home() {
   const lastLogAttemptAtRef = useRef(0);
   const logMutationLockRef = useRef(false);
   const logSubmitIntentRef = useRef<string>(uuid());
+  const runtimeBadgeUnlockedRef = useRef<Record<number, string>>({});
 
   const year = useMemo(() => new Date().getFullYear(), []);
   const isBackDate = dateISO !== today;
@@ -1286,6 +1342,22 @@ export default function Home() {
     () => isAdminUser,
     [isAdminUser]
   );
+  const runtimeBadgeView = useMemo(
+    () =>
+      buildBadgeView({
+        checkins: runtimeBadgeCheckins,
+        unlockedAtById: runtimeBadgeUnlockedAtById,
+      }),
+    [runtimeBadgeCheckins, runtimeBadgeUnlockedAtById]
+  );
+  const runtimeBadges = runtimeBadgeView.badges;
+  const activeRuntimeBadge = useMemo<RuntimeBadge | null>(() => {
+    if (activeRuntimeBadgeId === null) return null;
+    const fromComputed = runtimeBadges.find((badge) => badge.id === activeRuntimeBadgeId);
+    if (fromComputed) return fromComputed;
+    const raw = badgeById(activeRuntimeBadgeId);
+    return raw ? { ...raw, unlocked: true } : null;
+  }, [activeRuntimeBadgeId, runtimeBadges]);
   const bulkImportPreview = useMemo(() => {
     if (!isBackDate || !batchBeerNames.length) return [];
     const counts = new Map<string, number>();
@@ -1369,6 +1441,18 @@ export default function Home() {
     setIsLogMutating(true);
     return true;
   }
+
+  useEffect(() => {
+    runtimeBadgeUnlockedRef.current = runtimeBadgeUnlockedAtById;
+  }, [runtimeBadgeUnlockedAtById]);
+
+  useEffect(() => {
+    if (activeRuntimeBadgeId !== null) return;
+    if (!runtimeBadgeQueue.length) return;
+    const [nextId, ...rest] = runtimeBadgeQueue;
+    setActiveRuntimeBadgeId(nextId ?? null);
+    setRuntimeBadgeQueue(rest);
+  }, [activeRuntimeBadgeId, runtimeBadgeQueue]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -1550,6 +1634,68 @@ export default function Home() {
     setCheckins((((fallback.data as any[]) ?? []).map((c) => ({ ...c, media_url: null, media_type: null })) as any) ?? []);
   }
 
+  async function loadBadgeCheckinsAll(): Promise<BadgeCheckin[]> {
+    if (!session?.user?.id) {
+      setRuntimeBadgeCheckins([]);
+      return [];
+    }
+
+    const withNote = await supabase
+      .from("checkins")
+      .select(BADGE_CHECKINS_SELECT)
+      .eq("user_id", session.user.id)
+      .order("created_at", { ascending: false })
+      .limit(12000);
+
+    if (!withNote.error) {
+      const rows = toBadgeCheckins((withNote.data as BadgeCheckin[] | null) ?? []);
+      setRuntimeBadgeCheckins(rows);
+      return rows;
+    }
+
+    const fallback = await supabase
+      .from("checkins")
+      .select("id, beer_name, created_at, city, district, location_text")
+      .eq("user_id", session.user.id)
+      .order("created_at", { ascending: false })
+      .limit(12000);
+    if (fallback.error) {
+      console.error(fallback.error);
+      return [];
+    }
+    const rows = toBadgeCheckins(
+      (((fallback.data as any[]) ?? []).map((row) => ({ ...row, note: null })) as BadgeCheckin[]) ?? []
+    );
+    setRuntimeBadgeCheckins(rows);
+    return rows;
+  }
+
+  async function handleBadgeUnlockEvent(
+    event: BadgeEvent,
+    rows?: BadgeCheckin[],
+    options?: { silent?: boolean }
+  ) {
+    if (!session?.user?.id) return;
+    const checkinRows = rows ?? (await loadBadgeCheckinsAll());
+    const result = checkBadgeUnlocks({
+      event,
+      checkins: checkinRows,
+      unlockedAtById: runtimeBadgeUnlockedRef.current,
+    });
+
+    setRuntimeBadgeCheckins(checkinRows);
+
+    if (!sameUnlockedMap(result.unlockedAtById, runtimeBadgeUnlockedRef.current)) {
+      runtimeBadgeUnlockedRef.current = result.unlockedAtById;
+      setRuntimeBadgeUnlockedAtById(result.unlockedAtById);
+      saveUnlockedAt(session.user.id, result.unlockedAtById);
+    }
+
+    if (result.newlyUnlocked.length && !options?.silent) {
+      setRuntimeBadgeQueue((prev) => mergeUniqueIds(prev, result.newlyUnlocked));
+    }
+  }
+
   async function loadCheckinsForDay(dayIso: string): Promise<Checkin[]> {
     if (!session?.user?.id) return [];
     const start = `${dayIso}T00:00:00.000Z`;
@@ -1671,6 +1817,12 @@ export default function Home() {
       const remained = queued.filter((r) => String(r.user_id) !== session.user.id);
       writeOfflineLogQueue(remained);
       await loadCheckins();
+      const badgeRows = await loadBadgeCheckinsAll();
+      await handleBadgeUnlockEvent(
+        { type: "manual_sync", timestamp: new Date().toISOString() },
+        badgeRows,
+        { silent: true }
+      );
       trackEvent({ eventName: "offline_queue_flushed", userId: session.user.id, props: { count: dedupedRows.length } });
       return;
     }
@@ -1679,6 +1831,16 @@ export default function Home() {
 
   useEffect(() => {
     if (session?.user?.id) {
+      const savedUnlocked = loadUnlockedAt(session.user.id);
+      runtimeBadgeUnlockedRef.current = savedUnlocked;
+      setRuntimeBadgeUnlockedAtById(savedUnlocked);
+      void loadBadgeCheckinsAll().then((rows) =>
+        handleBadgeUnlockEvent(
+          { type: "manual_sync", timestamp: new Date().toISOString() },
+          rows,
+          { silent: true }
+        )
+      );
       loadCheckins();
       loadFavorites();
       void flushOfflineLogQueue();
@@ -1803,6 +1965,11 @@ export default function Home() {
     } else {
       setIsAdminUser(false);
       setProfileFlagsLoaded(false);
+      runtimeBadgeUnlockedRef.current = {};
+      setRuntimeBadgeUnlockedAtById({});
+      setRuntimeBadgeCheckins([]);
+      setRuntimeBadgeQueue([]);
+      setActiveRuntimeBadgeId(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id]);
@@ -2974,6 +3141,12 @@ export default function Home() {
         await supabase.rpc("refresh_my_badges");
         await loadMyBadges();
         await loadCheckins();
+        const badgeRows = await loadBadgeCheckinsAll();
+        await handleBadgeUnlockEvent(
+          { type: "checkin_deleted", timestamp: new Date().toISOString() },
+          badgeRows,
+          { silent: true }
+        );
         return;
       }
       const reason = error?.message || "Kayıt bulunamadi ya da yetki yok.";
@@ -3021,6 +3194,11 @@ export default function Home() {
       await supabase.rpc("refresh_my_badges");
       await loadMyBadges();
       await loadCheckins();
+      const badgeRows = await loadBadgeCheckinsAll();
+      await handleBadgeUnlockEvent(
+        { type: "checkin_logged", timestamp: new Date().toISOString() },
+        badgeRows
+      );
       setPendingUndoCheckin(null);
       return;
     }
@@ -3056,6 +3234,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
         props: { id: payload.id, rating: normalizedRating },
       });
       await loadCheckins();
+      const badgeRows = await loadBadgeCheckinsAll();
+      await handleBadgeUnlockEvent(
+        { type: "checkin_updated", timestamp: new Date().toISOString() },
+        badgeRows
+      );
       return;
     }
     alert(apiErrorText(error, "Guncelleme başarısız.", "Update failed."));
@@ -3356,6 +3539,18 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           setBatchConfirmed(false);
           rotateLogSubmitIntent();
           await loadCheckins();
+          const badgeRows = await loadBadgeCheckinsAll();
+          await handleBadgeUnlockEvent(
+            {
+              type: "checkin_logged",
+              timestamp: new Date().toISOString(),
+              payload: {
+                sessionBeerCount: targets.length,
+                venue: normalizedLocation || `${normalizedCity} ${normalizedDistrict}`.trim() || null,
+              },
+            },
+            badgeRows
+          );
           await createPostCheckinNudges(session.user.id, beforeBadgeKeys);
           if (queuedCustomBeers > 0) {
             alert(
@@ -3440,6 +3635,29 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       setBatchConfirmed(false);
       rotateLogSubmitIntent();
       if (session?.user?.id) {
+        const localRows = toBadgeCheckins([
+          ...targets.map((beer) => ({
+            id: uuid(),
+            beer_name: beer,
+            created_at,
+            city: normalizedCity,
+            district: normalizedDistrict,
+            location_text: normalizedLocation || "",
+            note: normalizedNote || "",
+          })),
+          ...runtimeBadgeCheckins,
+        ]);
+        await handleBadgeUnlockEvent(
+          {
+            type: "checkin_logged",
+            timestamp: new Date().toISOString(),
+            payload: {
+              sessionBeerCount: targets.length,
+              venue: normalizedLocation || `${normalizedCity} ${normalizedDistrict}`.trim() || null,
+            },
+          },
+          localRows
+        );
         await createPostCheckinNudges(session.user.id, beforeBadgeKeys);
       } else {
         await loadMyBadges();
@@ -4637,6 +4855,18 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             });
             rotateLogSubmitIntent();
             await loadCheckins();
+            const badgeRows = await loadBadgeCheckinsAll();
+            await handleBadgeUnlockEvent(
+              {
+                type: "checkin_logged",
+                timestamp: new Date().toISOString(),
+                payload: {
+                  sessionBeerCount: 1,
+                  venue: `${city} ${resolvedDistrict}`.trim() || null,
+                },
+              },
+              badgeRows
+            );
             await createPostCheckinNudges(session.user.id, beforeBadgeKeys);
             if (queuedCustomBeer) {
               alert(
@@ -4700,6 +4930,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
       />
       {activeSection === "stats" ? (
       <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
+        <ProfileBadgeShelf
+          lang={lang}
+          badges={runtimeBadges}
+          unlockedAtById={runtimeBadgeUnlockedAtById}
+          className="mb-4"
+        />
         <div className="mb-4 grid grid-cols-2 gap-2 text-sm">
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">
             {tx(lang, "Son 7g log", "Last 7d logs")}: <span className="font-semibold">{weeklyRecap.count}</span>
@@ -5428,6 +5664,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           </div>
         </div>
       ) : null}
+
+      <BadgeUnlockCelebration
+        badge={activeRuntimeBadge}
+        lang={lang}
+        onClose={() => setActiveRuntimeBadgeId(null)}
+      />
 
     </main>
   );
