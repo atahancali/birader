@@ -142,7 +142,8 @@ export default function DayModal({
   return (
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/70" onClick={onClose} />
-      <div className="absolute left-1/2 top-1/2 w-[92%] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/10 bg-black p-4">
+      <div className="relative z-10 flex h-full items-center justify-center p-3 sm:p-4">
+        <div className="w-full max-w-md max-h-[calc(100dvh-1.5rem)] overflow-y-auto rounded-3xl border border-white/10 bg-black p-4 sm:max-h-[calc(100dvh-2rem)]">
         <div className="flex items-start justify-between">
           <div>
             <div className="text-xs opacity-70">{day}</div>
@@ -205,7 +206,7 @@ export default function DayModal({
             type="button"
             onClick={() => setRating((r) => (r === null ? 3.5 : null))}
             disabled={isFutureDay}
-            className={`mt-2 px-3 py-2 rounded-2xl border text-sm ${
+            className={`mt-2 rounded-2xl border px-2 py-1.5 text-xs sm:px-3 sm:py-2 sm:text-sm ${
               rating === null ? "bg-white text-black" : "border-white/10 bg-black/20"
             }`}
           >
@@ -219,7 +220,7 @@ export default function DayModal({
                 type="button"
                 onClick={() => setRating(r)}
                 disabled={isFutureDay}
-                className={`px-3 py-2 rounded-2xl border ${
+                className={`rounded-2xl border px-2 py-1.5 sm:px-3 sm:py-2 ${
                   rating === r
                     ? "border-amber-300/45 bg-amber-500/15"
                     : "border-white/10 bg-black/20"
@@ -312,7 +313,7 @@ export default function DayModal({
                     <button
                       type="button"
                       onClick={() => setEditRating((r) => (r === null ? 3.5 : null))}
-                      className={`mt-2 px-3 py-2 rounded-2xl border text-sm ${
+                      className={`mt-2 rounded-2xl border px-2 py-1.5 text-xs sm:px-3 sm:py-2 sm:text-sm ${
                         editRating === null ? "bg-white text-black" : "border-white/10 bg-black/20"
                       }`}
                     >
@@ -325,7 +326,7 @@ export default function DayModal({
                           key={r}
                           type="button"
                           onClick={() => setEditRating(r)}
-                          className={`px-3 py-2 rounded-2xl border ${
+                          className={`rounded-2xl border px-2 py-1.5 sm:px-3 sm:py-2 ${
                             editRating === r
                               ? "border-amber-300/45 bg-amber-500/15"
                               : "border-white/10 bg-black/20"
@@ -365,6 +366,7 @@ export default function DayModal({
           )}
             </>
           ) : null}
+        </div>
         </div>
       </div>
     </div>

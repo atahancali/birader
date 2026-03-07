@@ -310,7 +310,14 @@ const BEER_CATALOG: BeerItem[] = [
   { brand: "Hoegaarden", format: "Fici", ml: 500 },
   { brand: "1664 Blanc", format: "Fici", ml: 500 },
   { brand: "Paulaner Hefe Weissbier", format: "Fici", ml: 500 },
+  { brand: "Paulaner Hefe Weissbier", format: "Fici", ml: 1000 },
   { brand: "Erdinger Weissbier", format: "Fici", ml: 500 },
+  { brand: "Erdinger Weissbier", format: "Fici", ml: 1000 },
+  { brand: "Weihenstephaner", format: "Fici", ml: 500 },
+  { brand: "Weihenstephaner", format: "Fici", ml: 1000 },
+  { brand: "Frederik", format: "Fici", ml: 500 },
+  { brand: "Frederik", format: "Fici", ml: 1000 },
+  { brand: "Bavyera", format: "Fici", ml: 1000 },
 
   { brand: "Efes Pilsen", format: "Şişe/Kutu", ml: 330 },
   { brand: "Efes Pilsen", format: "Şişe/Kutu", ml: 500 },
@@ -362,6 +369,9 @@ const BEER_CATALOG: BeerItem[] = [
   { brand: "Paulaner Hefe Weissbier", format: "Şişe/Kutu", ml: 500 },
   { brand: "Erdinger Weissbier", format: "Şişe/Kutu", ml: 500 },
   { brand: "Weihenstephaner Hefe Weissbier", format: "Şişe/Kutu", ml: 500 },
+  { brand: "Weihenstephaner", format: "Şişe/Kutu", ml: 500 },
+  { brand: "Frederik", format: "Şişe/Kutu", ml: 500 },
+  { brand: "Bavyera", format: "Şişe/Kutu", ml: 1000 },
   { brand: "Grimbergen Blonde", format: "Şişe/Kutu", ml: 330 },
   { brand: "Chimay Blue", format: "Şişe/Kutu", ml: 330 },
   { brand: "Bistro Lager", format: "Şişe/Kutu", ml: 330 },
@@ -391,7 +401,8 @@ function uuid() {
 }
 
 function beerLabel(b: BeerItem) {
-  return `${b.brand} — ${b.format} — ${b.ml}ml`;
+  const volume = b.ml >= 1000 ? `${(b.ml / 1000).toFixed(b.ml % 1000 === 0 ? 0 : 1)}L` : `${b.ml}ml`;
+  return `${b.brand} — ${b.format} — ${volume}`;
 }
 
 function beerStyleLabel(b: BeerItem) {
@@ -1375,6 +1386,7 @@ export default function Home() {
   }, [batchBeerNames, isBackDate]);
   const bulkImportUniqueCount = bulkImportPreview.length;
   const bulkImportTotalCount = isBackDate ? batchBeerNames.length : 0;
+  const selectedBeerBrand = useMemo(() => favoriteBeerName(beerName), [beerName]);
 
   useEffect(() => {
     function syncFromUrl() {
@@ -1413,6 +1425,10 @@ export default function Home() {
       return;
     }
     setLogStep(step);
+  }
+
+  function autoAdvanceLogStep(step: 1 | 2 | 3 | 4) {
+    setLogStep((prev) => (prev < step ? step : prev));
   }
 
   function currentLogSubmitIntent() {
@@ -4071,6 +4087,20 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           })}
         </div>
 
+        <div className="sticky top-2 z-20 mb-4 rounded-xl border border-amber-300/20 bg-black/70 px-3 py-2 backdrop-blur">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[11px] uppercase tracking-[0.12em] text-amber-200/85">
+              {tx(lang, "Secili bira", "Selected beer")}
+            </div>
+            <div className="rounded-full border border-white/15 bg-white/8 px-2 py-0.5 text-[10px] text-white/70">
+              {format}
+            </div>
+          </div>
+          <div className="mt-1 truncate text-sm font-medium text-white/95">
+            {selectedBeerBrand || tx(lang, "Henüz bira seçilmedi.", "No beer selected yet.")}
+          </div>
+        </div>
+
         {logStep === 1 ? (
           <div>
             <div className="mb-2 text-xs opacity-70">{tx(lang, "Sunum tarzını seç", "Choose serving style")}</div>
@@ -4080,6 +4110,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 onClick={() => {
                   setFormat("Fici");
                   setFormatConfirmed(true);
+                  autoAdvanceLogStep(2);
                 }}
                 data-testid="log-format-draft"
                 className={`group relative overflow-hidden rounded-3xl border p-4 text-left transition-all duration-200 hover:-translate-y-0.5 ${
@@ -4105,6 +4136,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 onClick={() => {
                   setFormat("Şişe/Kutu");
                   setFormatConfirmed(true);
+                  autoAdvanceLogStep(2);
                 }}
                 data-testid="log-format-bottle"
                 className={`group relative overflow-hidden rounded-3xl border p-4 text-left transition-all duration-200 hover:-translate-y-0.5 ${
@@ -4144,7 +4176,11 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               pinned={topBeerLabelsByFormat[format] ?? []}
               options={beerLabelsForFormat}
               value={beerName}
-              onChange={setBeerName}
+              onChange={(nextBeer) => {
+                setBeerName(nextBeer);
+                setBeerQuery(nextBeer);
+                autoAdvanceLogStep(3);
+              }}
               lang={lang}
             />
             <BeerWheel
@@ -4154,6 +4190,7 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               onPick={(picked) => {
                 setBeerName(picked);
                 setBeerQuery(picked);
+                autoAdvanceLogStep(3);
                 trackEvent({
                   eventName: "beer_wheel_pick",
                   userId: session?.user?.id ?? null,
@@ -4222,7 +4259,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 </label>
                 <select
                   value={dayPeriod}
-                  onChange={(e) => setDayPeriod(e.target.value as DayPeriod)}
+                  onChange={(e) => {
+                    setDayPeriod(e.target.value as DayPeriod);
+                    autoAdvanceLogStep(4);
+                  }}
                   className="w-full rounded-2xl border border-white/15 bg-black/30 px-3 py-3 text-sm outline-none transition hover:border-white/25"
                 >
                   {DAY_PERIOD_OPTIONS.map((p) => (
@@ -4241,7 +4281,10 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 </label>
                 <button
                   type="button"
-                  onClick={() => setRating((r) => (r === null ? 3.5 : null))}
+                  onClick={() => {
+                    setRating((r) => (r === null ? 3.5 : null));
+                    autoAdvanceLogStep(4);
+                  }}
                   className={`rounded-full border px-3 py-1.5 text-xs transition ${
                     rating === null
                       ? "border-amber-200/55 bg-amber-500/20 text-amber-50"
@@ -4252,7 +4295,13 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 </button>
               </div>
               <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-                <StarRatingHalf value={rating} onChange={setRating} />
+                <StarRatingHalf
+                  value={rating}
+                  onChange={(nextRating) => {
+                    setRating(nextRating);
+                    autoAdvanceLogStep(4);
+                  }}
+                />
               </div>
             </div>
 
