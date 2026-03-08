@@ -12,6 +12,10 @@ type BadgeGridProps = {
   lang: AppLang;
 };
 
+const TIER_ACCENT: Record<string, string> = {
+  Achievement: "#6366F1",
+};
+
 function clampRatio(value: number) {
   return Math.max(0, Math.min(1, value));
 }
@@ -39,6 +43,10 @@ function isFreshUnlock(unlockedAt?: string) {
   const ts = Date.parse(unlockedAt);
   if (!Number.isFinite(ts)) return false;
   return Date.now() - ts <= 1000 * 60 * 2;
+}
+
+function tierAccentColor(tier: string) {
+  return TIER_ACCENT[tier] || "#F59E0B";
 }
 
 export default function BadgeGrid({
@@ -84,18 +92,23 @@ export default function BadgeGrid({
         >
           {t(lang, "badges_all")}
         </button>
-        {tiers.map((row) => (
-          <button
-            key={`tier-tab-${row.tier}`}
-            type="button"
-            onClick={() => setActiveTier(row.tier)}
-            className={`shrink-0 rounded-full border px-3 py-1 text-xs ${
-              activeTier === row.tier ? "border-amber-300/35 bg-amber-500/15" : "border-white/15 bg-white/10"
-            }`}
-          >
-            {lang === "en" ? row.tier : row.tierTR}
-          </button>
-        ))}
+        {tiers.map((row) => {
+          const active = activeTier === row.tier;
+          const accent = tierAccentColor(row.tier);
+          return (
+            <button
+              key={`tier-tab-${row.tier}`}
+              type="button"
+              onClick={() => setActiveTier(row.tier)}
+              className={`shrink-0 rounded-full border px-3 py-1 text-xs transition ${
+                active ? "" : "border-white/15 bg-white/10"
+              }`}
+              style={active ? { borderColor: `${accent}66`, backgroundColor: `${accent}22`, color: "#F5EDD8" } : undefined}
+            >
+              {lang === "en" ? row.tier : row.tierTR}
+            </button>
+          );
+        })}
       </div>
 
       {filtered.length ? (

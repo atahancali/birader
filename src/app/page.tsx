@@ -240,7 +240,7 @@ const CHECKINS_SELECT_WITH_MEDIA =
   "id, beer_name, rating, created_at, day_period, country_code, city, district, location_text, price_try, note, latitude, longitude, media_url, media_type";
 const CHECKINS_SELECT_BASE =
   "id, beer_name, rating, created_at, day_period, country_code, city, district, location_text, price_try, note, latitude, longitude";
-const BADGE_CHECKINS_SELECT = "id, beer_name, created_at, city, district, location_text, note";
+const BADGE_CHECKINS_SELECT = "id, beer_name, created_at, city, district, location_text, note, rating, price_try, day_period";
 
 type TutorialStep = {
   title: string;
@@ -641,7 +641,7 @@ function isoWeekKey(date = new Date()) {
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
 }
 
-function toBadgeCheckins(rows: Array<{
+type BadgeCheckinRow = {
   id?: string | null;
   beer_name?: string | null;
   created_at: string;
@@ -649,7 +649,12 @@ function toBadgeCheckins(rows: Array<{
   district?: string | null;
   location_text?: string | null;
   note?: string | null;
-}>): BadgeCheckin[] {
+  rating?: number | null;
+  price_try?: number | null;
+  day_period?: string | null;
+};
+
+function toBadgeCheckins(rows: BadgeCheckinRow[]): BadgeCheckin[] {
   return rows
     .filter((row) => typeof row.created_at === "string" && row.created_at.length > 0)
     .map((row) => ({
@@ -660,6 +665,9 @@ function toBadgeCheckins(rows: Array<{
       district: row.district ?? null,
       location_text: row.location_text ?? null,
       note: row.note ?? null,
+      rating: row.rating ?? null,
+      price_try: row.price_try ?? null,
+      day_period: row.day_period ?? null,
     }));
 }
 
@@ -1665,7 +1673,7 @@ export default function Home() {
       .limit(12000);
 
     if (!withNote.error) {
-      const rows = toBadgeCheckins((withNote.data as BadgeCheckin[] | null) ?? []);
+      const rows = toBadgeCheckins((withNote.data as BadgeCheckinRow[] | null) ?? []);
       setRuntimeBadgeCheckins(rows);
       return rows;
     }
@@ -1681,7 +1689,13 @@ export default function Home() {
       return [];
     }
     const rows = toBadgeCheckins(
-      (((fallback.data as any[]) ?? []).map((row) => ({ ...row, note: null })) as BadgeCheckin[]) ?? []
+      (((fallback.data as any[]) ?? []).map((row) => ({
+        ...row,
+        note: null,
+        rating: null,
+        price_try: null,
+        day_period: null,
+      })) as BadgeCheckinRow[]) ?? []
     );
     setRuntimeBadgeCheckins(rows);
     return rows;
@@ -3564,6 +3578,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
               payload: {
                 sessionBeerCount: targets.length,
                 venue: normalizedLocation || `${normalizedCity} ${normalizedDistrict}`.trim() || null,
+                rating: normalizedRating ?? null,
+                priceTry: normalizedPrice ?? null,
               },
             },
             badgeRows
@@ -3661,6 +3677,9 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             district: normalizedDistrict,
             location_text: normalizedLocation || "",
             note: normalizedNote || "",
+            rating: normalizedRating ?? null,
+            price_try: normalizedPrice ?? null,
+            day_period: dayPeriod,
           })),
           ...runtimeBadgeCheckins,
         ]);
@@ -3671,6 +3690,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             payload: {
               sessionBeerCount: targets.length,
               venue: normalizedLocation || `${normalizedCity} ${normalizedDistrict}`.trim() || null,
+              rating: normalizedRating ?? null,
+              priceTry: normalizedPrice ?? null,
             },
           },
           localRows
@@ -4913,6 +4934,8 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
                 payload: {
                   sessionBeerCount: 1,
                   venue: `${city} ${resolvedDistrict}`.trim() || null,
+                  rating: normalizedRating ?? null,
+                  priceTry: null,
                 },
               },
               badgeRows

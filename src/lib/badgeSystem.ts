@@ -28,6 +28,8 @@ export type BadgeEvent = {
     venue?: string | null;
     isNewVenue?: boolean;
     friendsCount?: number;
+    rating?: number | null;
+    priceTry?: number | null;
   };
 };
 
@@ -39,6 +41,9 @@ export type BadgeCheckin = {
   district?: string | null;
   location_text?: string | null;
   note?: string | null;
+  rating?: number | null;
+  price_try?: number | null;
+  day_period?: string | null;
 };
 
 export type BadgeProgress = {
@@ -344,6 +349,146 @@ const BASE_BADGES: Omit<Badge, "unlocked">[] = [
     color: "#F472B6",
     rare: false,
   },
+  {
+    id: 21,
+    emoji: "📝",
+    name: "Moment Catcher",
+    nameTR: "Anı Yakalayan",
+    tier: "Achievement",
+    tierTR: "Başarı",
+    trigger: "Add a note to 10 beer logs",
+    triggerTR: "10 log'una not ekle",
+    description: "You don't just drink — you document.",
+    descriptionTR: "Sadece içmiyorsun — belgeliyorsun.",
+    color: "#6366F1",
+    rare: false,
+  },
+  {
+    id: 22,
+    emoji: "⭐",
+    name: "High Standard",
+    nameTR: "Yüksek Standart",
+    tier: "Achievement",
+    tierTR: "Başarı",
+    trigger: "Give your first 5-star rating",
+    triggerTR: "İlk 5 yıldızlı puanını ver",
+    description: "Perfection, finally acknowledged.",
+    descriptionTR: "Mükemmellik, sonunda tescillendi.",
+    color: "#F59E0B",
+    rare: false,
+  },
+  {
+    id: 23,
+    emoji: "💀",
+    name: "Harsh Critic",
+    nameTR: "Acımasız Eleştirmen",
+    tier: "Achievement",
+    tierTR: "Başarı",
+    trigger: "Give a 1-star rating",
+    triggerTR: "1 yıldızlı puan ver",
+    description: "Your standards are not for everyone.",
+    descriptionTR: "Standartların herkese göre değil.",
+    color: "#64748B",
+    rare: false,
+  },
+  {
+    id: 24,
+    emoji: "💸",
+    name: "Big Spender",
+    nameTR: "Pahalıya Patlayan",
+    tier: "Achievement",
+    tierTR: "Başarı",
+    trigger: "Log a beer priced at 500 TL or more",
+    triggerTR: "500 TL veya üzeri fiyatlı bir bira logla",
+    description: "Worth it. Probably.",
+    descriptionTR: "Değdi. Herhalde.",
+    color: "#10B981",
+    rare: false,
+  },
+  {
+    id: 25,
+    emoji: "🔄",
+    name: "Comeback Kid",
+    nameTR: "Geri Döndüm",
+    tier: "Achievement",
+    tierTR: "Başarı",
+    trigger: "Log a beer after 14+ days of inactivity",
+    triggerTR: "14+ gün sonra tekrar log at",
+    description: "Life got in the way. You came back.",
+    descriptionTR: "Hayat araya girdi. Geri döndün.",
+    color: "#A855F7",
+    rare: false,
+  },
+  {
+    id: 26,
+    emoji: "🌗",
+    name: "Around the Clock",
+    nameTR: "Gece Gündüz",
+    tier: "Achievement",
+    tierTR: "Başarı",
+    trigger: "Log before 7 AM and after 9 PM on the same day",
+    triggerTR: "Aynı günde hem 07:00 öncesi hem 21:00 sonrası log at",
+    description: "You take no breaks. Neither does the glass.",
+    descriptionTR: "Mola vermiyorsun. Bardak da vermiyor.",
+    color: "#F97316",
+    rare: true,
+  },
+  {
+    id: 27,
+    emoji: "🏙️",
+    name: "Two Cities",
+    nameTR: "Çift Şehir",
+    tier: "Achievement",
+    tierTR: "Başarı",
+    trigger: "Log in 2 different cities on the same day",
+    triggerTR: "Aynı günde 2 farklı şehirde log at",
+    description: "Restless. Relentless. Remarkable.",
+    descriptionTR: "Duraksız. Kararlı. Olağanüstü.",
+    color: "#0EA5E9",
+    rare: true,
+  },
+  {
+    id: 28,
+    emoji: "🤫",
+    name: "Ghost Logger",
+    nameTR: "Sessiz Kahraman",
+    tier: "Achievement",
+    tierTR: "Başarı",
+    trigger: "Log 50 beers without ever adding a note",
+    triggerTR: "Hiç not eklemeden 50 bira logla",
+    description: "Numbers speak. Words don't.",
+    descriptionTR: "Sayılar konuşur. Kelimeler değil.",
+    color: "#78716C",
+    rare: false,
+  },
+  {
+    id: 29,
+    emoji: "🥂",
+    name: "New Year's Toast",
+    nameTR: "Yılbaşı Kadehi",
+    tier: "Achievement",
+    tierTR: "Başarı",
+    trigger: "Log a beer on January 1st",
+    triggerTR: "1 Ocak günü bir bira logla",
+    description: "You welcomed the new year properly.",
+    descriptionTR: "Yeni yılı hakkıyla karşıladın.",
+    color: "#EC4899",
+    rare: false,
+  },
+  {
+    id: 30,
+    emoji: "🌟",
+    name: "Gold Standard",
+    nameTR: "Altın Standart",
+    tier: "Achievement",
+    tierTR: "Başarı",
+    trigger: "Give 10 five-star ratings",
+    triggerTR: "10 adet 5 yıldız puanı ver",
+    description: "Either you're generous, or you've found the good ones.",
+    descriptionTR: "Ya çok cömertsin ya da iyilerini buldun.",
+    color: "#FBBF24",
+    rare: false,
+  },
 ];
 
 function clamp01(value: number) {
@@ -519,6 +664,16 @@ type Metrics = {
   happyHourCount: number;
   fridayNightChain: number;
   activeDays: number;
+  noteCount: number;
+  silentLogCount: number;
+  fiveStarCount: number;
+  oneStarCount: number;
+  pricyLogCount: number;
+  comebackCount: number;
+  aroundTheClockDays: number;
+  twoCitiesDays: number;
+  newYearLogCount: number;
+  goldStarCount: number;
 };
 
 function computeMetrics(checkins: BadgeCheckin[], event?: BadgeEvent): Metrics {
@@ -540,6 +695,8 @@ function computeMetrics(checkins: BadgeCheckin[], event?: BadgeEvent): Metrics {
   const venueCounts = new Map<string, number>();
   const seenVenues = new Set<string>();
   const sessionCounts = new Map<string, number>();
+  const dayRatingMap = new Map<string, { hasNight: boolean; hasMorning: boolean }>();
+  const dayCityMap = new Map<string, Set<string>>();
 
   let draftCount = 0;
   let bottleCount = 0;
@@ -550,6 +707,12 @@ function computeMetrics(checkins: BadgeCheckin[], event?: BadgeEvent): Metrics {
   let midnightCount = 0;
   let happyHourCount = 0;
   let newVenueEvents = 0;
+  let noteCount = 0;
+  let silentLogCount = 0;
+  let fiveStarCount = 0;
+  let oneStarCount = 0;
+  let pricyLogCount = 0;
+  let newYearLogCount = 0;
 
   for (const row of rows) {
     const d = row.d!;
@@ -561,6 +724,32 @@ function computeMetrics(checkins: BadgeCheckin[], event?: BadgeEvent): Metrics {
     if (hour < 10) before10Count += 1;
     if (hour >= 0 && hour <= 3) midnightCount += 1;
     if (hour >= 17 && hour <= 19) happyHourCount += 1;
+
+    const note = String(row.raw.note || "").trim();
+    if (note.length > 0) noteCount += 1;
+    else silentLogCount += 1;
+
+    const rating = row.raw.rating;
+    if (rating === 5) fiveStarCount += 1;
+    if (rating === 1) oneStarCount += 1;
+
+    const price = row.raw.price_try;
+    if (price != null && price >= 500) pricyLogCount += 1;
+
+    const month = d.getMonth();
+    const dayOfMonth = d.getDate();
+    if (month === 0 && dayOfMonth === 1) newYearLogCount += 1;
+
+    if (!dayRatingMap.has(dateKey)) dayRatingMap.set(dateKey, { hasNight: false, hasMorning: false });
+    const dayEntry = dayRatingMap.get(dateKey)!;
+    if (hour < 7) dayEntry.hasMorning = true;
+    if (hour >= 21) dayEntry.hasNight = true;
+
+    const cityVal = String(row.raw.city || "").trim().toLowerCase();
+    if (cityVal) {
+      if (!dayCityMap.has(dateKey)) dayCityMap.set(dateKey, new Set());
+      dayCityMap.get(dateKey)!.add(cityVal);
+    }
 
     if (d.getDay() === 5 && hour >= 20) {
       fridayNightKeys.push(dateKey);
@@ -584,6 +773,25 @@ function computeMetrics(checkins: BadgeCheckin[], event?: BadgeEvent): Metrics {
     const sessionVenueKey = row.venue || "venue:unknown";
     const sessionKey = `${dateKey}|${sessionVenueKey}`;
     sessionCounts.set(sessionKey, (sessionCounts.get(sessionKey) || 0) + 1);
+  }
+
+  let aroundTheClockDays = 0;
+  for (const value of dayRatingMap.values()) {
+    if (value.hasMorning && value.hasNight) aroundTheClockDays += 1;
+  }
+
+  let twoCitiesDays = 0;
+  for (const cities of dayCityMap.values()) {
+    if (cities.size >= 2) twoCitiesDays += 1;
+  }
+
+  let comebackCount = 0;
+  const sortedUnique = Array.from(new Set(dayKeys)).sort();
+  for (let i = 1; i < sortedUnique.length; i += 1) {
+    const prev = toDate(`${sortedUnique[i - 1]}T00:00:00`);
+    const curr = toDate(`${sortedUnique[i]}T00:00:00`);
+    if (!prev || !curr) continue;
+    if (diffInDays(prev, curr) >= 14) comebackCount += 1;
   }
 
   let maxSessionBeerCount = Math.max(0, ...Array.from(sessionCounts.values()));
@@ -625,6 +833,16 @@ function computeMetrics(checkins: BadgeCheckin[], event?: BadgeEvent): Metrics {
     happyHourCount,
     fridayNightChain: chainFriday,
     activeDays,
+    noteCount,
+    silentLogCount,
+    fiveStarCount,
+    oneStarCount,
+    pricyLogCount,
+    comebackCount,
+    aroundTheClockDays,
+    twoCitiesDays,
+    newYearLogCount,
+    goldStarCount: fiveStarCount,
   };
 }
 
@@ -670,6 +888,16 @@ function evaluateByMetrics(metrics: Metrics): BadgeEvaluation {
     18: progress(metrics.uniqueVenues, 10, "different venues", "farklı mekân"),
     19: progress(metrics.activeDays, 365, "active days", "aktif gün"),
     20: progress(metrics.happyHourCount, 10, "happy-hour logs", "mutlu saat logu"),
+    21: progress(metrics.noteCount, 10, "notes added", "not eklenen log"),
+    22: progress(metrics.fiveStarCount, 1, "5-star ratings", "5 yıldız puanı"),
+    23: progress(metrics.oneStarCount, 1, "1-star ratings", "1 yıldız puanı"),
+    24: progress(metrics.pricyLogCount, 1, "500+ TL logs", "500+ TL log"),
+    25: progress(metrics.comebackCount, 1, "comebacks", "geri dönüş"),
+    26: progress(metrics.aroundTheClockDays, 1, "full-day sessions", "tam gün oturumu"),
+    27: progress(metrics.twoCitiesDays, 1, "two-city days", "çift şehir günü"),
+    28: progress(metrics.silentLogCount, 50, "silent logs", "sessiz log"),
+    29: progress(metrics.newYearLogCount, 1, "New Year logs", "yılbaşı logu"),
+    30: progress(metrics.goldStarCount, 10, "5-star ratings", "5 yıldız puanı"),
   };
 
   if (metrics.totalLogs >= 1) unlockedSet.add(1);
@@ -692,6 +920,16 @@ function evaluateByMetrics(metrics: Metrics): BadgeEvaluation {
   if (metrics.uniqueVenues >= 10) unlockedSet.add(18);
   if (metrics.activeDays >= 365) unlockedSet.add(19);
   if (metrics.happyHourCount >= 10) unlockedSet.add(20);
+  if (metrics.noteCount >= 10) unlockedSet.add(21);
+  if (metrics.fiveStarCount >= 1) unlockedSet.add(22);
+  if (metrics.oneStarCount >= 1) unlockedSet.add(23);
+  if (metrics.pricyLogCount >= 1) unlockedSet.add(24);
+  if (metrics.comebackCount >= 1) unlockedSet.add(25);
+  if (metrics.aroundTheClockDays >= 1) unlockedSet.add(26);
+  if (metrics.twoCitiesDays >= 1) unlockedSet.add(27);
+  if (metrics.silentLogCount >= 50) unlockedSet.add(28);
+  if (metrics.newYearLogCount >= 1) unlockedSet.add(29);
+  if (metrics.goldStarCount >= 10) unlockedSet.add(30);
 
   const badges: Badge[] = BASE_BADGES.map((b) => ({
     ...b,
