@@ -164,7 +164,7 @@ const BASE_BADGES: Omit<Badge, "unlocked">[] = [
   },
   {
     id: 8,
-    emoji: "🧴",
+    emoji: "🍾",
     name: "Bottle Loyalist",
     nameTR: "Şişe Bağlısı",
     tier: "Format",
@@ -334,7 +334,7 @@ const BASE_BADGES: Omit<Badge, "unlocked">[] = [
     id: 20,
     emoji: "⏰",
     name: "Happy Hour Hero",
-    nameTR: "Mutlu Saat Kahramanı",
+    nameTR: "Happy Hour",
     tier: "Time",
     tierTR: "Zaman",
     trigger: "10 logs between 17:00–19:00",
