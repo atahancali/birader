@@ -6,11 +6,11 @@ export type HeatmapPalette = {
 };
 
 export const HEATMAP_PALETTES: HeatmapPalette[] = [
-  { key: "amber-red", label: "Amber -> Kirmizi", from: "#f59e0b", to: "#ef4444" },
-  { key: "emerald-lime", label: "Yesil -> Lime", from: "#10b981", to: "#84cc16" },
-  { key: "blue-cyan", label: "Mavi -> Cyan", from: "#3b82f6", to: "#06b6d4" },
-  { key: "violet-pink", label: "Mor -> Pembe", from: "#8b5cf6", to: "#ec4899" },
-  { key: "slate-amber", label: "Slate -> Gold", from: "#334155", to: "#f59e0b" },
+  { key: "amber-red", label: "Amber → Kırmızı", from: "#f59e0b", to: "#ef4444" },
+  { key: "emerald-lime", label: "Yeşil → Lime", from: "#10b981", to: "#84cc16" },
+  { key: "blue-cyan", label: "Mavi → Cyan", from: "#3b82f6", to: "#06b6d4" },
+  { key: "violet-pink", label: "Mor → Pembe", from: "#8b5cf6", to: "#ec4899" },
+  { key: "slate-amber", label: "Slate → Altın", from: "#334155", to: "#f59e0b" },
 ];
 
 function clamp(n: number, min: number, max: number) {

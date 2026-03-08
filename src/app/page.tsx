@@ -15,6 +15,7 @@ import FavoriteReplaceModal from "@/components/FavoriteReplaceModal";
 import LoadingPulse from "@/components/LoadingPulse";
 import RatingStars from "@/components/RatingStars";
 import BadgeUnlockCelebration from "@/components/badges/BadgeUnlockCelebration";
+import BadgeGrid from "@/components/badges/BadgeGrid";
 import ProfileBadgeShelf from "@/components/badges/ProfileBadgeShelf";
 import { formatApiErrorText, normalizeApiError } from "@/lib/apiError";
 import { normalizeUsername, usernameFromEmail, usernameToCandidateEmails } from "@/lib/identity";
@@ -4985,6 +4986,12 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
           unlockedAtById={runtimeBadgeUnlockedAtById}
           className="mb-4"
         />
+        <BadgeGrid
+          badges={runtimeBadgeView.badges}
+          progressById={runtimeBadgeView.progressById}
+          unlockedAtById={runtimeBadgeUnlockedAtById}
+          lang={lang}
+        />
         <div className="mb-4 grid grid-cols-2 gap-2 text-sm">
           <div className="rounded-xl border border-white/10 bg-black/20 p-2">
             {tx(lang, "Son 7g log", "Last 7d logs")}: <span className="font-semibold">{weeklyRecap.count}</span>
@@ -5197,30 +5204,6 @@ async function updateCheckin(payload: { id: string; beer_name: string; rating: n
             <div className="rounded-xl border border-white/10 bg-black/20 p-2">
               {tx(lang, "Şehir cesidi", "City variety")}: <span className="font-semibold">{behaviorStats.uniqueCities}</span>
             </div>
-          </div>
-
-          <div className="mt-3 text-xs opacity-70">{tx(lang, "Rozetler (beta)", "Badges (beta)")}</div>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            {behaviorStats.badges.map((b) => {
-              const meta = badgeMetaForKey(b.key);
-              return (
-                <div
-                  key={b.key}
-                  className="rounded-xl border border-white/10 p-2 text-xs"
-                  style={{
-                    backgroundImage: `linear-gradient(135deg, ${meta.colorFrom}33, ${meta.colorTo}22)`,
-                  }}
-                  title={b.detail}
-                >
-                  <div className="font-semibold">{meta.icon} {b.title}</div>
-                  <div className="mt-1 opacity-80">{b.detail}</div>
-                  <div className="mt-1 text-[10px] opacity-60">{lang === "en" ? meta.ruleEn : meta.ruleTr}</div>
-                </div>
-              );
-            })}
-            {behaviorStats.badges.length === 0 ? (
-              <div className="text-xs opacity-60">{tx(lang, "Henüz rozet yok. Log arttikca acilacak.", "No badges yet. They unlock as you log.")}</div>
-            ) : null}
           </div>
 
           <div className="mt-4 text-xs opacity-70">Stereotip rozetler / Stereotype badges</div>

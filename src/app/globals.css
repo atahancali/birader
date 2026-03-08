@@ -200,6 +200,15 @@ h3 {
   pointer-events: none;
 }
 
+.badge-rare-ring {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(#0d0a06, #0d0a06) padding-box,
+    linear-gradient(120deg, rgba(251, 191, 36, 0.22), rgba(245, 158, 11, 0.7), rgba(251, 191, 36, 0.24)) border-box;
+  background-size: 100% 100%, 220% 220%;
+  animation: badge-rare-ring 2.2s linear infinite;
+}
+
 @keyframes badge-shimmer {
   0% {
     transform: translateX(-95%) rotate(10deg);
@@ -214,6 +223,15 @@ h3 {
   100% {
     transform: translateX(95%) rotate(10deg);
     opacity: 0;
+  }
+}
+
+@keyframes badge-rare-ring {
+  0% {
+    background-position: 0 0, 0% 50%;
+  }
+  100% {
+    background-position: 0 0, 200% 50%;
   }
 }
 
@@ -244,5 +262,23 @@ h3 {
   100% {
     transform: scale(1);
     opacity: 1;
+  }
+}
+
+@keyframes badge-zoom-in {
+  0% {
+    transform: scale(0.72);
+    opacity: 0;
+    filter: blur(0.5px);
+  }
+  70% {
+    transform: scale(1.06);
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+    filter: blur(0);
   }
 }
