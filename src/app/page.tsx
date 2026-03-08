@@ -287,6 +287,7 @@ const TUTORIAL_STEP_KEYS: TutorialStepKey[] = [
 const BEER_CATALOG: BeerItem[] = [
   { brand: "Efes Pilsen", format: "Fici", ml: 300 },
   { brand: "Efes Pilsen", format: "Fici", ml: 500 },
+  { brand: "Efes Pilsen", format: "Fici", ml: 1000 },
   { brand: "Belfast", format: "Fici", ml: 500 },
   { brand: "Bomonti Filtresiz", format: "Fici", ml: 300 },
   { brand: "Bomonti Filtresiz", format: "Fici", ml: 500 },
@@ -298,6 +299,7 @@ const BEER_CATALOG: BeerItem[] = [
   { brand: "Desperados", format: "Fici", ml: 500 },
   { brand: "Tuborg Gold", format: "Fici", ml: 300 },
   { brand: "Tuborg Gold", format: "Fici", ml: 500 },
+  { brand: "Tuborg Gold", format: "Fici", ml: 1000 },
   { brand: "Tuborg Amber", format: "Fici", ml: 500 },
   { brand: "Tuborg Filtresiz", format: "Fici", ml: 500 },
   { brand: "Carlsberg", format: "Fici", ml: 500 },
@@ -318,7 +320,6 @@ const BEER_CATALOG: BeerItem[] = [
   { brand: "Weihenstephaner", format: "Fici", ml: 1000 },
   { brand: "Frederik", format: "Fici", ml: 500 },
   { brand: "Frederik", format: "Fici", ml: 1000 },
-  { brand: "Bavyera", format: "Fici", ml: 1000 },
 
   { brand: "Efes Pilsen", format: "Şişe/Kutu", ml: 330 },
   { brand: "Efes Pilsen", format: "Şişe/Kutu", ml: 500 },
@@ -372,7 +373,6 @@ const BEER_CATALOG: BeerItem[] = [
   { brand: "Weihenstephaner Hefe Weissbier", format: "Şişe/Kutu", ml: 500 },
   { brand: "Weihenstephaner", format: "Şişe/Kutu", ml: 500 },
   { brand: "Frederik", format: "Şişe/Kutu", ml: 500 },
-  { brand: "Bavyera", format: "Şişe/Kutu", ml: 1000 },
   { brand: "Grimbergen Blonde", format: "Şişe/Kutu", ml: 330 },
   { brand: "Chimay Blue", format: "Şişe/Kutu", ml: 330 },
   { brand: "Bistro Lager", format: "Şişe/Kutu", ml: 330 },
