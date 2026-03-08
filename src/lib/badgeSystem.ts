@@ -152,7 +152,7 @@ const BASE_BADGES: Omit<Badge, "unlocked">[] = [
     id: 7,
     emoji: "🍺",
     name: "Draft Devotee",
-    nameTR: "Fıçı Sadıkı",
+    nameTR: "Fıçıya Sadık",
     tier: "Format",
     tierTR: "Format",
     trigger: "20 draft (fıçı) beers logged",

@@ -58,7 +58,9 @@ export default function BadgeDetailSheet({
         </div>
 
         <div className="mt-3 flex items-center gap-3">
-          <BadgeVisual badge={badge} size={120} unlocked={badge.unlocked} />
+          <div className="animate-[badge-zoom-in_240ms_cubic-bezier(0.2,0.8,0.2,1)_both]">
+            <BadgeVisual badge={badge} size={156} unlocked={badge.unlocked} />
+          </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[11px] text-[#F5EDD8]">
